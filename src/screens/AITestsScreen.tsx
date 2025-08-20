@@ -1,0 +1,403 @@
+// src/screens/AITestScreen.tsx - Versión corregida
+import React, { useState } from 'react';
+import {
+  StyleSheet,
+  Text,
+  View,
+  TouchableOpacity,
+  TextInput,
+  ScrollView,
+  Alert,
+  ActivityIndicator
+} from 'react-native';
+import { geminiService, SPAM_PERSONALITIES } from '../services/GeminiServices';
+
+type AITestScreenProps = {
+  navigation: any;
+};
+
+export default function AITestScreen({ navigation }: AITestScreenProps) {
+  const [selectedPersonality, setSelectedPersonality] = useState<keyof typeof SPAM_PERSONALITIES>('abuelo');
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Array<{role: 'user' | 'assistant', content: string, timestamp: Date}>>([]);
+  const [inputMessage, setInputMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const isGeminiConfigured = geminiService.isConfigured();
+
+  const startNewConversation = () => {
+    const newConversationId = geminiService.startConversation('TEST_NUMBER', selectedPersonality);
+    setConversationId(newConversationId);
+    setMessages([]);
+    
+    Alert.alert(
+      "🤖 Nueva Conversación",
+      `Iniciada con personalidad: ${SPAM_PERSONALITIES[selectedPersonality].name}\\n\\n¡Actúa como un spammer y escribe tu primera oferta!`
+    );
+  };
+
+  const sendMessage = async () => {
+    if (!inputMessage.trim() || !conversationId || isLoading) return;
+
+    const userMessage = inputMessage.trim();
+    setInputMessage('');
+    setIsLoading(true);
+
+    const userMsgObj = {
+      role: 'user' as const,
+      content: userMessage,
+      timestamp: new Date()
+    };
+    
+    setMessages(prev => [...prev, userMsgObj]);
+
+    try {
+      console.log('🤖 Enviando mensaje a Gemini:', userMessage);
+      const response = await geminiService.generateResponse(conversationId, userMessage);
+
+      if (response.success && response.response) {
+        const aiMsgObj = {
+          role: 'assistant' as const,
+          content: response.response,
+          timestamp: new Date()
+        };
+        
+        setMessages(prev => [...prev, aiMsgObj]);
+        console.log('✅ Respuesta recibida:', response.response);
+        
+        if (response.tokensUsed) {
+          console.log(`📊 Tokens usados: ${response.tokensUsed}`);
+        }
+      } else {
+        Alert.alert('❌ Error', response.error || 'No se pudo generar respuesta');
+      }
+    } catch (error) {
+      console.log('❌ Error enviando mensaje:', error);
+      Alert.alert('❌ Error', 'Error de conexión con la IA');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const renderMessage = (message: {role: 'user' | 'assistant', content: string, timestamp: Date}, index: number) => (
+    <View
+      key={index}
+      style={[
+        styles.messageContainer,
+        message.role === 'user' ? styles.userMessage : styles.aiMessage
+      ]}
+    >
+      <Text style={styles.messageRole}>
+        {message.role === 'user' ? '📞 TÚ (Spammer)' : `🤖 ${SPAM_PERSONALITIES[selectedPersonality].name}`}
+      </Text>
+      <Text style={styles.messageContent}>
+        {message.content}
+      </Text>
+      <Text style={styles.messageTime}>
+        {message.timestamp.toLocaleTimeString()}
+      </Text>
+    </View>
+  );
+
+  if (!isGeminiConfigured) {
+    return (
+      <View style={[styles.container, styles.centerContainer]}>
+        <Text style={styles.errorTitle}>🔑 API Key Requerida</Text>
+        <Text style={styles.errorText}>
+          Para usar la IA necesitas configurar tu API key de Gemini en el archivo .env
+        </Text>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <Text style={styles.buttonText}>← Volver</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>🤖 Testing IA Anti-Spam</Text>
+        
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.personalitySelector}>
+          {Object.entries(SPAM_PERSONALITIES).map(([key, personality]) => (
+            <TouchableOpacity
+              key={key}
+              style={[
+                styles.personalityButton,
+                selectedPersonality === key && styles.personalityButtonActive
+              ]}
+              onPress={() => setSelectedPersonality(key as keyof typeof SPAM_PERSONALITIES)}
+            >
+              <Text style={[
+                styles.personalityButtonText,
+                selectedPersonality === key && styles.personalityButtonTextActive
+              ]}>
+                {personality.name}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        <TouchableOpacity 
+          style={styles.newConversationButton} 
+          onPress={startNewConversation}
+        >
+          <Text style={styles.buttonText}>
+            {conversationId ? '🔄 Nueva Conversación' : '🚀 Empezar Testing'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.conversationContainer}>
+        {conversationId ? (
+          <>
+            <ScrollView style={styles.messagesContainer} showsVerticalScrollIndicator={false}>
+              {messages.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>🎭 Conversación iniciada</Text>
+                  <Text style={styles.emptySubText}>
+                    Actúa como un spammer y escribe tu oferta comercial
+                  </Text>
+                </View>
+              ) : (
+                messages.map(renderMessage)
+              )}
+              
+              {isLoading && (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="small" color="#00ff88" />
+                  <Text style={styles.loadingText}>🤖 Generando respuesta...</Text>
+                </View>
+              )}
+            </ScrollView>
+
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.messageInput}
+                placeholder="Actúa como spammer: '¡Oferta especial solo hoy!'"
+                placeholderTextColor="#666"
+                value={inputMessage}
+                onChangeText={setInputMessage}
+                multiline
+                maxLength={500}
+                editable={!isLoading}
+              />
+              <TouchableOpacity
+                style={[styles.sendButton, (!inputMessage.trim() || isLoading) && styles.sendButtonDisabled]}
+                onPress={sendMessage}
+                disabled={!inputMessage.trim() || isLoading}
+              >
+                <Text style={styles.sendButtonText}>
+                  {isLoading ? '⏳' : '📞'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        ) : (
+          <View style={styles.noConversationContainer}>
+            <Text style={styles.noConversationText}>
+              🎯 Selecciona una personalidad y empezar testing
+            </Text>
+            <Text style={styles.noConversationSubText}>
+              Podrás probar cómo responde cada personalidad a ofertas comerciales
+            </Text>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#1a1a1a',
+  },
+  centerContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  header: {
+    padding: 20,
+    paddingBottom: 10,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#ff4444',
+    textAlign: 'center',
+    marginBottom: 15,
+  },
+  personalitySelector: {
+    marginBottom: 15,
+  },
+  personalityButton: {
+    backgroundColor: '#2a2a2a',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 10,
+  },
+  personalityButtonActive: {
+    backgroundColor: '#ff4444',
+  },
+  personalityButtonText: {
+    color: '#cccccc',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  personalityButtonTextActive: {
+    color: 'white',
+  },
+  newConversationButton: {
+    backgroundColor: '#00aa44',
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  buttonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  conversationContainer: {
+    flex: 1,
+    padding: 20,
+    paddingTop: 0,
+  },
+  messagesContainer: {
+    flex: 1,
+    marginBottom: 15,
+  },
+  messageContainer: {
+    marginBottom: 15,
+    padding: 15,
+    borderRadius: 10,
+  },
+  userMessage: {
+    backgroundColor: '#ff4444',
+    alignSelf: 'flex-end',
+    maxWidth: '80%',
+  },
+  aiMessage: {
+    backgroundColor: '#2a2a2a',
+    alignSelf: 'flex-start',
+    maxWidth: '80%',
+  },
+  messageRole: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginBottom: 5,
+    color: '#cccccc',
+  },
+  messageContent: {
+    fontSize: 16,
+    color: 'white',
+    lineHeight: 22,
+  },
+  messageTime: {
+    fontSize: 10,
+    color: '#888888',
+    marginTop: 5,
+    textAlign: 'right',
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  messageInput: {
+    flex: 1,
+    backgroundColor: '#2a2a2a',
+    color: 'white',
+    padding: 15,
+    borderRadius: 10,
+    maxHeight: 60,
+    fontSize: 16,
+  },
+  sendButton: {
+    backgroundColor: '#00aa44',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sendButtonDisabled: {
+    backgroundColor: '#666666',
+  },
+  sendButtonText: {
+    fontSize: 20,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    marginTop: 50,
+  },
+  emptyText: {
+    fontSize: 18,
+    color: '#cccccc',
+    marginBottom: 10,
+  },
+  emptySubText: {
+    fontSize: 14,
+    color: '#666666',
+    textAlign: 'center',
+  },
+  noConversationContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  noConversationText: {
+    fontSize: 18,
+    color: '#cccccc',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  noConversationSubText: {
+    fontSize: 14,
+    color: '#666666',
+    textAlign: 'center',
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 15,
+  },
+  loadingText: {
+    color: '#00ff88',
+    marginLeft: 10,
+    fontSize: 14,
+  },
+  errorTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#ff4444',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#cccccc',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  backButton: {
+    backgroundColor: '#666666',
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 15,
+  },
+  loadingText: {
+    color: '#00ff88',
+    marginLeft: 10,
+    fontSize: 14,
+  },
+});
