@@ -12,6 +12,7 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+    
     "ios": {
       "supportsTablet": true
     },
@@ -20,13 +21,30 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "CALL_PHONE",
+        "READ_PHONE_STATE",
+        "ANSWER_PHONE_CALLS",
+        "BIND_TELECOM_CONNECTION_SERVICE",
+        "CONTROL_INCALL_EXPERIENCE",
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "requestLegacyExternalStorage": true
+          }
+        }
+      ]
     ]
   }
 }

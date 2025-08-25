@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Alert } from 'react-native';
 import { databaseService } from '../services/DataBaseService';
 import { contactsService } from '../services/ContactService';
+import { twilioService } from '../services/TwilioService';
 
 // Definir el tipo de navegación (TypeScript)
 type DashboardScreenProps = {
@@ -131,6 +132,7 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
           return;
         }
       }
+      // Función para probar Twilio
 
       // Registrar la llamada bloqueada
       await databaseService.logBlockedCall(fakeSpamNumber, blockReason);
@@ -230,7 +232,47 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
       "",
       "phone-pad"
     );
+
   };
+
+  const testTwilioConnection = async () => {
+    console.log('📞 Botón Twilio presionado!!!');
+    try {
+      if (!twilioService.isConfigured()) {
+        Alert.alert('❌ Error', 'Twilio no está configurado correctamente');
+        return;
+      }
+
+      Alert.alert('🔄 Testing...', 'Probando conexión con Twilio...');
+
+      const accountInfo = await twilioService.getAccountInfo();
+        console.log('📊 Account info recibida:', accountInfo); 
+
+      if (accountInfo) {
+          console.log('✅ Mostrando Alert exitoso');
+           console.log(`
+    ✅ TWILIO CONECTADO EXITOSAMENTE:
+    📊 Cuenta: ${accountInfo.friendly_name}
+    📞 Número: ${twilioService.phoneNumber}
+    🏆 Estado: ${accountInfo.status}
+    💳 Tipo: ${accountInfo.type}
+    🚀 ¡LISTO PARA INTERCEPTAR LLAMADAS!
+  `);
+        Alert.alert(
+          '✅ Twilio Conectado',
+          `Cuenta: ${accountInfo.friendly_name}\nNúmero: ${twilioService.getPhoneNumber()}\n¡Listo para interceptar llamadas!`
+        );
+      } else {
+         console.log('❌ No hay accountInfo');
+        Alert.alert('❌ Error', 'No se pudo conectar con Twilio. Verifica las credenciales.');
+      }
+    } catch (error) {
+      console.log('❌ Error en testTwilioConnection:', error);
+      Alert.alert('❌ Error', 'Error probando Twilio');
+    }
+  };
+
+
 
   // Mostrar loading
   if (loading) {
@@ -311,6 +353,14 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
 
         <TouchableOpacity style={styles.buttonTest} onPress={simulateBlockCall}>
           <Text style={styles.buttonText}>🧪 SIMULAR BLOQUEO</Text>
+        </TouchableOpacity>
+
+        {/* NUEVO: Botón testing Twilio */}
+        <TouchableOpacity
+          style={styles.buttonTwilio}
+          onPress={testTwilioConnection}
+        >
+          <Text style={styles.buttonText}>📞 Probar Twilio</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -428,10 +478,18 @@ const styles = StyleSheet.create({
     color: 'white',
   },
   buttonAI: {
-  backgroundColor: '#4444ff',  // Azul para IA
-  paddingVertical: 14,
-  paddingHorizontal: 16,
-  borderRadius: 10,
-  alignItems: 'center',
-},
+    backgroundColor: '#4444ff',  // Azul para IA
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  buttonTwilio: {
+    backgroundColor: '#9900ff',  // Púrpura para Twilio
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+
 });
