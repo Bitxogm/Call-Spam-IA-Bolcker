@@ -12,9 +12,9 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-    
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.anonymous.SpamBlockerApp"
     },
     "android": {
       "adaptiveIcon": {
@@ -23,14 +23,22 @@
       },
       "edgeToEdgeEnabled": true,
       "permissions": [
-        "CALL_PHONE",
-        "READ_PHONE_STATE",
         "ANSWER_PHONE_CALLS",
-        "BIND_TELECOM_CONNECTION_SERVICE",
-        "CONTROL_INCALL_EXPERIENCE",
+        "CALL_PHONE", 
+        "READ_PHONE_STATE",
+        "READ_CALL_LOG",
+        "WRITE_CALL_LOG",
+        "SYSTEM_ALERT_WINDOW",
+        "FOREGROUND_SERVICE",
+        "WAKE_LOCK",
+        "RECEIVE_BOOT_COMPLETED",
         "RECORD_AUDIO",
-        "MODIFY_AUDIO_SETTINGS"
-      ]
+        "MODIFY_AUDIO_SETTINGS",
+        "android.permission.BIND_TELECOM_CONNECTION_SERVICE",
+        "android.permission.BIND_INCALL_SERVICE",
+        "android.permission.CONTROL_INCALL_EXPERIENCE"
+      ],
+      "package": "com.anonymous.SpamBlockerApp"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -41,7 +49,10 @@
         "expo-build-properties",
         {
           "android": {
-            "requestLegacyExternalStorage": true
+            "requestLegacyExternalStorage": true,
+            "compileSdkVersion": 34,
+            "targetSdkVersion": 34,
+            "buildToolsVersion": "34.0.0"
           }
         }
       ]

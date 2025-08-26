@@ -1,6 +1,5 @@
 // src/screens/AITestScreen.tsx 
 import React, { useState } from 'react';
-import * as Speech from 'expo-speech';
 import { geminiService, SPAM_PERSONALITIES } from '../services/GeminiServices';
 import { elevenLabsService } from '../services/ElevenLabService';
 import {
@@ -27,8 +26,7 @@ export default function AITestScreen({ navigation }: AITestScreenProps) {
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isPlayingTTS, setIsPlayingTTS] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [speechText, setSpeechText] = useState('');
+ 
 
   const isGeminiConfigured = geminiService.isConfigured();
 
@@ -43,48 +41,6 @@ export default function AITestScreen({ navigation }: AITestScreenProps) {
     );
   };
 
-  const sendMessage = async () => {
-    if (!inputMessage.trim() || !conversationId || isLoading) return;
-
-    const userMessage = inputMessage.trim();
-    setInputMessage('');
-    setIsLoading(true);
-
-    const userMsgObj = {
-      role: 'user' as const,
-      content: userMessage,
-      timestamp: new Date()
-    };
-
-    setMessages(prev => [...prev, userMsgObj]);
-
-    try {
-      console.log('🤖 Enviando mensaje a Gemini:', userMessage);
-      const response = await geminiService.generateResponse(conversationId, userMessage);
-
-      if (response.success && response.response) {
-        const aiMsgObj = {
-          role: 'assistant' as const,
-          content: response.response,
-          timestamp: new Date()
-        };
-
-        setMessages(prev => [...prev, aiMsgObj]);
-        console.log('✅ Respuesta recibida:', response.response);
-
-        if (response.tokensUsed) {
-          console.log(`📊 Tokens usados: ${response.tokensUsed}`);
-        }
-      } else {
-        Alert.alert('❌ Error', response.error || 'No se pudo generar respuesta');
-      }
-    } catch (error) {
-      console.log('❌ Error enviando mensaje:', error);
-      Alert.alert('❌ Error', 'Error de conexión con la IA');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const renderMessage = (message: { role: 'user' | 'assistant', content: string, timestamp: Date }, index: number) => (
     <View
@@ -206,93 +162,7 @@ export default function AITestScreen({ navigation }: AITestScreenProps) {
     }
   };
 
-  // Función para iniciar grabación de voz
-  const startVoiceRecording = () => {
-    console.log('🎤 Botón de micrófono presionado');
-    setIsRecording(true);
-    setSpeechText('');
 
-    // Nota: Por ahora simulamos STT, después implementamos real
-    Alert.prompt(
-      "🎤 Simular Voz de Spammer",
-      "Escribe lo que dirías como spammer (simula tu voz):",
-      [
-        { text: "Cancelar", style: "cancel", onPress: () => setIsRecording(false) },
-        {
-          text: "Enviar",
-          onPress: (text) => {
-            if (text) {
-              setSpeechText(text);
-              sendVoiceMessage(text);
-            }
-            setIsRecording(false);
-          }
-        }
-      ],
-      "plain-text",
-      "",
-      "default"
-    );
-  };
-
-  // Función para enviar mensaje de voz
-  const sendVoiceMessage = async (voiceText: string) => {
-    if (!conversationId || isLoading) return;
-
-    setIsLoading(true);
-
-    const userMsgObj = {
-      role: 'user' as const,
-      content: `🎤 ${voiceText}`, // Marcamos que viene de voz
-      timestamp: new Date()
-    };
-
-    setMessages(prev => [...prev, userMsgObj]);
-
-    try {
-      console.log('🎤 Enviando mensaje de voz a Gemini:', voiceText);
-      const response = await geminiService.generateResponse(conversationId, voiceText);
-
-      if (response.success && response.response) {
-        const aiMsgObj = {
-          role: 'assistant' as const,
-          content: response.response,
-          timestamp: new Date()
-        };
-
-        setMessages(prev => [...prev, aiMsgObj]);
-        console.log('✅ Respuesta recibida para voz:', response.response);
-
-        // Reproducir respuesta con TTS automáticamente
-        setIsPlayingTTS(true);
-        const personalityMap = {
-          abuelo: 'manolo' as const,
-          amaDeCasa: 'paquita' as const,
-          indeciso: 'roberto' as const
-        };
-
-        const voicePersonality = personalityMap[selectedPersonality];
-        const ttsSuccess = await elevenLabsService.speakText(response.response, voicePersonality);
-
-        if (!ttsSuccess) {
-          Alert.alert('⚠️ Audio', 'La respuesta se generó pero no se pudo reproducir el audio');
-        }
-
-        setIsPlayingTTS(false);
-
-        if (response.tokensUsed) {
-          console.log(`📊 Tokens usados: ${response.tokensUsed}`);
-        }
-      } else {
-        Alert.alert('❌ Error', response.error || 'No se pudo generar respuesta');
-      }
-    } catch (error) {
-      console.log('❌ Error enviando mensaje de voz:', error);
-      Alert.alert('❌ Error', 'Error de conexión con la IA');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   return (
     <View style={styles.container}>
@@ -405,15 +275,7 @@ export default function AITestScreen({ navigation }: AITestScreenProps) {
                   numberOfLines={2}
                 />
 
-                <TouchableOpacity
-                  style={[styles.micButton, (isLoading || isPlayingTTS || isRecording) && styles.micButtonDisabled]}
-                  onPress={startVoiceRecording}
-                  disabled={isLoading || isPlayingTTS || isRecording}
-                >
-                  <Text style={styles.micButtonText}>
-                    {isRecording ? '🔴' : '🎤'}
-                  </Text>
-                </TouchableOpacity>
+    
                 <TouchableOpacity
                   style={[styles.sendButton, (!inputMessage.trim() || isLoading || isPlayingTTS) && styles.sendButtonDisabled]}
                   onPress={sendMessageWithVoice}
@@ -495,21 +357,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 16,
   },
-  micButton: {
-    backgroundColor: '#ff8800',
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 5,
-  },
-  micButtonDisabled: {
-    backgroundColor: '#666666',
-  },
-  micButtonText: {
-    fontSize: 20,
-  },
+
   conversationContainer: {
     flex: 1,
     padding: 20,
@@ -638,17 +486,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
   },
-  loadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 15,
-  },
-  loadingText: {
-    color: '#00ff88',
-    marginLeft: 10,
-    fontSize: 14,
-  },
+
   voiceTestContainer: {
     marginBottom: 15,
     padding: 15,
