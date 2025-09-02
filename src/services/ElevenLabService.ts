@@ -2,6 +2,7 @@
 import { Buffer } from 'buffer';
 import { Audio } from 'expo-av';
 import axios from 'axios';
+import * as Speech from 'expo-speech';
 
 // Tipos TypeScript
 export interface VoiceConfig {
@@ -39,15 +40,15 @@ export const VOICE_PROFILES: Record<string, VoiceConfig> = {
     age: 'middle_aged',
     accent: 'spanish_spain'
   },
-    roberto: {
+  roberto: {
     voice_id: '5IDdqnXnlsZ1FCxoOFYg', // ← JAVIER BARDEM
-    name: 'Roberto (Indeciso - Javier Bardem)', 
+    name: 'Roberto (Indeciso - Javier Bardem)',
     description: 'Voz de Javier Bardem para el oficinista indeciso',
     gender: 'male',
     age: 'middle_aged',
     accent: 'spanish_spain'
   },
-  
+
 
 
 };
@@ -84,8 +85,15 @@ class ElevenLabsService {
       }
 
       const voiceConfig = VOICE_PROFILES[personality];
-      
+
       console.log(`🗣️ Generando audio para ${voiceConfig.name}: "${text.substring(0, 50)}..."`);
+      console.log('🔍 DEBUG - API Key being sent:', this.apiKey);
+      console.log('🔍 DEBUG - API Key length:', this.apiKey.length);
+      console.log('🔍 DEBUG - Headers being sent:', {
+        'Accept': 'audio/mpeg',
+        'Content-Type': 'application/json',
+        'xi-api-key': this.apiKey
+      });
 
       // Configuración optimizada para español
       const requestBody = {
@@ -99,6 +107,7 @@ class ElevenLabsService {
           speaking_rate: 0.7
         }
       };
+
 
       const response = await axios.post(
         `${this.baseUrl}/text-to-speech/${voiceConfig.voice_id}`,
@@ -198,31 +207,71 @@ class ElevenLabsService {
     text: string,
     personality: 'manolo' | 'paquita' | 'roberto' = 'manolo'
   ): Promise<boolean> => {
+    //   try {
+    //     // Generar audio
+    //     const ttsResult = await this.textToSpeech(text, personality);
+
+    //     if (!ttsResult.success || !ttsResult.audioUri) {
+    //       console.log('❌ No se pudo generar audio:', ttsResult.error);
+    //       return false;
+    //     }
+
+    //     // Reproducir audio
+    //     const playResult = await this.playAudio(ttsResult.audioUri);
+
+    //     if (ttsResult.charactersUsed) {
+    //       console.log(`📊 Caracteres usados: ${ttsResult.charactersUsed}`);
+    //     }
+
+    //     return playResult;
+    //   } catch (error) {
+    //     console.log('❌ Error en speakText:', error);
+    //     return false;
+    //   }
+    // };
+
+    
     try {
-      // Generar audio
+      // Intentar ElevenLabs primero
       const ttsResult = await this.textToSpeech(text, personality);
-      
+
       if (!ttsResult.success || !ttsResult.audioUri) {
-        console.log('❌ No se pudo generar audio:', ttsResult.error);
-        return false;
+        console.log('❌ ElevenLabs falló, usando TTS nativo');
+        // Fallback a TTS nativo
+        return this.speakWithNativeTTS(text, personality);
       }
 
-      // Reproducir audio
+      // ElevenLabs funcionó
       const playResult = await this.playAudio(ttsResult.audioUri);
-      
-      if (ttsResult.charactersUsed) {
-        console.log(`📊 Caracteres usados: ${ttsResult.charactersUsed}`);
-      }
-
       return playResult;
     } catch (error) {
-      console.log('❌ Error en speakText:', error);
+      console.log('❌ Error en speakText, usando TTS nativo');
+      return this.speakWithNativeTTS(text, personality);
+    }
+  };
+
+  // Nueva función para TTS nativo
+  private speakWithNativeTTS = async (
+    text: string,
+    personality: 'manolo' | 'paquita' | 'roberto'
+  ): Promise<boolean> => {
+    try {
+      const voiceOptions = {
+        rate: 0.8,        // Velocidad más lenta para personas mayores
+        pitch: personality === 'paquita' ? 1.2 : 0.9,  // Paquita más aguda
+        language: 'es-ES'
+      };
+
+      await Speech.speak(text, voiceOptions);
+      return true;
+    } catch (error) {
+      console.log('❌ Error con TTS nativo:', error);
       return false;
     }
   };
 
   // Obtener información de cuota
-  getQuotaInfo = async (): Promise<{characters_used: number, characters_limit: number} | null> => {
+  getQuotaInfo = async (): Promise<{ characters_used: number, characters_limit: number } | null> => {
     try {
       const response = await axios.get(`${this.baseUrl}/user`, {
         headers: {
