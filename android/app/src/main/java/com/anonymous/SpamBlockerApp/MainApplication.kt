@@ -12,7 +12,7 @@ import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.load
 import com.facebook.react.defaults.DefaultReactNativeHost
 import com.facebook.react.soloader.OpenSourceMergedSoMapping
 import com.facebook.soloader.SoLoader
-//import com.anonymous.SpamBlockerApp.CallInterceptorPackage
+import com.anonymous.SpamBlockerApp.CallInterceptorPackage
 import expo.modules.ApplicationLifecycleDispatcher
 import expo.modules.ReactNativeHostWrapper
 
@@ -32,7 +32,7 @@ class MainApplication : Application(), ReactApplication {
           override fun getPackages(): List<ReactPackage> {
             val packages = PackageList(this).packages.toMutableList()
             // Añadir nuestro package del interceptor
-            //packages.add(CallInterceptorPackage())
+            packages.add(CallInterceptorPackage())
             return packages
           }
 
