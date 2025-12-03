@@ -376,31 +376,6 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
       {/* BOTONES DE ACCIÓN */}
       <View style={styles.buttonsContainer}>
 
-        {/* BOTÓN DE DEBUG - SIEMPRE VISIBLE SIN CONDICIONES */}
-        <TouchableOpacity
-          style={[styles.button, styles.buttonCritical]}
-          onPress={() => Alert.alert('DEBUG', `Platform: ${Platform.OS}\nCallInterceptorModule: ${CallInterceptorModule ? 'SÍ' : 'NO'}`)}
-        >
-          <Text style={styles.buttonText}>🔍 DEBUG INFO</Text>
-        </TouchableOpacity>
-
-        {/* BOTÓN CRÍTICO: Configurar como app de teléfono - SIEMPRE VISIBLE */}
-        {Platform.OS === 'android' && (
-          <TouchableOpacity
-            style={[styles.button, isDefaultDialer ? styles.buttonSuccess : styles.buttonCritical]}
-            onPress={requestDefaultDialerRole}
-          >
-            <Text style={styles.buttonText}>
-              {isDefaultDialer
-                ? "✅ App de Teléfono Configurada"
-                : "📞 CONFIGURAR APP DE TELÉFONO"}
-            </Text>
-            {!isDefaultDialer && (
-              <Text style={styles.buttonSubtext}>¡REQUERIDO para auto-respuesta!</Text>
-            )}
-          </TouchableOpacity>
-        )}
-
         <TouchableOpacity style={styles.button} onPress={navigateToSpamNumbers}>
           <Text style={styles.buttonText}>📋 Gestionar Números</Text>
         </TouchableOpacity>
@@ -426,7 +401,32 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
           <Text style={styles.buttonText}>🧪 SIMULAR BLOQUEO</Text>
         </TouchableOpacity>
 
-      
+        {/* BOTÓN DE DEBUG - AL FINAL PARA QUE SEA VISIBLE */}
+        <TouchableOpacity
+          style={[styles.button, styles.buttonCritical]}
+          onPress={() => Alert.alert('DEBUG', `Platform: ${Platform.OS}\nCallInterceptorModule: ${CallInterceptorModule ? 'SÍ' : 'NO'}`)}
+        >
+          <Text style={styles.buttonText}>🔍 DEBUG INFO</Text>
+        </TouchableOpacity>
+
+        {/* BOTÓN CRÍTICO: Configurar como app de teléfono - AL FINAL */}
+        {Platform.OS === 'android' && (
+          <TouchableOpacity
+            style={[styles.button, isDefaultDialer ? styles.buttonSuccess : styles.buttonCritical]}
+            onPress={requestDefaultDialerRole}
+          >
+            <Text style={styles.buttonText}>
+              {isDefaultDialer
+                ? "✅ App de Teléfono Configurada"
+                : "📞 CONFIGURAR APP DE TELÉFONO"}
+            </Text>
+            {!isDefaultDialer && (
+              <Text style={styles.buttonSubtext}>¡REQUERIDO para auto-respuesta!</Text>
+            )}
+          </TouchableOpacity>
+        )}
+
+
       </View>
     </View>
   );
