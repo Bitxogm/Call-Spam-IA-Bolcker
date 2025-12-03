@@ -1,6 +1,6 @@
 // src/screens/DashboardScreen.tsx
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Alert, NativeModules, Platform } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Alert, NativeModules, Platform, ScrollView } from 'react-native';
 import { databaseService } from '../services/DataBaseService';
 import { contactsService } from '../services/ContactService';
 
@@ -330,7 +330,7 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
   }
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
 
       {/* HEADER CON MODO ACTUAL */}
       <View style={styles.header}>
@@ -428,7 +428,7 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
 
 
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -437,11 +437,16 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a1a',
+  },
+  scrollContent: {
     padding: 20,
+    paddingBottom: 40,
   },
   loadingContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#1a1a1a',
   },
   loadingText: {
     color: '#cccccc',
@@ -482,7 +487,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   statsContainer: {
-    flex: 1,
     justifyContent: 'flex-start',
     marginBottom: 15,
   },
