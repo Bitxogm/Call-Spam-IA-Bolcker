@@ -117,7 +117,7 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
 
   // Función para solicitar ser app de teléfono predeterminada
   const requestDefaultDialerRole = async () => {
-    if (Platform.OS !== 'android' || !CallInterceptorModule) {
+    if (Platform.OS !== 'android') {
       Alert.alert('Error', 'Esta función solo está disponible en Android');
       return;
     }
@@ -125,23 +125,34 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
     try {
       Alert.alert(
         "📞 App de Teléfono Predeterminada",
-        "SpamBlocker necesita ser tu app de teléfono predeterminada para:\n\n✅ Contestar llamadas automáticamente\n✅ Bloquear spam en tiempo real\n✅ Hacer que tu agente IA converse con spammers\n\nEn la siguiente pantalla, selecciona 'SpamBlocker'",
+        "SpamBlocker necesita ser tu app de teléfono predeterminada para:\n\n✅ Contestar llamadas automáticamente\n✅ Bloquear spam en tiempo real\n✅ Hacer que tu agente IA converse con spammers\n\n➡️ Ve a: Ajustes → Apps → Apps predeterminadas → App de teléfono\n\n¿Abrir configuración del sistema?",
         [
           { text: "Cancelar", style: "cancel" },
           {
-            text: "Configurar",
+            text: "Abrir Ajustes",
             onPress: async () => {
               try {
-                const result = await CallInterceptorModule.requestDefaultDialerRole();
-                console.log('📞 Resultado:', result);
-
-                // Esperar un poco y verificar de nuevo
-                setTimeout(() => {
-                  checkDialerPermissions();
-                }, 1000);
+                // Intentar con módulo nativo primero
+                if (CallInterceptorModule) {
+                  const result = await CallInterceptorModule.requestDefaultDialerRole();
+                  console.log('📞 Resultado módulo nativo:', result);
+                  setTimeout(() => checkDialerPermissions(), 1000);
+                } else {
+                  // Fallback: Abrir configuración de apps predeterminadas
+                  const { Linking } = require('react-native');
+                  await Linking.openSettings();
+                  console.log('📱 Abriendo configuración del sistema (fallback)');
+                  Alert.alert(
+                    'Configuración Manual',
+                    'Ve a:\nAjustes → Apps → Apps predeterminadas → App de teléfono → SpamBlocker'
+                  );
+                }
               } catch (error) {
-                console.log('❌ Error solicitando rol de marcador:', error);
-                Alert.alert('Error', 'No se pudo solicitar el permiso');
+                console.log('❌ Error:', error);
+                Alert.alert(
+                  'Configuración Manual',
+                  'Por favor ve manualmente a:\n\nAjustes → Aplicaciones → Apps predeterminadas → App de teléfono\n\nY selecciona "SpamBlocker"'
+                );
               }
             }
           }
@@ -365,11 +376,11 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
       {/* BOTONES DE ACCIÓN */}
       <View style={styles.buttonsContainer}>
 
-        {/* BOTÓN CRÍTICO: Configurar como app de teléfono */}
-        {Platform.OS === 'android' && CallInterceptorModule && (
+        {/* BOTÓN CRÍTICO: Configurar como app de teléfono - SIEMPRE VISIBLE */}
+        {Platform.OS === 'android' && (
           <TouchableOpacity
             style={[styles.button, isDefaultDialer ? styles.buttonSuccess : styles.buttonCritical]}
-            onPress={isDefaultDialer ? checkDialerPermissions : requestDefaultDialerRole}
+            onPress={requestDefaultDialerRole}
           >
             <Text style={styles.buttonText}>
               {isDefaultDialer
