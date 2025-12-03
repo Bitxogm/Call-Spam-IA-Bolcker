@@ -1,8 +1,11 @@
 // src/screens/DashboardScreen.tsx
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Alert } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Alert, NativeModules, Platform } from 'react-native';
 import { databaseService } from '../services/DataBaseService';
 import { contactsService } from '../services/ContactService';
+
+// Importar módulo nativo de Android
+const { CallInterceptorModule } = NativeModules;
 
 // Definir el tipo de navegación (TypeScript)
 type DashboardScreenProps = {
@@ -17,10 +20,19 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
   const [contactsPermission, setContactsPermission] = useState(false);
   const [radicalMode, setRadicalMode] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isDefaultDialer, setIsDefaultDialer] = useState(false);
+  const [callPermissions, setCallPermissions] = useState({
+    hasPhonePermission: false,
+    hasCallPermission: false,
+    canInterceptCalls: false
+  });
 
   // Cargar datos desde la base de datos al iniciar
   useEffect(() => {
     loadDashboardData();
+    if (Platform.OS === 'android' && CallInterceptorModule) {
+      checkDialerPermissions();
+    }
   }, []);
 
   // Recargar datos cuando volvemos a esta pantalla
@@ -78,6 +90,66 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
       Alert.alert('Error', 'No se pudieron cargar las estadísticas');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Función para verificar permisos de llamadas
+  const checkDialerPermissions = async () => {
+    if (Platform.OS !== 'android' || !CallInterceptorModule) {
+      console.log('⚠️ CallInterceptorModule no disponible');
+      return;
+    }
+
+    try {
+      const permissions = await CallInterceptorModule.checkPermissions();
+      console.log('📞 Permisos de llamadas:', permissions);
+
+      setIsDefaultDialer(permissions.isDefaultDialer);
+      setCallPermissions({
+        hasPhonePermission: permissions.hasPhonePermission,
+        hasCallPermission: permissions.hasCallPermission,
+        canInterceptCalls: permissions.canInterceptCalls
+      });
+    } catch (error) {
+      console.log('❌ Error verificando permisos de llamadas:', error);
+    }
+  };
+
+  // Función para solicitar ser app de teléfono predeterminada
+  const requestDefaultDialerRole = async () => {
+    if (Platform.OS !== 'android' || !CallInterceptorModule) {
+      Alert.alert('Error', 'Esta función solo está disponible en Android');
+      return;
+    }
+
+    try {
+      Alert.alert(
+        "📞 App de Teléfono Predeterminada",
+        "SpamBlocker necesita ser tu app de teléfono predeterminada para:\n\n✅ Contestar llamadas automáticamente\n✅ Bloquear spam en tiempo real\n✅ Hacer que tu agente IA converse con spammers\n\nEn la siguiente pantalla, selecciona 'SpamBlocker'",
+        [
+          { text: "Cancelar", style: "cancel" },
+          {
+            text: "Configurar",
+            onPress: async () => {
+              try {
+                const result = await CallInterceptorModule.requestDefaultDialerRole();
+                console.log('📞 Resultado:', result);
+
+                // Esperar un poco y verificar de nuevo
+                setTimeout(() => {
+                  checkDialerPermissions();
+                }, 1000);
+              } catch (error) {
+                console.log('❌ Error solicitando rol de marcador:', error);
+                Alert.alert('Error', 'No se pudo solicitar el permiso');
+              }
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      console.log('❌ Error en requestDefaultDialerRole:', error);
+      Alert.alert('Error', 'No se pudo iniciar la configuración');
     }
   };
 
@@ -293,6 +365,23 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
       {/* BOTONES DE ACCIÓN */}
       <View style={styles.buttonsContainer}>
 
+        {/* BOTÓN CRÍTICO: Configurar como app de teléfono */}
+        {Platform.OS === 'android' && CallInterceptorModule && (
+          <TouchableOpacity
+            style={[styles.button, isDefaultDialer ? styles.buttonSuccess : styles.buttonCritical]}
+            onPress={isDefaultDialer ? checkDialerPermissions : requestDefaultDialerRole}
+          >
+            <Text style={styles.buttonText}>
+              {isDefaultDialer
+                ? "✅ App de Teléfono Configurada"
+                : "📞 CONFIGURAR APP DE TELÉFONO"}
+            </Text>
+            {!isDefaultDialer && (
+              <Text style={styles.buttonSubtext}>¡REQUERIDO para auto-respuesta!</Text>
+            )}
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity style={styles.button} onPress={navigateToSpamNumbers}>
           <Text style={styles.buttonText}>📋 Gestionar Números</Text>
         </TouchableOpacity>
@@ -447,6 +536,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 10,
     alignItems: 'center',
+  },
+  buttonCritical: {
+    backgroundColor: '#ff6600',  // Naranja llamativo para acción crítica
+    borderWidth: 2,
+    borderColor: '#ffaa00',
+  },
+  buttonSuccess: {
+    backgroundColor: '#00aa44',  // Verde para éxito
+  },
+  buttonSubtext: {
+    fontSize: 12,
+    color: '#ffff99',
+    marginTop: 4,
+    fontWeight: '600',
   },
 
 });
