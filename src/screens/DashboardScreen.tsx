@@ -376,6 +376,14 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
       {/* BOTONES DE ACCIÓN */}
       <View style={styles.buttonsContainer}>
 
+        {/* BOTÓN DE DEBUG - SIEMPRE VISIBLE SIN CONDICIONES */}
+        <TouchableOpacity
+          style={[styles.button, styles.buttonCritical]}
+          onPress={() => Alert.alert('DEBUG', `Platform: ${Platform.OS}\nCallInterceptorModule: ${CallInterceptorModule ? 'SÍ' : 'NO'}`)}
+        >
+          <Text style={styles.buttonText}>🔍 DEBUG INFO</Text>
+        </TouchableOpacity>
+
         {/* BOTÓN CRÍTICO: Configurar como app de teléfono - SIEMPRE VISIBLE */}
         {Platform.OS === 'android' && (
           <TouchableOpacity
