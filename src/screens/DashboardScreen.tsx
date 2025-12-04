@@ -317,6 +317,21 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
 
   };
 
+  // Función para probar notificación de spam
+  const testSpamNotification = async () => {
+    if (!CallInterceptorModule) {
+      Alert.alert('Error', 'CallInterceptorModule no disponible');
+      return;
+    }
+
+    try {
+      const result = await CallInterceptorModule.testSpamNotification();
+      Alert.alert('✅ Éxito', result + '\n\n¿Apareció la notificación con botones?');
+    } catch (error: any) {
+      Alert.alert('❌ Error', error.message || 'No se pudo enviar notificación de prueba');
+    }
+  };
+
 
 
 
@@ -400,6 +415,17 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
         <TouchableOpacity style={styles.buttonTest} onPress={simulateBlockCall}>
           <Text style={styles.buttonText}>🧪 SIMULAR BLOQUEO</Text>
         </TouchableOpacity>
+
+        {/* BOTÓN TEST NOTIFICACIÓN - NUEVO */}
+        {Platform.OS === 'android' && CallInterceptorModule && (
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: '#ff9900' }]}
+            onPress={testSpamNotification}
+          >
+            <Text style={styles.buttonText}>🔔 TEST NOTIFICACIÓN</Text>
+            <Text style={styles.buttonSubtext}>Probar notificación con botones</Text>
+          </TouchableOpacity>
+        )}
 
         {/* BOTÓN DE DEBUG - AL FINAL PARA QUE SEA VISIBLE */}
         <TouchableOpacity

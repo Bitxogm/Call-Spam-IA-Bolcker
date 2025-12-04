@@ -2,9 +2,12 @@
 package com.anonymous.SpamBlockerApp;
 
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.telecom.Call;
 import android.telecom.CallScreeningService;
 import android.util.Log;
+import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.RequiresApi;
 
@@ -27,6 +30,9 @@ public class CallScreeningServiceImpl extends CallScreeningService {
         Log.d(TAG, "Número: " + callerNumber);
         Log.d(TAG, "Dirección: " + (isIncoming ? "ENTRANTE" : "SALIENTE"));
 
+        // TOAST VISIBLE para debugging
+        showToast("📞 Llamada detectada: " + callerNumber);
+
         if (!isIncoming) {
             Log.d(TAG, "Llamada saliente, ignorando");
             respondToCall(callDetails, new CallResponse.Builder().build());
@@ -45,12 +51,15 @@ public class CallScreeningServiceImpl extends CallScreeningService {
 
         if (isPotentialSpam) {
             Log.d(TAG, "🤖 SPAM POTENCIAL - Mostrando notificación");
+            showToast("🤖 SPAM DETECTADO: " + callerNumber);
 
             // Mostrar notificación con opción de contestar con IA
             SpamNotificationManager.showIncomingSpamNotification(
                 this,
                 callerNumber
             );
+
+            showToast("📲 Notificación enviada");
 
             // NO bloquear la llamada, dejar que suene
             // El usuario decidirá si contestar con IA
@@ -64,8 +73,18 @@ public class CallScreeningServiceImpl extends CallScreeningService {
             respondToCall(callDetails, response);
         } else {
             Log.d(TAG, "✅ Número conocido/confiable - Permitiendo");
+            showToast("✅ Número normal: " + callerNumber);
             respondToCall(callDetails, new CallResponse.Builder().build());
         }
+    }
+
+    /**
+     * Muestra un Toast en el hilo principal (para debugging visual)
+     */
+    private void showToast(String message) {
+        new Handler(Looper.getMainLooper()).post(() -> {
+            Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+        });
     }
 
     /**

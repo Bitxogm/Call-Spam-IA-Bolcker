@@ -123,7 +123,7 @@ public class CallInterceptorModule extends ReactContextBaseJavaModule {
     public void openPhoneSettings(Promise promise) {
         try {
             Intent intent = new Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS);
-            
+
             if (getCurrentActivity() != null) {
                 getCurrentActivity().startActivity(intent);
                 promise.resolve("Abriendo configuración de aplicaciones predeterminadas");
@@ -132,6 +132,20 @@ public class CallInterceptorModule extends ReactContextBaseJavaModule {
             }
         } catch (Exception e) {
             promise.reject("OPEN_SETTINGS_ERROR", e.getMessage());
+        }
+    }
+
+    @ReactMethod
+    public void testSpamNotification(Promise promise) {
+        try {
+            // Mostrar notificación de prueba
+            SpamNotificationManager.showIncomingSpamNotification(
+                reactContext,
+                "+34 900 123 456 (TEST)"
+            );
+            promise.resolve("Notificación de prueba enviada");
+        } catch (Exception e) {
+            promise.reject("TEST_NOTIFICATION_ERROR", e.getMessage());
         }
     }
 
