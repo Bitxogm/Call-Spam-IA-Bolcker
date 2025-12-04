@@ -49,8 +49,7 @@ public class CallScreeningServiceImpl extends CallScreeningService {
             // Mostrar notificación con opción de contestar con IA
             SpamNotificationManager.showIncomingSpamNotification(
                 this,
-                callerNumber,
-                callDetails.getTelecomCallId()
+                callerNumber
             );
 
             // NO bloquear la llamada, dejar que suene

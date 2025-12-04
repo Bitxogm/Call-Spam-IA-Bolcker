@@ -31,11 +31,9 @@ public class CallAnswerReceiver extends BroadcastReceiver {
      */
     private void handleAnswerWithAI(Context context, Intent intent) {
         String phoneNumber = intent.getStringExtra(SpamNotificationManager.EXTRA_PHONE_NUMBER);
-        String callId = intent.getStringExtra(SpamNotificationManager.EXTRA_CALL_ID);
 
         Log.d(TAG, "🤖 Usuario eligió contestar con IA");
         Log.d(TAG, "Número: " + phoneNumber);
-        Log.d(TAG, "Call ID: " + callId);
 
         // Cancelar notificación
         SpamNotificationManager.cancelNotification(context);

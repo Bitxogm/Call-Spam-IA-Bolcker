@@ -25,12 +25,11 @@ public class SpamNotificationManager {
     // Acción para contestar con IA
     public static final String ACTION_ANSWER_WITH_AI = "com.anonymous.SpamBlockerApp.ANSWER_WITH_AI";
     public static final String EXTRA_PHONE_NUMBER = "phone_number";
-    public static final String EXTRA_CALL_ID = "call_id";
 
     /**
      * Muestra notificación de spam detectado con botón para contestar con IA
      */
-    public static void showIncomingSpamNotification(Context context, String phoneNumber, String callId) {
+    public static void showIncomingSpamNotification(Context context, String phoneNumber) {
         Log.d(TAG, "📲 Mostrando notificación de spam: " + phoneNumber);
 
         NotificationManager notificationManager =
@@ -50,7 +49,6 @@ public class SpamNotificationManager {
         Intent answerIntent = new Intent(context, CallAnswerReceiver.class);
         answerIntent.setAction(ACTION_ANSWER_WITH_AI);
         answerIntent.putExtra(EXTRA_PHONE_NUMBER, phoneNumber);
-        answerIntent.putExtra(EXTRA_CALL_ID, callId);
 
         PendingIntent answerPendingIntent = PendingIntent.getBroadcast(
             context,
