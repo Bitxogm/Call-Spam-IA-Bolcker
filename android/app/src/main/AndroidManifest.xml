@@ -102,5 +102,21 @@
              android:exported="false"
              android:foregroundServiceType="phoneCall" />
 
+    <!-- CallScreeningService para detectar spam (Android 10+) -->
+    <service android:name=".CallScreeningServiceImpl"
+             android:enabled="true"
+             android:exported="true"
+             android:permission="android.permission.BIND_SCREENING_SERVICE">
+      <intent-filter>
+        <action android:name="android.telecom.CallScreeningService" />
+      </intent-filter>
+    </service>
+
+    <!-- BroadcastReceiver para acciones de notificación -->
+    <receiver android:name=".CallAnswerReceiver"
+              android:enabled="true"
+              android:exported="false">
+    </receiver>
+
   </application>
 </manifest>
