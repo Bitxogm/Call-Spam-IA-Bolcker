@@ -34,6 +34,21 @@ class DatabaseService {
     this.initDatabase();
   }
 
+  // Función para normalizar números de teléfono
+  private normalizePhoneNumber(number: string): string {
+    // Eliminar todo excepto dígitos
+    let cleaned = number.replace(/\D/g, '');
+
+    // Si empieza con código de país, obtener últimos 9 dígitos (España)
+    // Esto maneja: +34612345678 → 612345678
+    if (cleaned.length > 9) {
+      cleaned = cleaned.slice(-9);
+    }
+
+    console.log(`📞 Normalizado: "${number}" → "${cleaned}"`);
+    return cleaned;
+  }
+
   // Inicializar base de datos (versión moderna de Expo SQLite)
   private initDatabase = async () => {
     try {
@@ -111,13 +126,16 @@ class DatabaseService {
     if (!this.db) return false;
 
     try {
+      // NORMALIZAR antes de guardar
+      const normalizedNumber = this.normalizePhoneNumber(number);
+
       await this.db.runAsync(
-        `INSERT INTO spam_numbers (number, reason, source, date_added) 
+        `INSERT INTO spam_numbers (number, reason, source, date_added)
          VALUES (?, ?, ?, ?);`,
-        [number, reason, source, new Date().toISOString().split('T')[0]]
+        [normalizedNumber, reason, source, new Date().toISOString().split('T')[0]]
       );
-      
-      console.log(`✅ Número ${number} añadido a la base de datos`);
+
+      console.log(`✅ Número "${number}" normalizado a "${normalizedNumber}" y añadido a la base de datos`);
       return true;
     } catch (error) {
       console.log('❌ Error añadiendo número:', error);
@@ -165,13 +183,19 @@ class DatabaseService {
     if (!this.db) return false;
 
     try {
+      // NORMALIZAR antes de comparar
+      const normalizedNumber = this.normalizePhoneNumber(number);
+
       const result = await this.db.getFirstAsync(
-        `SELECT COUNT(*) as count FROM spam_numbers 
+        `SELECT COUNT(*) as count FROM spam_numbers
          WHERE number = ? AND is_active = 1;`,
-        [number]
+        [normalizedNumber]
       ) as { count: number } | null;
 
-      return result ? result.count > 0 : false;
+      const isSpam = result ? result.count > 0 : false;
+      console.log(`🔍 ¿"${number}" (normalizado: "${normalizedNumber}") es spam? ${isSpam ? '✅ SÍ' : '❌ NO'}`);
+
+      return isSpam;
     } catch (error) {
       console.log('❌ Error verificando número spam:', error);
       return false;
