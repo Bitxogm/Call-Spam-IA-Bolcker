@@ -151,30 +151,20 @@ public class DatabaseHelper {
             String dbPath = context.getDatabasePath(DB_NAME).getAbsolutePath();
             Log.d(TAG, "🗄️ Ruta de BD: " + dbPath);
 
-            // TOAST: Mostrar ruta de BD
-            showToast("🗄️ Buscando BD en:\n" + dbPath);
-
             if (!context.getDatabasePath(DB_NAME).exists()) {
                 Log.e(TAG, "❌ Base de datos NO EXISTE en: " + dbPath);
-                // TOAST: BD no existe
-                showToast("❌ BD NO EXISTE\n" + dbPath);
+                showToast("❌ BD NO EXISTE");
                 return false;
             }
 
             Log.d(TAG, "✅ Base de datos encontrada, abriendo...");
-            // TOAST: BD encontrada
-            showToast("✅ BD encontrada!");
-
             db = SQLiteDatabase.openDatabase(dbPath, null, SQLiteDatabase.OPEN_READONLY);
-            showToast("🔓 BD abierta OK");
-
-            // TOAST: Mostrar qué número busca
-            showToast("🔎 Buscando: " + normalizedNumber);
+            Log.d(TAG, "✅ BD abierta OK");
 
             // Query con número normalizado
             String query = "SELECT COUNT(*) FROM spam_numbers WHERE number = ? AND is_active = 1";
             cursor = db.rawQuery(query, new String[]{normalizedNumber});
-            showToast("📝 Query ejecutada");
+            Log.d(TAG, "📝 Query ejecutada");
 
             if (cursor.moveToFirst()) {
                 int count = cursor.getInt(0);
@@ -182,27 +172,22 @@ public class DatabaseHelper {
 
                 Log.d(TAG, "🔍 ¿\"" + number + "\" (normalizado: \"" + normalizedNumber + "\") es spam? " + (isSpam ? "✅ SÍ" : "❌ NO"));
 
-                // TOAST: Mostrar count encontrado
-                showToast("📊 Count=" + count + " isSpam=" + isSpam);
-
-                // TOAST: Resultado de la consulta
-                if (isSpam) {
-                    showToast("🚫 SPAM DETECTADO!\n" + normalizedNumber + "\n(en lista negra)");
-                } else {
-                    showToast("✅ Número normal\n" + normalizedNumber + "\n(no en lista)");
-                }
+                // ÚNICO TOAST: Resultado final
+                String resultado = "🔎 " + normalizedNumber + "\n" +
+                                 "📊 BD Count=" + count + "\n" +
+                                 (isSpam ? "🚫 SPAM!" : "✅ Normal");
+                showToast(resultado);
 
                 return isSpam;
             } else {
-                showToast("⚠️ Cursor vacío (no moveToFirst)");
+                showToast("⚠️ Query sin resultados");
+                return false;
             }
-
-            return false;
 
         } catch (Exception e) {
             Log.e(TAG, "❌ Error verificando número spam: " + e.getMessage(), e);
-            // TOAST: Error
-            showToast("❌ ERROR BD:\n" + e.getMessage());
+            String errorMsg = "❌ ERROR: " + (e.getMessage() != null ? e.getMessage() : "desconocido");
+            showToast(errorMsg);
             return false;
         } finally {
             // Cerrar recursos
