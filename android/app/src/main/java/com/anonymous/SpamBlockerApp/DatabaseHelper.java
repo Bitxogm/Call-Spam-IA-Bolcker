@@ -164,17 +164,26 @@ public class DatabaseHelper {
             Log.d(TAG, "✅ Base de datos encontrada, abriendo...");
             // TOAST: BD encontrada
             showToast("✅ BD encontrada!");
+
             db = SQLiteDatabase.openDatabase(dbPath, null, SQLiteDatabase.OPEN_READONLY);
+            showToast("🔓 BD abierta OK");
+
+            // TOAST: Mostrar qué número busca
+            showToast("🔎 Buscando: " + normalizedNumber);
 
             // Query con número normalizado
             String query = "SELECT COUNT(*) FROM spam_numbers WHERE number = ? AND is_active = 1";
             cursor = db.rawQuery(query, new String[]{normalizedNumber});
+            showToast("📝 Query ejecutada");
 
             if (cursor.moveToFirst()) {
                 int count = cursor.getInt(0);
                 boolean isSpam = count > 0;
 
                 Log.d(TAG, "🔍 ¿\"" + number + "\" (normalizado: \"" + normalizedNumber + "\") es spam? " + (isSpam ? "✅ SÍ" : "❌ NO"));
+
+                // TOAST: Mostrar count encontrado
+                showToast("📊 Count=" + count + " isSpam=" + isSpam);
 
                 // TOAST: Resultado de la consulta
                 if (isSpam) {
@@ -184,6 +193,8 @@ public class DatabaseHelper {
                 }
 
                 return isSpam;
+            } else {
+                showToast("⚠️ Cursor vacío (no moveToFirst)");
             }
 
             return false;
