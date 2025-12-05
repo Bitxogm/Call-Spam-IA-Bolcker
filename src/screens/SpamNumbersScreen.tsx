@@ -11,8 +11,9 @@ import {
   Modal 
 } from 'react-native';
 
-// Importar nuestro servicio de base de datos
+// Importar servicios
 import { databaseService, SpamNumber } from '../services/DataBaseService';
+import { blacklistService } from '../services/BlacklistService';
 
 // Props de la pantalla
 type SpamNumbersScreenProps = {
@@ -67,13 +68,18 @@ export default function SpamNumbersScreen({ navigation }: SpamNumbersScreenProps
       `¿Seguro que quieres eliminar ${number}?`,
       [
         { text: "Cancelar", style: "cancel" },
-        { 
-          text: "Eliminar", 
+        {
+          text: "Eliminar",
           style: "destructive",
           onPress: async () => {
             try {
-              const success = await databaseService.deleteSpamNumber(id);
-              if (success) {
+              // ✅ DUAL STORAGE: Eliminar de ambos lados
+              const [prefsSuccess, dbSuccess] = await Promise.all([
+                blacklistService.removeNumber(number),
+                databaseService.deleteSpamNumber(id)
+              ]);
+
+              if (prefsSuccess && dbSuccess) {
                 // Recargar la lista desde la base de datos
                 await loadSpamNumbers();
                 Alert.alert("✅ Eliminado", "Número eliminado de la lista negra");
@@ -98,13 +104,17 @@ export default function SpamNumbersScreen({ navigation }: SpamNumbersScreenProps
     }
 
     try {
-      const success = await databaseService.addSpamNumber(
-        newNumber.trim(),
-        newReason.trim() || 'Sin motivo especificado',
-        'manual'
-      );
+      // ✅ DUAL STORAGE: SharedPreferences (para bloqueo) + SQLite (para UI)
+      const [prefsSuccess, dbSuccess] = await Promise.all([
+        blacklistService.addNumber(newNumber.trim()),
+        databaseService.addSpamNumber(
+          newNumber.trim(),
+          newReason.trim() || 'Sin motivo especificado',
+          'manual'
+        )
+      ]);
 
-      if (success) {
+      if (prefsSuccess && dbSuccess) {
         // Recargar la lista desde la base de datos
         await loadSpamNumbers();
         setNewNumber(''); // Limpiar formulario
@@ -135,20 +145,20 @@ export default function SpamNumbersScreen({ navigation }: SpamNumbersScreenProps
 
     try {
       let addedCount = 0;
-      
+
       for (const { prefix, reason } of prefixes) {
         const numberPattern = `${prefix}XXXXXX`;
-        
+
         // Verificar si ya existe
         const exists = await databaseService.isSpamNumber(numberPattern);
-        
+
         if (!exists) {
-          const success = await databaseService.addSpamNumber(
-            numberPattern,
-            reason,
-            'auto'
-          );
-          if (success) addedCount++;
+          // ✅ DUAL STORAGE: Añadir a ambos lados
+          const [prefsSuccess, dbSuccess] = await Promise.all([
+            blacklistService.addNumber(numberPattern),
+            databaseService.addSpamNumber(numberPattern, reason, 'auto')
+          ]);
+          if (prefsSuccess && dbSuccess) addedCount++;
         }
       }
 
