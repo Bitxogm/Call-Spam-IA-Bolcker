@@ -20,6 +20,83 @@ public class DatabaseHelper {
 
     public DatabaseHelper(Context context) {
         this.context = context;
+        // Asegurar que la base de datos existe al inicializar
+        ensureDatabaseExists();
+    }
+
+    /**
+     * Asegura que la base de datos existe y tiene las tablas necesarias
+     * Crea la BD si no existe (mismo esquema que TypeScript)
+     */
+    private void ensureDatabaseExists() {
+        try {
+            String dbPath = context.getDatabasePath(DB_NAME).getAbsolutePath();
+
+            // Si no existe, crearla
+            if (!context.getDatabasePath(DB_NAME).exists()) {
+                Log.d(TAG, "🔨 Base de datos no existe, creando...");
+                showToast("🔨 Creando BD...");
+
+                // Crear directorio si no existe
+                context.getDatabasePath(DB_NAME).getParentFile().mkdirs();
+
+                // Crear base de datos
+                SQLiteDatabase db = SQLiteDatabase.openOrCreateDatabase(dbPath, null);
+
+                // Crear tablas (mismo esquema que TypeScript)
+                createTables(db);
+
+                db.close();
+
+                Log.d(TAG, "✅ Base de datos creada exitosamente");
+                showToast("✅ BD creada!");
+            } else {
+                Log.d(TAG, "✅ Base de datos ya existe");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "❌ Error asegurando base de datos: " + e.getMessage(), e);
+            showToast("❌ Error creando BD:\n" + e.getMessage());
+        }
+    }
+
+    /**
+     * Crea las tablas de la base de datos (mismo esquema que TypeScript)
+     */
+    private void createTables(SQLiteDatabase db) {
+        // Tabla: spam_numbers (números en lista negra)
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS spam_numbers (" +
+            "  id INTEGER PRIMARY KEY AUTOINCREMENT," +
+            "  number TEXT UNIQUE NOT NULL," +
+            "  reason TEXT," +
+            "  source TEXT NOT NULL," +
+            "  date_added TEXT NOT NULL," +
+            "  is_active INTEGER DEFAULT 1" +
+            ");"
+        );
+
+        // Tabla: call_history (historial de llamadas)
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS call_history (" +
+            "  id INTEGER PRIMARY KEY AUTOINCREMENT," +
+            "  phone_number TEXT NOT NULL," +
+            "  call_date TEXT NOT NULL," +
+            "  was_blocked INTEGER NOT NULL," +
+            "  block_reason TEXT," +
+            "  ai_conversation_id TEXT" +
+            ");"
+        );
+
+        // Tabla: app_settings (configuración)
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS app_settings (" +
+            "  id INTEGER PRIMARY KEY AUTOINCREMENT," +
+            "  setting_key TEXT UNIQUE NOT NULL," +
+            "  setting_value TEXT NOT NULL" +
+            ");"
+        );
+
+        Log.d(TAG, "✅ Tablas creadas: spam_numbers, call_history, app_settings");
     }
 
     /**
