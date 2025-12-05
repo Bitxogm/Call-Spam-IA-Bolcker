@@ -18,15 +18,15 @@ import androidx.annotation.RequiresApi;
 @RequiresApi(api = Build.VERSION_CODES.Q)
 public class CallScreeningServiceImpl extends CallScreeningService {
     private static final String TAG = "CallScreeningService";
-    private DatabaseHelper dbHelper;
+    private SharedPreferencesHelper prefsHelper;
 
     @Override
     public void onScreenCall(@NonNull Call.Details callDetails) {
         Log.d(TAG, "📞 Nueva llamada detectada");
 
-        // Inicializar helper de base de datos
-        if (dbHelper == null) {
-            dbHelper = new DatabaseHelper(this);
+        // Inicializar helper de SharedPreferences
+        if (prefsHelper == null) {
+            prefsHelper = new SharedPreferencesHelper(this);
         }
 
         // Obtener información de la llamada
@@ -145,9 +145,10 @@ public class CallScreeningServiceImpl extends CallScreeningService {
             return true;
         }
 
-        // 3. ✅ VERIFICAR EN BASE DE DATOS DE SPAM
-        if (dbHelper != null && dbHelper.isSpamNumber(number)) {
+        // 3. ✅ VERIFICAR EN LISTA NEGRA (SharedPreferences)
+        if (prefsHelper != null && prefsHelper.isInBlacklist(number)) {
             Log.d(TAG, "🚫 Número en LISTA NEGRA");
+            showToast("🚫 SPAM DETECTADO: " + number);
             return true;
         }
 

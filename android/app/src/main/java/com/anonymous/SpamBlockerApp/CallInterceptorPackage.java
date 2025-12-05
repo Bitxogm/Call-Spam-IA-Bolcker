@@ -16,6 +16,7 @@ public class CallInterceptorPackage implements ReactPackage {
     public List<NativeModule> createNativeModules(ReactApplicationContext reactContext) {
         List<NativeModule> modules = new ArrayList<>();
         modules.add(new CallInterceptorModule(reactContext));
+        modules.add(new BlacklistModule(reactContext));  // ✅ Añadir módulo de blacklist
         return modules;
     }
 
