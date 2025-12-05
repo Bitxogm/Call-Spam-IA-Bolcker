@@ -12,7 +12,7 @@ import android.util.Log;
  */
 public class DatabaseHelper {
     private static final String TAG = "DatabaseHelper";
-    private static final String DB_NAME = "spam_blocker.db";
+    private static final String DB_NAME = "spamBlocker.db";  // ✅ Debe coincidir con TypeScript
     private Context context;
 
     public DatabaseHelper(Context context) {
@@ -60,6 +60,14 @@ public class DatabaseHelper {
         try {
             // Abrir base de datos (readonly)
             String dbPath = context.getDatabasePath(DB_NAME).getAbsolutePath();
+            Log.d(TAG, "🗄️ Ruta de BD: " + dbPath);
+
+            if (!context.getDatabasePath(DB_NAME).exists()) {
+                Log.e(TAG, "❌ Base de datos NO EXISTE en: " + dbPath);
+                return false;
+            }
+
+            Log.d(TAG, "✅ Base de datos encontrada, abriendo...");
             db = SQLiteDatabase.openDatabase(dbPath, null, SQLiteDatabase.OPEN_READONLY);
 
             // Query con número normalizado
