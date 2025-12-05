@@ -222,6 +222,60 @@ class DatabaseService {
 
   // MÉTODOS PARA HISTORIAL DE LLAMADAS
 
+  // 🔍 MÉTODO DEBUG: Información de la base de datos
+  getDebugInfo = async (): Promise<{
+    dbPath: string;
+    totalNumbers: number;
+    activeNumbers: number;
+    inactiveNumbers: number;
+    numbers: Array<{ number: string; normalized: string; is_active: boolean }>;
+  }> => {
+    if (!this.db) {
+      return {
+        dbPath: 'BD no inicializada',
+        totalNumbers: 0,
+        activeNumbers: 0,
+        inactiveNumbers: 0,
+        numbers: []
+      };
+    }
+
+    try {
+      // Obtener todos los números (activos e inactivos)
+      const allNumbers = await this.db.getAllAsync(
+        `SELECT number, is_active FROM spam_numbers;`
+      ) as Array<{ number: string; is_active: number }>;
+
+      const numbers = allNumbers.map(row => ({
+        number: row.number,
+        normalized: this.normalizePhoneNumber(row.number),
+        is_active: row.is_active === 1
+      }));
+
+      const activeCount = numbers.filter(n => n.is_active).length;
+      const inactiveCount = numbers.filter(n => !n.is_active).length;
+
+      return {
+        dbPath: '/data/data/com.anonymous.SpamBlockerApp/databases/spamBlocker.db',
+        totalNumbers: numbers.length,
+        activeNumbers: activeCount,
+        inactiveNumbers: inactiveCount,
+        numbers
+      };
+    } catch (error) {
+      console.log('❌ Error obteniendo debug info:', error);
+      return {
+        dbPath: 'Error',
+        totalNumbers: 0,
+        activeNumbers: 0,
+        inactiveNumbers: 0,
+        numbers: []
+      };
+    }
+  };
+
+  // MÉTODOS PARA HISTORIAL DE LLAMADAS
+
   // Registrar llamada bloqueada
   logBlockedCall = async (phoneNumber: string, reason: string): Promise<boolean> => {
     if (!this.db) return false;
