@@ -129,13 +129,31 @@ class DatabaseService {
       // NORMALIZAR antes de guardar
       const normalizedNumber = this.normalizePhoneNumber(number);
 
-      await this.db.runAsync(
-        `INSERT INTO spam_numbers (number, reason, source, date_added)
-         VALUES (?, ?, ?, ?);`,
-        [normalizedNumber, reason, source, new Date().toISOString().split('T')[0]]
-      );
+      // Verificar si el número ya existe (activo o inactivo)
+      const existing = await this.db.getFirstAsync(
+        `SELECT id, is_active FROM spam_numbers WHERE number = ?;`,
+        [normalizedNumber]
+      ) as { id: number; is_active: number } | null;
 
-      console.log(`✅ Número "${number}" normalizado a "${normalizedNumber}" y añadido a la base de datos`);
+      if (existing) {
+        // Si existe, reactivarlo y actualizar
+        await this.db.runAsync(
+          `UPDATE spam_numbers
+           SET is_active = 1, reason = ?, source = ?, date_added = ?
+           WHERE number = ?;`,
+          [reason, source, new Date().toISOString().split('T')[0], normalizedNumber]
+        );
+        console.log(`♻️ Número "${number}" (${normalizedNumber}) reactivado en la base de datos`);
+      } else {
+        // Si no existe, insertarlo nuevo
+        await this.db.runAsync(
+          `INSERT INTO spam_numbers (number, reason, source, date_added)
+           VALUES (?, ?, ?, ?);`,
+          [normalizedNumber, reason, source, new Date().toISOString().split('T')[0]]
+        );
+        console.log(`✅ Número "${number}" normalizado a "${normalizedNumber}" y añadido a la base de datos`);
+      }
+
       return true;
     } catch (error) {
       console.log('❌ Error añadiendo número:', error);
