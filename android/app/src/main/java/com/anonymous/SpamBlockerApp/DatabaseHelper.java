@@ -4,7 +4,10 @@ package com.anonymous.SpamBlockerApp;
 import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
+import android.widget.Toast;
 
 /**
  * Helper para acceder a la base de datos de spam desde Java/Android nativo
@@ -17,6 +20,15 @@ public class DatabaseHelper {
 
     public DatabaseHelper(Context context) {
         this.context = context;
+    }
+
+    /**
+     * Muestra un Toast en el hilo principal (para debugging visual)
+     */
+    private void showToast(String message) {
+        new Handler(Looper.getMainLooper()).post(() -> {
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show();
+        });
     }
 
     /**
@@ -62,12 +74,19 @@ public class DatabaseHelper {
             String dbPath = context.getDatabasePath(DB_NAME).getAbsolutePath();
             Log.d(TAG, "🗄️ Ruta de BD: " + dbPath);
 
+            // TOAST: Mostrar ruta de BD
+            showToast("🗄️ Buscando BD en:\n" + dbPath);
+
             if (!context.getDatabasePath(DB_NAME).exists()) {
                 Log.e(TAG, "❌ Base de datos NO EXISTE en: " + dbPath);
+                // TOAST: BD no existe
+                showToast("❌ BD NO EXISTE\n" + dbPath);
                 return false;
             }
 
             Log.d(TAG, "✅ Base de datos encontrada, abriendo...");
+            // TOAST: BD encontrada
+            showToast("✅ BD encontrada!");
             db = SQLiteDatabase.openDatabase(dbPath, null, SQLiteDatabase.OPEN_READONLY);
 
             // Query con número normalizado
@@ -79,6 +98,14 @@ public class DatabaseHelper {
                 boolean isSpam = count > 0;
 
                 Log.d(TAG, "🔍 ¿\"" + number + "\" (normalizado: \"" + normalizedNumber + "\") es spam? " + (isSpam ? "✅ SÍ" : "❌ NO"));
+
+                // TOAST: Resultado de la consulta
+                if (isSpam) {
+                    showToast("🚫 SPAM DETECTADO!\n" + normalizedNumber + "\n(en lista negra)");
+                } else {
+                    showToast("✅ Número normal\n" + normalizedNumber + "\n(no en lista)");
+                }
+
                 return isSpam;
             }
 
@@ -86,6 +113,8 @@ public class DatabaseHelper {
 
         } catch (Exception e) {
             Log.e(TAG, "❌ Error verificando número spam: " + e.getMessage(), e);
+            // TOAST: Error
+            showToast("❌ ERROR BD:\n" + e.getMessage());
             return false;
         } finally {
             // Cerrar recursos
