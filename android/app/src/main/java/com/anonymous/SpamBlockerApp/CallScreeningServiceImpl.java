@@ -18,10 +18,16 @@ import androidx.annotation.RequiresApi;
 @RequiresApi(api = Build.VERSION_CODES.Q)
 public class CallScreeningServiceImpl extends CallScreeningService {
     private static final String TAG = "CallScreeningService";
+    private DatabaseHelper dbHelper;
 
     @Override
     public void onScreenCall(@NonNull Call.Details callDetails) {
         Log.d(TAG, "📞 Nueva llamada detectada");
+
+        // Inicializar helper de base de datos
+        if (dbHelper == null) {
+            dbHelper = new DatabaseHelper(this);
+        }
 
         // Obtener información de la llamada
         String callerNumber = getCallerNumber(callDetails);
@@ -139,9 +145,11 @@ public class CallScreeningServiceImpl extends CallScreeningService {
             return true;
         }
 
-        // 3. TODO: Verificar en base de datos de spam
-        // Por ahora, todos los números no conocidos mostrarán notificación
-        // En siguiente fase integraremos con la base de datos
+        // 3. ✅ VERIFICAR EN BASE DE DATOS DE SPAM
+        if (dbHelper != null && dbHelper.isSpamNumber(number)) {
+            Log.d(TAG, "🚫 Número en LISTA NEGRA");
+            return true;
+        }
 
         Log.d(TAG, "✅ Número normal: " + number);
         return false;  // Número normal, no mostrar notificación
