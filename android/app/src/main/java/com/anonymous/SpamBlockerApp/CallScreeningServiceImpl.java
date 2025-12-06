@@ -125,12 +125,28 @@ public class CallScreeningServiceImpl extends CallScreeningService {
 
     /**
      * Decide si mostrar notificación de spam
+     * ORDEN DE PRIORIDAD:
+     * 1. Blacklist (máxima prioridad, incluso sobre contactos)
+     * 2. Contactos (whitelist automática)
+     * 3. Modo Radical (si NO es contacto)
+     * 4. Números desconocidos/privados
+     * 5. Números premium (900, 902, etc.)
      */
     private boolean shouldShowNotification(String number) {
-        // ✅ PRIMERO: Verificar si está en CONTACTOS (Whitelist automática)
+        // 🚫 PRIORIDAD 1: BLACKLIST (incluso si es contacto)
+        if (prefsHelper != null && prefsHelper.isInBlacklist(number)) {
+            Log.d(TAG, "🚫 Número en LISTA NEGRA - BLOQUEAR");
+            showToast("🚫 SPAM DETECTADO: " + number);
+            return true;
+        }
+
+        // 👤 PRIORIDAD 2: Verificar si está en CONTACTOS (Whitelist automática)
+        boolean isContact = false;
+        ContactsHelper.ContactInfo contact = null;
         try {
-            ContactsHelper.ContactInfo contact = contactsHelper.findContactByNumber(number);
+            contact = contactsHelper.findContactByNumber(number);
             if (contact != null) {
+                isContact = true;
                 Log.d(TAG, "👤 ES CONTACTO: " + contact.name + " - PERMITIR");
                 showToast("👤 Contacto: " + contact.name);
                 return false;  // NO mostrar notificación, es contacto conocido
@@ -139,25 +155,23 @@ public class CallScreeningServiceImpl extends CallScreeningService {
             Log.e(TAG, "Error verificando contactos: " + e.getMessage());
         }
 
-        // 📵 MODO RADICAL: Si está activo, bloquear TODO lo que NO sea contacto
+        // 📵 PRIORIDAD 3: MODO RADICAL (solo si NO es contacto)
         boolean modoRadical = isModoRadicalEnabled();
-        if (modoRadical) {
+        if (modoRadical && !isContact) {
             Log.d(TAG, "🚫 MODO RADICAL ACTIVO - NO es contacto → BLOQUEAR");
             showToast("🚫 MODO RADICAL: No es contacto");
             return true;  // Mostrar notificación de spam
         }
 
-        // Casos donde mostrar notificación:
-
-        // 1. Número desconocido/privado
+        // 📱 PRIORIDAD 4: Número desconocido/privado
         if (number.equals("Desconocido") ||
             number.equals("Privado") ||
             number.equals("Número oculto")) {
-            Log.d(TAG, "📱 Número desconocido");
+            Log.d(TAG, "📱 Número desconocido - BLOQUEAR");
             return true;
         }
 
-        // 2. Números 900, 901, 902 (números de tarificación especial)
+        // 📞 PRIORIDAD 5: Números premium (900, 901, 902, etc.)
         String cleaned = number.replaceAll("[^0-9]", "");
         if (cleaned.startsWith("900") ||
             cleaned.startsWith("901") ||
@@ -165,17 +179,11 @@ public class CallScreeningServiceImpl extends CallScreeningService {
             cleaned.startsWith("803") ||
             cleaned.startsWith("806") ||
             cleaned.startsWith("807")) {
-            Log.d(TAG, "📞 Número de tarificación especial");
+            Log.d(TAG, "📞 Número de tarificación especial - BLOQUEAR");
             return true;
         }
 
-        // 3. ✅ VERIFICAR EN LISTA NEGRA (SharedPreferences)
-        if (prefsHelper != null && prefsHelper.isInBlacklist(number)) {
-            Log.d(TAG, "🚫 Número en LISTA NEGRA");
-            showToast("🚫 SPAM DETECTADO: " + number);
-            return true;
-        }
-
+        // ✅ Todo lo demás: Número normal
         Log.d(TAG, "✅ Número normal: " + number);
         return false;  // Número normal, no mostrar notificación
     }
