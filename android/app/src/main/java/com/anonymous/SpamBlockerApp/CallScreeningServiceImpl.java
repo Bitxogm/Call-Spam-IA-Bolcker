@@ -69,6 +69,13 @@ public class CallScreeningServiceImpl extends CallScreeningService {
 
             // 🎯 ANSWER+HANGUP: Si está activado, contestar silenciosamente y colgar
             try {
+                // DEBUG: Verificar estado de Answer+Hangup
+                boolean answerHangupHelperIsNull = (answerHangupHelper == null);
+                boolean answerHangupIsEnabled = (answerHangupHelper != null && answerHangupHelper.isEnabled());
+                Log.d(TAG, "🔍 DEBUG - answerHangupHelper null? " + answerHangupHelperIsNull);
+                Log.d(TAG, "🔍 DEBUG - isEnabled()? " + answerHangupIsEnabled);
+                showToast("🔍 A+H: null=" + answerHangupHelperIsNull + ", enabled=" + answerHangupIsEnabled);
+
                 if (answerHangupHelper != null && answerHangupHelper.isEnabled()) {
                     Log.d(TAG, "🔇 Answer+Hangup ACTIVO - Marcar para colgar");
                     showToast("🔇 Spam: Contestar y colgar automáticamente");
