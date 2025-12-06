@@ -51,18 +51,12 @@ public class CallStateReceiver extends BroadcastReceiver {
 
         Log.d(TAG, "📞 Estado de llamada: " + state);
 
-        switch (state) {
-            case TelephonyManager.EXTRA_STATE_RINGING:
-                handleRinging(context, intent);
-                break;
-
-            case TelephonyManager.EXTRA_STATE_OFFHOOK:
-                handleOffhook(context, intent);
-                break;
-
-            case TelephonyManager.EXTRA_STATE_IDLE:
-                handleIdle(context);
-                break;
+        if (TelephonyManager.EXTRA_STATE_RINGING.equals(state)) {
+            handleRinging(context, intent);
+        } else if (TelephonyManager.EXTRA_STATE_OFFHOOK.equals(state)) {
+            handleOffhook(context, intent);
+        } else if (TelephonyManager.EXTRA_STATE_IDLE.equals(state)) {
+            handleIdle(context);
         }
     }
 
