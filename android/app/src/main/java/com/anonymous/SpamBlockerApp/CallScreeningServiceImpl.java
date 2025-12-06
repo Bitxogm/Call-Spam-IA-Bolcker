@@ -20,6 +20,7 @@ public class CallScreeningServiceImpl extends CallScreeningService {
     private static final String TAG = "CallScreeningService";
     private SharedPreferencesHelper prefsHelper;
     private ContactsHelper contactsHelper;
+    private AnswerHangupHelper answerHangupHelper;
 
     @Override
     public void onScreenCall(@NonNull Call.Details callDetails) {
@@ -31,6 +32,9 @@ public class CallScreeningServiceImpl extends CallScreeningService {
         }
         if (contactsHelper == null) {
             contactsHelper = new ContactsHelper(this);
+        }
+        if (answerHangupHelper == null) {
+            answerHangupHelper = new AnswerHangupHelper(this);
         }
 
         // Obtener información de la llamada
@@ -60,27 +64,48 @@ public class CallScreeningServiceImpl extends CallScreeningService {
         boolean isPotentialSpam = shouldShowNotification(callerNumber);
 
         if (isPotentialSpam) {
-            Log.d(TAG, "🤖 SPAM POTENCIAL - Mostrando notificación");
+            Log.d(TAG, "🤖 SPAM POTENCIAL");
             showToast("🤖 SPAM DETECTADO: " + callerNumber);
 
-            // Mostrar notificación con opción de contestar con IA
-            SpamNotificationManager.showIncomingSpamNotification(
-                this,
-                callerNumber
-            );
+            // 🎯 ANSWER+HANGUP: Si está activado, contestar silenciosamente y colgar
+            if (answerHangupHelper.isEnabled()) {
+                Log.d(TAG, "🔇 Answer+Hangup ACTIVO - Marcar para colgar");
+                showToast("🔇 Spam: Contestar y colgar automáticamente");
 
-            showToast("📲 Notificación enviada");
+                // Marcar número para answer+hangup
+                answerHangupHelper.markForAnswerHangup(callerNumber);
 
-            // NO bloquear la llamada, dejar que suene
-            // El usuario decidirá si contestar con IA
-            CallResponse response = new CallResponse.Builder()
-                .setDisallowCall(false)  // NO bloquear
-                .setRejectCall(false)    // NO rechazar
-                .setSkipCallLog(false)   // SÍ registrar en log
-                .setSkipNotification(false)  // SÍ mostrar notificación del sistema
-                .build();
+                // Aceptar llamada en SILENCIO (CallStateReceiver se encargará de colgar)
+                CallResponse response = new CallResponse.Builder()
+                    .setDisallowCall(false)      // NO bloquear (permitir)
+                    .setRejectCall(false)        // NO rechazar (aceptar)
+                    .setSilenceCall(true)        // ✅ SILENCIAR (no suena)
+                    .setSkipCallLog(false)       // SÍ registrar en log
+                    .setSkipNotification(true)   // NO mostrar notificación (silencioso)
+                    .build();
 
-            respondToCall(callDetails, response);
+                respondToCall(callDetails, response);
+            } else {
+                // Modo normal: Mostrar notificación
+                Log.d(TAG, "📲 Mostrando notificación de spam");
+                SpamNotificationManager.showIncomingSpamNotification(
+                    this,
+                    callerNumber
+                );
+
+                showToast("📲 Notificación enviada");
+
+                // NO bloquear la llamada, dejar que suene
+                // El usuario decidirá si contestar con IA
+                CallResponse response = new CallResponse.Builder()
+                    .setDisallowCall(false)  // NO bloquear
+                    .setRejectCall(false)    // NO rechazar
+                    .setSkipCallLog(false)   // SÍ registrar en log
+                    .setSkipNotification(false)  // SÍ mostrar notificación del sistema
+                    .build();
+
+                respondToCall(callDetails, response);
+            }
         } else {
             Log.d(TAG, "✅ Número conocido/confiable - Permitiendo");
             showToast("✅ Número normal: " + callerNumber);

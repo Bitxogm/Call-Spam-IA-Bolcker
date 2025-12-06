@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { check, request, PERMISSIONS, RESULTS } from 'react-native-permissions';
 import ContactsService from '../services/ContactsService';
+import AnswerHangupService from '../services/AnswerHangupService';
 
 type WhitelistScreenProps = {
   navigation: any;
@@ -20,6 +21,8 @@ type WhitelistScreenProps = {
 export default function WhitelistScreen({ navigation }: WhitelistScreenProps) {
   const [modoRadical, setModoRadical] = useState(false);
   const [hasContactsPermission, setHasContactsPermission] = useState(false);
+  const [answerHangupEnabled, setAnswerHangupEnabled] = useState(false);
+  const [hangupDelay, setHangupDelay] = useState(2);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -28,13 +31,22 @@ export default function WhitelistScreen({ navigation }: WhitelistScreenProps) {
   }, []);
 
   /**
-   * Carga la configuración actual del Modo Radical
+   * Carga la configuración actual del Modo Radical y Answer+Hangup
    */
   const loadSettings = async () => {
     try {
-      const enabled = await ContactsService.isModoRadicalEnabled();
-      setModoRadical(enabled);
-      console.log(`🔧 Modo Radical: ${enabled ? 'ACTIVADO' : 'DESACTIVADO'}`);
+      const [radicalEnabled, ahEnabled, delay] = await Promise.all([
+        ContactsService.isModoRadicalEnabled(),
+        AnswerHangupService.isEnabled(),
+        AnswerHangupService.getHangupDelay()
+      ]);
+
+      setModoRadical(radicalEnabled);
+      setAnswerHangupEnabled(ahEnabled);
+      setHangupDelay(delay);
+
+      console.log(`🔧 Modo Radical: ${radicalEnabled ? 'ON' : 'OFF'}`);
+      console.log(`🔇 Answer+Hangup: ${ahEnabled ? 'ON' : 'OFF'}, Delay: ${delay}s`);
     } catch (error) {
       console.error('❌ Error cargando settings:', error);
     } finally {
