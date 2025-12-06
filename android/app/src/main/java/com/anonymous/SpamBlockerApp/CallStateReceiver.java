@@ -99,9 +99,12 @@ public class CallStateReceiver extends BroadcastReceiver {
 
             showToast(context, "🔇 Llamada spam contestada silenciosamente");
 
+            // Crear variable final para lambda
+            final String numberToHangup = incomingNumber;
+
             // Esperar delay y colgar
             new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                hangupCall(context, incomingNumber);
+                hangupCall(context, numberToHangup);
             }, delay * 1000L);
         }
     }
