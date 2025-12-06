@@ -68,24 +68,25 @@ public class CallScreeningServiceImpl extends CallScreeningService {
             showToast("🤖 SPAM DETECTADO: " + callerNumber);
 
             // 🎯 ANSWER+HANGUP: Si está activado, contestar silenciosamente y colgar
-            if (answerHangupHelper.isEnabled()) {
-                Log.d(TAG, "🔇 Answer+Hangup ACTIVO - Marcar para colgar");
-                showToast("🔇 Spam: Contestar y colgar automáticamente");
+            try {
+                if (answerHangupHelper != null && answerHangupHelper.isEnabled()) {
+                    Log.d(TAG, "🔇 Answer+Hangup ACTIVO - Marcar para colgar");
+                    showToast("🔇 Spam: Contestar y colgar automáticamente");
 
-                // Marcar número para answer+hangup
-                answerHangupHelper.markForAnswerHangup(callerNumber);
+                    // Marcar número para answer+hangup
+                    answerHangupHelper.markForAnswerHangup(callerNumber);
 
-                // Aceptar llamada en SILENCIO (CallStateReceiver se encargará de colgar)
-                CallResponse response = new CallResponse.Builder()
-                    .setDisallowCall(false)      // NO bloquear (permitir)
-                    .setRejectCall(false)        // NO rechazar (aceptar)
-                    .setSilenceCall(true)        // ✅ SILENCIAR (no suena)
-                    .setSkipCallLog(false)       // SÍ registrar en log
-                    .setSkipNotification(true)   // NO mostrar notificación (silencioso)
-                    .build();
+                    // Aceptar llamada en SILENCIO (CallStateReceiver se encargará de colgar)
+                    CallResponse response = new CallResponse.Builder()
+                        .setDisallowCall(false)      // NO bloquear (permitir)
+                        .setRejectCall(false)        // NO rechazar (aceptar)
+                        .setSilenceCall(true)        // ✅ SILENCIAR (no suena)
+                        .setSkipCallLog(false)       // SÍ registrar en log
+                        .setSkipNotification(true)   // NO mostrar notificación (silencioso)
+                        .build();
 
-                respondToCall(callDetails, response);
-            } else {
+                    respondToCall(callDetails, response);
+                } else {
                 // Modo normal: Mostrar notificación
                 Log.d(TAG, "📲 Mostrando notificación de spam");
                 SpamNotificationManager.showIncomingSpamNotification(
@@ -104,6 +105,20 @@ public class CallScreeningServiceImpl extends CallScreeningService {
                     .setSkipNotification(false)  // SÍ mostrar notificación del sistema
                     .build();
 
+                respondToCall(callDetails, response);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "❌ Error en Answer+Hangup: " + e.getMessage(), e);
+                showToast("❌ Error Answer+Hangup: " + e.getMessage());
+
+                // Fallback: Modo normal con notificación
+                SpamNotificationManager.showIncomingSpamNotification(this, callerNumber);
+                CallResponse response = new CallResponse.Builder()
+                    .setDisallowCall(false)
+                    .setRejectCall(false)
+                    .setSkipCallLog(false)
+                    .setSkipNotification(false)
+                    .build();
                 respondToCall(callDetails, response);
             }
         } else {
