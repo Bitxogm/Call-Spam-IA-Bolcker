@@ -396,6 +396,13 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
         </TouchableOpacity>
 
         <TouchableOpacity
+          style={styles.button}
+          onPress={() => navigation.navigate('Whitelist')}
+        >
+          <Text style={styles.buttonText}>👥 Whitelist de Contactos</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
           style={[styles.button, radicalMode ? styles.radicalButton : styles.normalButton]}
           onPress={toggleRadicalMode}
         >

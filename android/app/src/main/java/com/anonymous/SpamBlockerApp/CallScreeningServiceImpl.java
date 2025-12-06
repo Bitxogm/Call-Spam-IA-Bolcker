@@ -19,14 +19,18 @@ import androidx.annotation.RequiresApi;
 public class CallScreeningServiceImpl extends CallScreeningService {
     private static final String TAG = "CallScreeningService";
     private SharedPreferencesHelper prefsHelper;
+    private ContactsHelper contactsHelper;
 
     @Override
     public void onScreenCall(@NonNull Call.Details callDetails) {
         Log.d(TAG, "📞 Nueva llamada detectada");
 
-        // Inicializar helper de SharedPreferences
+        // Inicializar helpers
         if (prefsHelper == null) {
             prefsHelper = new SharedPreferencesHelper(this);
+        }
+        if (contactsHelper == null) {
+            contactsHelper = new ContactsHelper(this);
         }
 
         // Obtener información de la llamada
@@ -123,6 +127,26 @@ public class CallScreeningServiceImpl extends CallScreeningService {
      * Decide si mostrar notificación de spam
      */
     private boolean shouldShowNotification(String number) {
+        // ✅ PRIMERO: Verificar si está en CONTACTOS (Whitelist automática)
+        try {
+            ContactsHelper.ContactInfo contact = contactsHelper.findContactByNumber(number);
+            if (contact != null) {
+                Log.d(TAG, "👤 ES CONTACTO: " + contact.name + " - PERMITIR");
+                showToast("👤 Contacto: " + contact.name);
+                return false;  // NO mostrar notificación, es contacto conocido
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error verificando contactos: " + e.getMessage());
+        }
+
+        // 📵 MODO RADICAL: Si está activo, bloquear TODO lo que NO sea contacto
+        boolean modoRadical = isModoRadicalEnabled();
+        if (modoRadical) {
+            Log.d(TAG, "🚫 MODO RADICAL ACTIVO - NO es contacto → BLOQUEAR");
+            showToast("🚫 MODO RADICAL: No es contacto");
+            return true;  // Mostrar notificación de spam
+        }
+
         // Casos donde mostrar notificación:
 
         // 1. Número desconocido/privado
@@ -154,5 +178,19 @@ public class CallScreeningServiceImpl extends CallScreeningService {
 
         Log.d(TAG, "✅ Número normal: " + number);
         return false;  // Número normal, no mostrar notificación
+    }
+
+    /**
+     * Verifica si el "Modo Radical" está activo.
+     * Modo Radical = Solo permitir llamadas de contactos, bloquear todo lo demás.
+     */
+    private boolean isModoRadicalEnabled() {
+        try {
+            return getSharedPreferences("spam_blocker_settings", MODE_PRIVATE)
+                .getBoolean("modo_radical", false);
+        } catch (Exception e) {
+            Log.e(TAG, "Error leyendo modo_radical: " + e.getMessage());
+            return false;
+        }
     }
 }

@@ -6,7 +6,8 @@ import { createStackNavigator } from '@react-navigation/stack';
 // Importar nuestras pantallas (las vamos a crear)
 import DashboardScreen from './src/screens/DashboardScreen';
 import SpamNumbersScreen from './src/screens/SpamNumbersScreen';
-import AITestScreen from './src/screens/AITestsScreen'; 
+import AITestScreen from './src/screens/AITestsScreen';
+import WhitelistScreen from './src/screens/WhitelistScreen'; 
 // Crear el navegador tipo Stack (pantallas apiladas)
 const Stack = createStackNavigator();
 
@@ -42,11 +43,18 @@ export default function App() {
           options={{ title: '📋 Gestionar Números' }}
         />
 
-             {/* Pantalla 3: Testing IA */}
-        <Stack.Screen 
-          name="AITest" 
+        {/* Pantalla 3: Testing IA */}
+        <Stack.Screen
+          name="AITest"
           component={AITestScreen}
           options={{ title: '🤖 Testing IA' }}
+        />
+
+        {/* Pantalla 4: Whitelist de Contactos */}
+        <Stack.Screen
+          name="Whitelist"
+          component={WhitelistScreen}
+          options={{ title: '👥 Whitelist' }}
         />
       </Stack.Navigator>
     </NavigationContainer>
