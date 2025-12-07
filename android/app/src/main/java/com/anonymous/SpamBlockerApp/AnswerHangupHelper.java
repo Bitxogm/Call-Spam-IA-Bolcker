@@ -17,8 +17,16 @@ public class AnswerHangupHelper {
     private static final String TAG = "AnswerHangupHelper";
     private static final String PREFS_NAME = "answer_hangup_prefs";
 
+    // Modos de Answer+Hangup
+    public enum Mode {
+        HANGUP_IMMEDIATELY,    // Modo 1: Colgar inmediatamente
+        PLAY_MESSAGE,          // Modo 2: Reproducir mensaje IVR
+        AI_CONVERSATION        // Modo 3: IA conversacional (futuro)
+    }
+
     // Keys para SharedPreferences
     private static final String KEY_ENABLED = "answer_hangup_enabled";
+    private static final String KEY_MODE = "answer_hangup_mode";
     private static final String KEY_LAST_SPAM_NUMBER = "last_spam_number";
     private static final String KEY_LAST_SPAM_TIME = "last_spam_time";
     private static final String KEY_HANGUP_DELAY = "hangup_delay_seconds";
@@ -26,6 +34,7 @@ public class AnswerHangupHelper {
     // Defaults
     private static final int DEFAULT_DELAY_SECONDS = 2;
     private static final long MAX_TIME_DIFF_MS = 10000; // 10 segundos max diferencia
+    private static final Mode DEFAULT_MODE = Mode.HANGUP_IMMEDIATELY;
 
     private final Context context;
     private final SharedPreferences prefs;
@@ -66,6 +75,27 @@ public class AnswerHangupHelper {
 
         prefs.edit().putInt(KEY_HANGUP_DELAY, seconds).apply();
         Log.d(TAG, "Hangup delay configurado: " + seconds + " segundos");
+    }
+
+    /**
+     * Obtiene el modo actual de Answer+Hangup
+     */
+    public Mode getMode() {
+        String modeString = prefs.getString(KEY_MODE, DEFAULT_MODE.name());
+        try {
+            return Mode.valueOf(modeString);
+        } catch (IllegalArgumentException e) {
+            Log.w(TAG, "Modo inválido en prefs, usando default: " + e.getMessage());
+            return DEFAULT_MODE;
+        }
+    }
+
+    /**
+     * Configura el modo de Answer+Hangup
+     */
+    public void setMode(Mode mode) {
+        prefs.edit().putString(KEY_MODE, mode.name()).apply();
+        Log.d(TAG, "Modo configurado: " + mode.name());
     }
 
     /**
