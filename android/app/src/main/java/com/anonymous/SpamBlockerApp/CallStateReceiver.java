@@ -52,24 +52,29 @@ public class CallStateReceiver extends BroadcastReceiver {
         // LOG: Estado de Answer+Hangup
         boolean isEnabled = answerHangupHelper.isEnabled();
         Log.d(TAG, "🔔 Answer+Hangup enabled: " + isEnabled);
+
+        // Obtener estado de la llamada ANTES de verificar isEnabled
+        String state = intent.getStringExtra(TelephonyManager.EXTRA_STATE);
+
+        // LOG CRÍTICO - SIEMPRE logear el estado recibido (incluso si disabled)
+        logsHelper.logInfo("📞 BROADCAST RECIBIDO - Estado: " + (state != null ? state : "NULL") + ", A+H: " + (isEnabled ? "ON" : "OFF"));
         logsHelper.logDebug("onReceive: action=" + action + ", A+H enabled=" + isEnabled);
 
         // Verificar si Answer+Hangup está habilitado
         if (!isEnabled) {
             Log.d(TAG, "⚠️ Answer+Hangup desactivado, ignorando evento");
+            logsHelper.logWarning("⚠️ Answer+Hangup DESACTIVADO - evento ignorado");
             return;
         }
 
-        // Obtener estado de la llamada
-        String state = intent.getStringExtra(TelephonyManager.EXTRA_STATE);
-
         if (state == null) {
             Log.w(TAG, "⚠️ Estado es null");
+            logsHelper.logError("❌ Estado de llamada es NULL");
             return;
         }
 
         Log.d(TAG, "📞 Estado de llamada: " + state);
-        logsHelper.logDebug("Phone state: " + state);
+        logsHelper.logInfo("📞 Phone state: " + state);
 
         if (TelephonyManager.EXTRA_STATE_RINGING.equals(state)) {
             handleRinging(context, intent);
@@ -153,6 +158,11 @@ public class CallStateReceiver extends BroadcastReceiver {
             logsHelper.logWarning("OFFHOOK sin número - ignorando");
             return;
         }
+
+        // LOG MODO ACTUAL (antes de shouldProcess)
+        AnswerHangupHelper.Mode currentMode = answerHangupHelper.getMode();
+        Log.d(TAG, "📱 MODO ACTUAL CARGADO: " + currentMode.name());
+        logsHelper.logInfo("📱 Modo cargado desde prefs: " + currentMode.name());
 
         // Verificar si debe procesarse (hangup, IVR, o IA)
         boolean shouldProcess = answerHangupHelper.shouldHangup(incomingNumber);

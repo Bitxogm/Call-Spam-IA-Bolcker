@@ -126,6 +126,33 @@ class AnswerHangupService {
       };
     }
   };
+
+  /**
+   * Verifica permisos críticos para Answer+Hangup
+   *
+   * IMPORTANTE: En Android 9+, se requiere READ_CALL_LOG para recibir broadcasts
+   * de PHONE_STATE con detalles (RINGING, OFFHOOK). Sin este permiso, solo se
+   * reciben broadcasts de IDLE, y Answer+Hangup NO funcionará.
+   */
+  checkCallLogPermission = async (): Promise<{
+    hasPhoneState: boolean;
+    hasCallLog: boolean;
+    hasAnswerCalls: boolean;
+    allGranted: boolean;
+  }> => {
+    try {
+      const result = await AnswerHangupModule.checkCallLogPermission();
+      return result;
+    } catch (error) {
+      console.error('❌ Error verificando permisos:', error);
+      return {
+        hasPhoneState: false,
+        hasCallLog: false,
+        hasAnswerCalls: false,
+        allGranted: false,
+      };
+    }
+  };
 }
 
 export const answerHangupService = new AnswerHangupService();
