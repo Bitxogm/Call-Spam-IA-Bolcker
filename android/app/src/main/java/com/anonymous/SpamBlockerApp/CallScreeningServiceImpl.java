@@ -21,6 +21,8 @@ public class CallScreeningServiceImpl extends CallScreeningService {
     private SharedPreferencesHelper prefsHelper;
     private ContactsHelper contactsHelper;
     private AnswerHangupHelper answerHangupHelper;
+    private LogsHelper logsHelper;
+    private CallHistoryHelper callHistoryHelper;
 
     @Override
     public void onScreenCall(@NonNull Call.Details callDetails) {
@@ -35,6 +37,12 @@ public class CallScreeningServiceImpl extends CallScreeningService {
         }
         if (answerHangupHelper == null) {
             answerHangupHelper = new AnswerHangupHelper(this);
+        }
+        if (logsHelper == null) {
+            logsHelper = new LogsHelper(this);
+        }
+        if (callHistoryHelper == null) {
+            callHistoryHelper = new CallHistoryHelper(this);
         }
 
         // Obtener información de la llamada
@@ -66,6 +74,7 @@ public class CallScreeningServiceImpl extends CallScreeningService {
         if (isPotentialSpam) {
             Log.d(TAG, "🤖 SPAM POTENCIAL");
             showToast("🤖 SPAM DETECTADO: " + callerNumber);
+            logsHelper.logWarning("SPAM detectado: " + callerNumber);
 
             // 🎯 ANSWER+HANGUP: Si está activado, contestar silenciosamente y colgar
             try {
@@ -75,10 +84,13 @@ public class CallScreeningServiceImpl extends CallScreeningService {
                 Log.d(TAG, "🔍 DEBUG - answerHangupHelper null? " + answerHangupHelperIsNull);
                 Log.d(TAG, "🔍 DEBUG - isEnabled()? " + answerHangupIsEnabled);
                 showToast("🔍 A+H: null=" + answerHangupHelperIsNull + ", enabled=" + answerHangupIsEnabled);
+                logsHelper.logDebug("Answer+Hangup: null=" + answerHangupHelperIsNull + ", enabled=" + answerHangupIsEnabled);
 
                 if (answerHangupHelper != null && answerHangupHelper.isEnabled()) {
                     Log.d(TAG, "🔇 Answer+Hangup ACTIVO - Marcar para colgar");
                     showToast("🔇 Spam: Contestar y colgar automáticamente");
+                    logsHelper.logInfo("Answer+Hangup activado para: " + callerNumber);
+                    callHistoryHelper.addSpamCall(callerNumber, "Spam", "Answer+Hangup");
 
                     // Marcar número para answer+hangup
                     answerHangupHelper.markForAnswerHangup(callerNumber);
@@ -96,6 +108,8 @@ public class CallScreeningServiceImpl extends CallScreeningService {
                 } else {
                 // Modo normal: Mostrar notificación
                 Log.d(TAG, "📲 Mostrando notificación de spam");
+                logsHelper.logInfo("Notificación de spam enviada para: " + callerNumber);
+                callHistoryHelper.addSpamCall(callerNumber, "Spam", "Notification");
                 SpamNotificationManager.showIncomingSpamNotification(
                     this,
                     callerNumber
@@ -117,9 +131,11 @@ public class CallScreeningServiceImpl extends CallScreeningService {
             } catch (Exception e) {
                 Log.e(TAG, "❌ Error en Answer+Hangup: " + e.getMessage(), e);
                 showToast("❌ Error Answer+Hangup: " + e.getMessage());
+                logsHelper.logError("Error Answer+Hangup: " + e.getMessage() + " para número: " + callerNumber);
 
                 // Fallback: Modo normal con notificación
                 SpamNotificationManager.showIncomingSpamNotification(this, callerNumber);
+                callHistoryHelper.addSpamCall(callerNumber, "Spam", "Notification (fallback)");
                 CallResponse response = new CallResponse.Builder()
                     .setDisallowCall(false)
                     .setRejectCall(false)
@@ -131,6 +147,7 @@ public class CallScreeningServiceImpl extends CallScreeningService {
         } else {
             Log.d(TAG, "✅ Número conocido/confiable - Permitiendo");
             showToast("✅ Número normal: " + callerNumber);
+            logsHelper.logInfo("Llamada permitida: " + callerNumber);
             respondToCall(callDetails, new CallResponse.Builder().build());
         }
     }

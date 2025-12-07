@@ -419,6 +419,20 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
           <Text style={styles.buttonText}>🤖 Probar IA Anti-Spam</Text>
         </TouchableOpacity>
 
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: '#007bff' }]}
+          onPress={() => navigation.navigate('Logs')}
+        >
+          <Text style={styles.buttonText}>📋 Logs de Debug</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: '#dc3545' }]}
+          onPress={() => navigation.navigate('CallHistory')}
+        >
+          <Text style={styles.buttonText}>📞 Historial de Spam</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.buttonTest} onPress={simulateBlockCall}>
           <Text style={styles.buttonText}>🧪 SIMULAR BLOQUEO</Text>
         </TouchableOpacity>

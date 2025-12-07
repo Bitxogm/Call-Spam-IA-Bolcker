@@ -28,13 +28,17 @@ public class CallStateReceiver extends BroadcastReceiver {
     private static final String TAG = "CallStateReceiver";
 
     private AnswerHangupHelper answerHangupHelper;
+    private LogsHelper logsHelper;
     private String lastIncomingNumber = null;
 
     @Override
     public void onReceive(Context context, Intent intent) {
-        // Inicializar helper
+        // Inicializar helpers
         if (answerHangupHelper == null) {
             answerHangupHelper = new AnswerHangupHelper(context);
+        }
+        if (logsHelper == null) {
+            logsHelper = new LogsHelper(context);
         }
 
         // Verificar si Answer+Hangup está habilitado
@@ -132,24 +136,30 @@ public class CallStateReceiver extends BroadcastReceiver {
                     if (success) {
                         Log.d(TAG, "✅ Llamada colgada: " + number);
                         showToast(context, "✅ Spam colgado automáticamente");
+                        logsHelper.logInfo("✅ Spam colgado automáticamente: " + number);
                     } else {
                         Log.e(TAG, "❌ No se pudo colgar la llamada");
                         showToast(context, "❌ Error colgando llamada");
+                        logsHelper.logError("❌ TelecomManager.endCall() retornó false para: " + number);
                     }
                 } else {
                     Log.e(TAG, "TelecomManager es null");
+                    logsHelper.logError("❌ TelecomManager es null - No se puede colgar");
                 }
             } else {
                 // Android 8 y anteriores: usar reflexión (menos confiable)
                 Log.w(TAG, "Android < 9: TelecomManager.endCall() no disponible");
                 showToast(context, "⚠️ Answer+Hangup requiere Android 9+");
+                logsHelper.logWarning("⚠️ Android < 9: Answer+Hangup no disponible (API " + Build.VERSION.SDK_INT + ")");
             }
         } catch (SecurityException e) {
             Log.e(TAG, "❌ Sin permiso ANSWER_PHONE_CALLS", e);
             showToast(context, "❌ Permiso ANSWER_PHONE_CALLS requerido");
+            logsHelper.logError("❌ SecurityException: Sin permiso ANSWER_PHONE_CALLS - " + e.getMessage());
         } catch (Exception e) {
             Log.e(TAG, "❌ Error colgando llamada", e);
             showToast(context, "❌ Error: " + e.getMessage());
+            logsHelper.logError("❌ Exception colgando llamada: " + e.getMessage() + " para número: " + number);
         }
     }
 
