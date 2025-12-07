@@ -90,4 +90,33 @@ public class AnswerHangupModule extends ReactContextBaseJavaModule {
             promise.reject("GET_DEBUG_INFO_ERROR", e.getMessage(), e);
         }
     }
+
+    /**
+     * Obtiene el modo actual
+     */
+    @ReactMethod
+    public void getMode(Promise promise) {
+        try {
+            AnswerHangupHelper.Mode mode = helper.getMode();
+            promise.resolve(mode.name());
+        } catch (Exception e) {
+            promise.reject("GET_MODE_ERROR", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Configura el modo de Answer+Hangup
+     */
+    @ReactMethod
+    public void setMode(String modeName, Promise promise) {
+        try {
+            AnswerHangupHelper.Mode mode = AnswerHangupHelper.Mode.valueOf(modeName);
+            helper.setMode(mode);
+            promise.resolve(true);
+        } catch (IllegalArgumentException e) {
+            promise.reject("INVALID_MODE", "Modo inválido: " + modeName, e);
+        } catch (Exception e) {
+            promise.reject("SET_MODE_ERROR", e.getMessage(), e);
+        }
+    }
 }

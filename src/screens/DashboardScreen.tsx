@@ -399,24 +399,22 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
           style={styles.button}
           onPress={() => navigation.navigate('Whitelist')}
         >
-          <Text style={styles.buttonText}>👥 Whitelist de Contactos</Text>
+          <Text style={styles.buttonText}>👥 Contactos Permitidos</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.button, radicalMode ? styles.radicalButton : styles.normalButton]}
-          onPress={toggleRadicalMode}
-        >
-          <Text style={styles.buttonText}>
-            {radicalMode ? "🟢 Desactivar Modo Radical" : "🔴 Activar Modo Radical"}
-          </Text>
-        </TouchableOpacity>
-
-        {/* BOTÓN NUEVO - Añadir antes del último botón */}
         <TouchableOpacity
           style={styles.buttonAI}
           onPress={() => navigation.navigate('AITest')}
         >
           <Text style={styles.buttonText}>🤖 Probar IA Anti-Spam</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: '#ff9900' }]}
+          onPress={() => navigation.navigate('AnswerHangupSettings')}
+        >
+          <Text style={styles.buttonText}>⚙️ Answer+Hangup</Text>
+          <Text style={styles.buttonSubtext}>Configurar auto-respuesta y modos</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -437,7 +435,7 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
           <Text style={styles.buttonText}>🧪 SIMULAR BLOQUEO</Text>
         </TouchableOpacity>
 
-        {/* BOTÓN TEST NOTIFICACIÓN - NUEVO */}
+        {/* BOTÓN TEST NOTIFICACIÓN */}
         {Platform.OS === 'android' && CallInterceptorModule && (
           <TouchableOpacity
             style={[styles.button, { backgroundColor: '#ff9900' }]}
@@ -448,15 +446,7 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
           </TouchableOpacity>
         )}
 
-        {/* BOTÓN DE DEBUG - AL FINAL PARA QUE SEA VISIBLE */}
-        <TouchableOpacity
-          style={[styles.button, styles.buttonCritical]}
-          onPress={() => Alert.alert('DEBUG', `Platform: ${Platform.OS}\nCallInterceptorModule: ${CallInterceptorModule ? 'SÍ' : 'NO'}`)}
-        >
-          <Text style={styles.buttonText}>🔍 DEBUG INFO</Text>
-        </TouchableOpacity>
-
-        {/* BOTÓN CRÍTICO: Configurar como app de teléfono - AL FINAL */}
+        {/* BOTÓN CRÍTICO: Configurar como app de teléfono */}
         {Platform.OS === 'android' && (
           <TouchableOpacity
             style={[styles.button, isDefaultDialer ? styles.buttonSuccess : styles.buttonCritical]}
@@ -472,7 +462,6 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
             )}
           </TouchableOpacity>
         )}
-
 
       </View>
     </ScrollView>

@@ -29,6 +29,7 @@ public class CallStateReceiver extends BroadcastReceiver {
 
     private AnswerHangupHelper answerHangupHelper;
     private LogsHelper logsHelper;
+    private IVRMessageHelper ivrMessageHelper;
     private String lastIncomingNumber = null;
 
     @Override
@@ -43,6 +44,9 @@ public class CallStateReceiver extends BroadcastReceiver {
         }
         if (logsHelper == null) {
             logsHelper = new LogsHelper(context);
+        }
+        if (ivrMessageHelper == null) {
+            ivrMessageHelper = new IVRMessageHelper(context);
         }
 
         // LOG: Estado de Answer+Hangup
@@ -150,30 +154,83 @@ public class CallStateReceiver extends BroadcastReceiver {
             return;
         }
 
-        // Verificar si debe colgarse
-        boolean shouldHangup = answerHangupHelper.shouldHangup(incomingNumber);
-        Log.d(TAG, "🔍 shouldHangup() = " + shouldHangup);
-        logsHelper.logDebug("shouldHangup para " + incomingNumber + ": " + shouldHangup);
+        // Verificar si debe procesarse (hangup, IVR, o IA)
+        boolean shouldProcess = answerHangupHelper.shouldHangup(incomingNumber);
+        Log.d(TAG, "🔍 shouldProcess() = " + shouldProcess);
+        logsHelper.logDebug("shouldProcess para " + incomingNumber + ": " + shouldProcess);
 
-        if (shouldHangup) {
-            int delay = answerHangupHelper.getHangupDelay();
-            Log.d(TAG, "⏱️ Esperando " + delay + " segundos antes de colgar...");
-            logsHelper.logInfo("⏱️ Programando hangup en " + delay + " segundos para: " + incomingNumber);
+        if (shouldProcess) {
+            // Obtener modo configurado
+            AnswerHangupHelper.Mode mode = answerHangupHelper.getMode();
+            Log.d(TAG, "🎯 Modo configurado: " + mode.name());
+            logsHelper.logInfo("🎯 Ejecutando modo: " + mode.name() + " para " + incomingNumber);
 
-            showToast(context, "🔇 Llamada spam contestada silenciosamente");
+            // Crear variable final para lambdas
+            final String number = incomingNumber;
 
-            // Crear variable final para lambda
-            final String numberToHangup = incomingNumber;
+            switch (mode) {
+                case HANGUP_IMMEDIATELY:
+                    // Modo 1: Colgar después de delay
+                    int delay = answerHangupHelper.getHangupDelay();
+                    Log.d(TAG, "⏱️ MODO 1: Esperando " + delay + " segundos antes de colgar...");
+                    logsHelper.logInfo("⏱️ Modo 1 - Programando hangup en " + delay + "s");
 
-            // Esperar delay y colgar
-            new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                Log.d(TAG, "🎯 Ejecutando hangup después de delay");
-                logsHelper.logInfo("🎯 Delay completado - ejecutando hangup");
-                hangupCall(context, numberToHangup);
-            }, delay * 1000L);
+                    showToast(context, "🔇 Modo 1: Colgando automáticamente");
+
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                        Log.d(TAG, "🎯 Ejecutando hangup (Modo 1)");
+                        logsHelper.logInfo("🎯 Modo 1 - Hangup ejecutado");
+                        hangupCall(context, number);
+                    }, delay * 1000L);
+                    break;
+
+                case PLAY_MESSAGE:
+                    // Modo 2: Reproducir IVR corporativo
+                    Log.d(TAG, "🔊 MODO 2: Iniciando IVR corporativo...");
+                    logsHelper.logInfo("🔊 Modo 2 - Iniciando IVR");
+
+                    showToast(context, "🔊 Modo 2: Reproduciendo IVR");
+
+                    // Iniciar IVR (30 segundos máximo)
+                    boolean ivrStarted = ivrMessageHelper.startIVR(
+                        IVRMessageHelper.IVRType.CORPORATE_INFINITE,
+                        30  // 30 segundos máximo
+                    );
+
+                    if (ivrStarted) {
+                        Log.d(TAG, "✅ IVR iniciado correctamente");
+                        logsHelper.logInfo("✅ Modo 2 - IVR iniciado (30s max)");
+
+                        // Colgar después de 30 segundos
+                        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                            Log.d(TAG, "🎯 IVR terminado, colgando (Modo 2)");
+                            logsHelper.logInfo("🎯 Modo 2 - IVR finalizado, ejecutando hangup");
+                            ivrMessageHelper.stopIVR();
+                            hangupCall(context, number);
+                        }, 31000L);  // 31s para asegurar que el IVR termine
+                    } else {
+                        Log.e(TAG, "❌ Error iniciando IVR, colgando directamente");
+                        logsHelper.logError("❌ Modo 2 - Error IVR, fallback a hangup");
+                        hangupCall(context, number);
+                    }
+                    break;
+
+                case AI_CONVERSATION:
+                    // Modo 3: IA conversacional (futuro)
+                    Log.d(TAG, "🤖 MODO 3: IA Conversacional (no implementado aún)");
+                    logsHelper.logWarning("🤖 Modo 3 - No implementado, fallback a hangup");
+
+                    showToast(context, "🤖 Modo 3: No disponible (colgando)");
+
+                    // Fallback: colgar después de 2 segundos
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                        hangupCall(context, number);
+                    }, 2000L);
+                    break;
+            }
         } else {
-            Log.d(TAG, "⚠️ shouldHangup = false, NO se colgará");
-            logsHelper.logWarning("shouldHangup = false - número NO marcado para hangup: " + incomingNumber);
+            Log.d(TAG, "⚠️ shouldProcess = false, NO se procesará");
+            logsHelper.logWarning("shouldProcess = false - número NO marcado: " + incomingNumber);
         }
     }
 
@@ -182,6 +239,13 @@ public class CallStateReceiver extends BroadcastReceiver {
      */
     private void handleIdle(Context context) {
         Log.d(TAG, "📞 IDLE (sin llamada)");
+
+        // Detener IVR si está reproduciéndose
+        if (ivrMessageHelper != null && ivrMessageHelper.isPlaying()) {
+            Log.d(TAG, "🛑 Deteniendo IVR (llamada finalizada)");
+            ivrMessageHelper.stopIVR();
+        }
+
         lastIncomingNumber = null;
     }
 
