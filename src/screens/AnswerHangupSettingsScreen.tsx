@@ -73,6 +73,34 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
   };
 
   /**
+   * Muestra diagnóstico de permisos (botón de debug)
+   */
+  const showPermissionDiagnostic = async () => {
+    try {
+      const permissions = await answerHangupService.checkCallLogPermission();
+
+      Alert.alert(
+        '📋 Diagnóstico de Permisos',
+        `READ_PHONE_STATE: ${permissions.hasPhoneState ? '✅ Permitido' : '❌ DENEGADO'}\n` +
+        `READ_CALL_LOG: ${permissions.hasCallLog ? '✅ Permitido' : '❌ DENEGADO (CRÍTICO!)'}\n` +
+        `ANSWER_PHONE_CALLS: ${permissions.hasAnswerCalls ? '✅ Permitido' : '❌ DENEGADO'}\n\n` +
+        `Estado general: ${permissions.allGranted ? '✅ TODO OK' : '⚠️ FALTAN PERMISOS'}`,
+        permissions.allGranted
+          ? [{ text: 'OK' }]
+          : [
+              { text: 'Cancelar', style: 'cancel' },
+              {
+                text: 'Ir a Configuración',
+                onPress: () => Linking.openSettings()
+              }
+            ]
+      );
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo verificar permisos');
+    }
+  };
+
+  /**
    * Verifica y solicita permisos necesarios para Answer+Hangup
    */
   const checkAndRequestPermissions = async (): Promise<boolean> => {
@@ -182,6 +210,14 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
         <Text style={styles.title}>⚙️ Answer+Hangup</Text>
         <Text style={styles.subtitle}>Configuración de auto-respuesta</Text>
       </View>
+
+      {/* BOTÓN DE DIAGNÓSTICO */}
+      <TouchableOpacity
+        style={styles.diagnosticButton}
+        onPress={showPermissionDiagnostic}
+      >
+        <Text style={styles.diagnosticButtonText}>🔍 Verificar Permisos</Text>
+      </TouchableOpacity>
 
       {/* ENABLE/DISABLE */}
       <View style={styles.section}>
@@ -352,6 +388,18 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: '#cccccc',
+  },
+  diagnosticButton: {
+    backgroundColor: '#007bff',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  diagnosticButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   section: {
     marginBottom: 25,
