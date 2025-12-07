@@ -1,6 +1,6 @@
 // src/screens/AnswerHangupSettingsScreen.tsx
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, Switch } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, Switch, PermissionsAndroid, Platform, Linking } from 'react-native';
 import { answerHangupService } from '../services/AnswerHangupService';
 
 type AnswerHangupSettingsScreenProps = {
@@ -36,6 +36,27 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
   };
 
   const handleToggleEnabled = async (value: boolean) => {
+    // Si se está activando, verificar permisos primero
+    if (value) {
+      const hasPermissions = await checkAndRequestPermissions();
+      if (!hasPermissions) {
+        Alert.alert(
+          '⚠️ Permisos Faltantes',
+          'Se requieren permisos de lectura del registro de llamadas para que Answer+Hangup funcione correctamente.',
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            {
+              text: 'Configuración',
+              onPress: () => {
+                Linking.openSettings();
+              }
+            }
+          ]
+        );
+        return;
+      }
+    }
+
     try {
       await answerHangupService.setEnabled(value);
       setIsEnabled(value);
@@ -48,6 +69,71 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
       );
     } catch (error) {
       Alert.alert('Error', 'No se pudo cambiar el estado');
+    }
+  };
+
+  /**
+   * Verifica y solicita permisos necesarios para Answer+Hangup
+   */
+  const checkAndRequestPermissions = async (): Promise<boolean> => {
+    try {
+      // Verificar permisos actuales
+      const permissions = await answerHangupService.checkCallLogPermission();
+
+      console.log('📋 Permisos actuales:', permissions);
+
+      // Si todos los permisos ya están concedidos
+      if (permissions.allGranted) {
+        return true;
+      }
+
+      // Solicitar permisos faltantes
+      const permissionsToRequest = [];
+
+      if (!permissions.hasPhoneState) {
+        permissionsToRequest.push(PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE);
+      }
+      if (!permissions.hasCallLog) {
+        permissionsToRequest.push(PermissionsAndroid.PERMISSIONS.READ_CALL_LOG);
+      }
+      if (!permissions.hasAnswerCalls) {
+        permissionsToRequest.push(PermissionsAndroid.PERMISSIONS.ANSWER_PHONE_CALLS);
+      }
+
+      if (permissionsToRequest.length === 0) {
+        return true;
+      }
+
+      console.log('📋 Solicitando permisos:', permissionsToRequest);
+
+      // Solicitar todos los permisos a la vez
+      const results = await PermissionsAndroid.requestMultiple(permissionsToRequest);
+
+      console.log('📋 Resultados:', results);
+
+      // Verificar si todos fueron concedidos
+      const allGranted = Object.values(results).every(
+        result => result === PermissionsAndroid.RESULTS.GRANTED
+      );
+
+      if (allGranted) {
+        Alert.alert(
+          '✅ Permisos Concedidos',
+          'Todos los permisos necesarios han sido concedidos. Answer+Hangup funcionará correctamente.'
+        );
+      } else {
+        Alert.alert(
+          '⚠️ Permisos Faltantes',
+          'Algunos permisos no fueron concedidos. Answer+Hangup puede no funcionar correctamente.\n\n' +
+          'CRÍTICO: El permiso "Registro de llamadas" es necesario para detectar llamadas entrantes en Android 9+.'
+        );
+      }
+
+      return allGranted;
+    } catch (error) {
+      console.error('❌ Error solicitando permisos:', error);
+      Alert.alert('Error', 'No se pudieron solicitar los permisos');
+      return false;
     }
   };
 
@@ -221,6 +307,7 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
             <Text style={styles.infoTitle}>ℹ️ Información</Text>
             <Text style={styles.infoText}>
               • Answer+Hangup solo procesa llamadas detectadas como spam{'\n'}
+              • Requiere permiso "Registro de llamadas" (READ_CALL_LOG){'\n'}
               • Requiere ser app de teléfono predeterminada{'\n'}
               • Los logs se guardan en "Logs de Debug"{'\n'}
               • El historial se guarda en "Historial de Spam"
