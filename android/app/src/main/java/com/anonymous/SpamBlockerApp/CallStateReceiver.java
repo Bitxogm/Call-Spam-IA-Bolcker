@@ -93,16 +93,11 @@ public class CallStateReceiver extends BroadcastReceiver {
                 TelecomManager telecomManager = (TelecomManager) context.getSystemService(Context.TELECOM_SERVICE);
 
                 if (telecomManager != null) {
-                    boolean success = telecomManager.acceptRingingCall();
-
-                    if (success) {
-                        Log.d(TAG, "✅ Llamada contestada automáticamente: " + number);
-                        logsHelper.logInfo("✅ Llamada spam contestada automáticamente: " + number);
-                        showToast(context, "🔇 Spam contestado automáticamente");
-                    } else {
-                        Log.e(TAG, "❌ No se pudo contestar la llamada");
-                        logsHelper.logError("❌ TelecomManager.acceptRingingCall() retornó false");
-                    }
+                    // acceptRingingCall() es void, no retorna boolean
+                    telecomManager.acceptRingingCall();
+                    Log.d(TAG, "✅ Llamada contestada automáticamente: " + number);
+                    logsHelper.logInfo("✅ Llamada spam contestada automáticamente: " + number);
+                    showToast(context, "🔇 Spam contestado automáticamente");
                 } else {
                     Log.e(TAG, "TelecomManager es null");
                     logsHelper.logError("❌ TelecomManager es null - No se puede contestar");
