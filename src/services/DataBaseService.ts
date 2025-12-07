@@ -34,6 +34,21 @@ class DatabaseService {
     this.initDatabase();
   }
 
+  // Función para normalizar números de teléfono
+  private normalizePhoneNumber(number: string): string {
+    // Eliminar todo excepto dígitos
+    let cleaned = number.replace(/\D/g, '');
+
+    // Si empieza con código de país, obtener últimos 9 dígitos (España)
+    // Esto maneja: +34612345678 → 612345678
+    if (cleaned.length > 9) {
+      cleaned = cleaned.slice(-9);
+    }
+
+    console.log(`📞 Normalizado: "${number}" → "${cleaned}"`);
+    return cleaned;
+  }
+
   // Inicializar base de datos (versión moderna de Expo SQLite)
   private initDatabase = async () => {
     try {
@@ -111,13 +126,34 @@ class DatabaseService {
     if (!this.db) return false;
 
     try {
-      await this.db.runAsync(
-        `INSERT INTO spam_numbers (number, reason, source, date_added) 
-         VALUES (?, ?, ?, ?);`,
-        [number, reason, source, new Date().toISOString().split('T')[0]]
-      );
-      
-      console.log(`✅ Número ${number} añadido a la base de datos`);
+      // NORMALIZAR antes de guardar
+      const normalizedNumber = this.normalizePhoneNumber(number);
+
+      // Verificar si el número ya existe (activo o inactivo)
+      const existing = await this.db.getFirstAsync(
+        `SELECT id, is_active FROM spam_numbers WHERE number = ?;`,
+        [normalizedNumber]
+      ) as { id: number; is_active: number } | null;
+
+      if (existing) {
+        // Si existe, reactivarlo y actualizar
+        await this.db.runAsync(
+          `UPDATE spam_numbers
+           SET is_active = 1, reason = ?, source = ?, date_added = ?
+           WHERE number = ?;`,
+          [reason, source, new Date().toISOString().split('T')[0], normalizedNumber]
+        );
+        console.log(`♻️ Número "${number}" (${normalizedNumber}) reactivado en la base de datos`);
+      } else {
+        // Si no existe, insertarlo nuevo
+        await this.db.runAsync(
+          `INSERT INTO spam_numbers (number, reason, source, date_added)
+           VALUES (?, ?, ?, ?);`,
+          [normalizedNumber, reason, source, new Date().toISOString().split('T')[0]]
+        );
+        console.log(`✅ Número "${number}" normalizado a "${normalizedNumber}" y añadido a la base de datos`);
+      }
+
       return true;
     } catch (error) {
       console.log('❌ Error añadiendo número:', error);
@@ -165,16 +201,76 @@ class DatabaseService {
     if (!this.db) return false;
 
     try {
+      // NORMALIZAR antes de comparar
+      const normalizedNumber = this.normalizePhoneNumber(number);
+
       const result = await this.db.getFirstAsync(
-        `SELECT COUNT(*) as count FROM spam_numbers 
+        `SELECT COUNT(*) as count FROM spam_numbers
          WHERE number = ? AND is_active = 1;`,
-        [number]
+        [normalizedNumber]
       ) as { count: number } | null;
 
-      return result ? result.count > 0 : false;
+      const isSpam = result ? result.count > 0 : false;
+      console.log(`🔍 ¿"${number}" (normalizado: "${normalizedNumber}") es spam? ${isSpam ? '✅ SÍ' : '❌ NO'}`);
+
+      return isSpam;
     } catch (error) {
       console.log('❌ Error verificando número spam:', error);
       return false;
+    }
+  };
+
+  // MÉTODOS PARA HISTORIAL DE LLAMADAS
+
+  // 🔍 MÉTODO DEBUG: Información de la base de datos
+  getDebugInfo = async (): Promise<{
+    dbPath: string;
+    totalNumbers: number;
+    activeNumbers: number;
+    inactiveNumbers: number;
+    numbers: Array<{ number: string; normalized: string; is_active: boolean }>;
+  }> => {
+    if (!this.db) {
+      return {
+        dbPath: 'BD no inicializada',
+        totalNumbers: 0,
+        activeNumbers: 0,
+        inactiveNumbers: 0,
+        numbers: []
+      };
+    }
+
+    try {
+      // Obtener todos los números (activos e inactivos)
+      const allNumbers = await this.db.getAllAsync(
+        `SELECT number, is_active FROM spam_numbers;`
+      ) as Array<{ number: string; is_active: number }>;
+
+      const numbers = allNumbers.map(row => ({
+        number: row.number,
+        normalized: this.normalizePhoneNumber(row.number),
+        is_active: row.is_active === 1
+      }));
+
+      const activeCount = numbers.filter(n => n.is_active).length;
+      const inactiveCount = numbers.filter(n => !n.is_active).length;
+
+      return {
+        dbPath: '/data/data/com.anonymous.SpamBlockerApp/databases/spamBlocker.db',
+        totalNumbers: numbers.length,
+        activeNumbers: activeCount,
+        inactiveNumbers: inactiveCount,
+        numbers
+      };
+    } catch (error) {
+      console.log('❌ Error obteniendo debug info:', error);
+      return {
+        dbPath: 'Error',
+        totalNumbers: 0,
+        activeNumbers: 0,
+        inactiveNumbers: 0,
+        numbers: []
+      };
     }
   };
 

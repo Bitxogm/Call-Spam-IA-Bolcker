@@ -1,6 +1,6 @@
 // src/screens/DashboardScreen.tsx
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Alert, NativeModules, Platform } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Alert, NativeModules, Platform, ScrollView } from 'react-native';
 import { databaseService } from '../services/DataBaseService';
 import { contactsService } from '../services/ContactService';
 
@@ -117,7 +117,7 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
 
   // Función para solicitar ser app de teléfono predeterminada
   const requestDefaultDialerRole = async () => {
-    if (Platform.OS !== 'android' || !CallInterceptorModule) {
+    if (Platform.OS !== 'android') {
       Alert.alert('Error', 'Esta función solo está disponible en Android');
       return;
     }
@@ -125,23 +125,34 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
     try {
       Alert.alert(
         "📞 App de Teléfono Predeterminada",
-        "SpamBlocker necesita ser tu app de teléfono predeterminada para:\n\n✅ Contestar llamadas automáticamente\n✅ Bloquear spam en tiempo real\n✅ Hacer que tu agente IA converse con spammers\n\nEn la siguiente pantalla, selecciona 'SpamBlocker'",
+        "SpamBlocker necesita ser tu app de teléfono predeterminada para:\n\n✅ Contestar llamadas automáticamente\n✅ Bloquear spam en tiempo real\n✅ Hacer que tu agente IA converse con spammers\n\n➡️ Ve a: Ajustes → Apps → Apps predeterminadas → App de teléfono\n\n¿Abrir configuración del sistema?",
         [
           { text: "Cancelar", style: "cancel" },
           {
-            text: "Configurar",
+            text: "Abrir Ajustes",
             onPress: async () => {
               try {
-                const result = await CallInterceptorModule.requestDefaultDialerRole();
-                console.log('📞 Resultado:', result);
-
-                // Esperar un poco y verificar de nuevo
-                setTimeout(() => {
-                  checkDialerPermissions();
-                }, 1000);
+                // Intentar con módulo nativo primero
+                if (CallInterceptorModule) {
+                  const result = await CallInterceptorModule.requestDefaultDialerRole();
+                  console.log('📞 Resultado módulo nativo:', result);
+                  setTimeout(() => checkDialerPermissions(), 1000);
+                } else {
+                  // Fallback: Abrir configuración de apps predeterminadas
+                  const { Linking } = require('react-native');
+                  await Linking.openSettings();
+                  console.log('📱 Abriendo configuración del sistema (fallback)');
+                  Alert.alert(
+                    'Configuración Manual',
+                    'Ve a:\nAjustes → Apps → Apps predeterminadas → App de teléfono → SpamBlocker'
+                  );
+                }
               } catch (error) {
-                console.log('❌ Error solicitando rol de marcador:', error);
-                Alert.alert('Error', 'No se pudo solicitar el permiso');
+                console.log('❌ Error:', error);
+                Alert.alert(
+                  'Configuración Manual',
+                  'Por favor ve manualmente a:\n\nAjustes → Aplicaciones → Apps predeterminadas → App de teléfono\n\nY selecciona "SpamBlocker"'
+                );
               }
             }
           }
@@ -306,6 +317,21 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
 
   };
 
+  // Función para probar notificación de spam
+  const testSpamNotification = async () => {
+    if (!CallInterceptorModule) {
+      Alert.alert('Error', 'CallInterceptorModule no disponible');
+      return;
+    }
+
+    try {
+      const result = await CallInterceptorModule.testSpamNotification();
+      Alert.alert('✅ Éxito', result + '\n\n¿Apareció la notificación con botones?');
+    } catch (error: any) {
+      Alert.alert('❌ Error', error.message || 'No se pudo enviar notificación de prueba');
+    }
+  };
+
 
 
 
@@ -319,7 +345,7 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
   }
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
 
       {/* HEADER CON MODO ACTUAL */}
       <View style={styles.header}>
@@ -365,25 +391,15 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
       {/* BOTONES DE ACCIÓN */}
       <View style={styles.buttonsContainer}>
 
-        {/* BOTÓN CRÍTICO: Configurar como app de teléfono */}
-        {Platform.OS === 'android' && CallInterceptorModule && (
-          <TouchableOpacity
-            style={[styles.button, isDefaultDialer ? styles.buttonSuccess : styles.buttonCritical]}
-            onPress={isDefaultDialer ? checkDialerPermissions : requestDefaultDialerRole}
-          >
-            <Text style={styles.buttonText}>
-              {isDefaultDialer
-                ? "✅ App de Teléfono Configurada"
-                : "📞 CONFIGURAR APP DE TELÉFONO"}
-            </Text>
-            {!isDefaultDialer && (
-              <Text style={styles.buttonSubtext}>¡REQUERIDO para auto-respuesta!</Text>
-            )}
-          </TouchableOpacity>
-        )}
-
         <TouchableOpacity style={styles.button} onPress={navigateToSpamNumbers}>
           <Text style={styles.buttonText}>📋 Gestionar Números</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.button}
+          onPress={() => navigation.navigate('Whitelist')}
+        >
+          <Text style={styles.buttonText}>👥 Whitelist de Contactos</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -403,13 +419,63 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
           <Text style={styles.buttonText}>🤖 Probar IA Anti-Spam</Text>
         </TouchableOpacity>
 
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: '#007bff' }]}
+          onPress={() => navigation.navigate('Logs')}
+        >
+          <Text style={styles.buttonText}>📋 Logs de Debug</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: '#dc3545' }]}
+          onPress={() => navigation.navigate('CallHistory')}
+        >
+          <Text style={styles.buttonText}>📞 Historial de Spam</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.buttonTest} onPress={simulateBlockCall}>
           <Text style={styles.buttonText}>🧪 SIMULAR BLOQUEO</Text>
         </TouchableOpacity>
 
-      
+        {/* BOTÓN TEST NOTIFICACIÓN - NUEVO */}
+        {Platform.OS === 'android' && CallInterceptorModule && (
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: '#ff9900' }]}
+            onPress={testSpamNotification}
+          >
+            <Text style={styles.buttonText}>🔔 TEST NOTIFICACIÓN</Text>
+            <Text style={styles.buttonSubtext}>Probar notificación con botones</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* BOTÓN DE DEBUG - AL FINAL PARA QUE SEA VISIBLE */}
+        <TouchableOpacity
+          style={[styles.button, styles.buttonCritical]}
+          onPress={() => Alert.alert('DEBUG', `Platform: ${Platform.OS}\nCallInterceptorModule: ${CallInterceptorModule ? 'SÍ' : 'NO'}`)}
+        >
+          <Text style={styles.buttonText}>🔍 DEBUG INFO</Text>
+        </TouchableOpacity>
+
+        {/* BOTÓN CRÍTICO: Configurar como app de teléfono - AL FINAL */}
+        {Platform.OS === 'android' && (
+          <TouchableOpacity
+            style={[styles.button, isDefaultDialer ? styles.buttonSuccess : styles.buttonCritical]}
+            onPress={requestDefaultDialerRole}
+          >
+            <Text style={styles.buttonText}>
+              {isDefaultDialer
+                ? "✅ App de Teléfono Configurada"
+                : "📞 CONFIGURAR APP DE TELÉFONO"}
+            </Text>
+            {!isDefaultDialer && (
+              <Text style={styles.buttonSubtext}>¡REQUERIDO para auto-respuesta!</Text>
+            )}
+          </TouchableOpacity>
+        )}
+
+
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -418,11 +484,16 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a1a',
+  },
+  scrollContent: {
     padding: 20,
+    paddingBottom: 40,
   },
   loadingContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#1a1a1a',
   },
   loadingText: {
     color: '#cccccc',
@@ -463,7 +534,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   statsContainer: {
-    flex: 1,
     justifyContent: 'flex-start',
     marginBottom: 15,
   },

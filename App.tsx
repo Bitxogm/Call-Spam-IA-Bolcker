@@ -6,7 +6,10 @@ import { createStackNavigator } from '@react-navigation/stack';
 // Importar nuestras pantallas (las vamos a crear)
 import DashboardScreen from './src/screens/DashboardScreen';
 import SpamNumbersScreen from './src/screens/SpamNumbersScreen';
-import AITestScreen from './src/screens/AITestsScreen'; 
+import AITestScreen from './src/screens/AITestsScreen';
+import WhitelistScreen from './src/screens/WhitelistScreen';
+import LogsScreen from './src/screens/LogsScreen';
+import CallHistoryScreen from './src/screens/CallHistoryScreen'; 
 // Crear el navegador tipo Stack (pantallas apiladas)
 const Stack = createStackNavigator();
 
@@ -42,11 +45,32 @@ export default function App() {
           options={{ title: '📋 Gestionar Números' }}
         />
 
-             {/* Pantalla 3: Testing IA */}
-        <Stack.Screen 
-          name="AITest" 
+        {/* Pantalla 3: Testing IA */}
+        <Stack.Screen
+          name="AITest"
           component={AITestScreen}
           options={{ title: '🤖 Testing IA' }}
+        />
+
+        {/* Pantalla 4: Whitelist de Contactos */}
+        <Stack.Screen
+          name="Whitelist"
+          component={WhitelistScreen}
+          options={{ title: '👥 Whitelist' }}
+        />
+
+        {/* Pantalla 5: Logs de Debug */}
+        <Stack.Screen
+          name="Logs"
+          component={LogsScreen}
+          options={{ title: '📋 Logs de Debug' }}
+        />
+
+        {/* Pantalla 6: Historial de Llamadas Spam */}
+        <Stack.Screen
+          name="CallHistory"
+          component={CallHistoryScreen}
+          options={{ title: '📞 Historial de Spam' }}
         />
       </Stack.Navigator>
     </NavigationContainer>

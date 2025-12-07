@@ -16,6 +16,11 @@ public class CallInterceptorPackage implements ReactPackage {
     public List<NativeModule> createNativeModules(ReactApplicationContext reactContext) {
         List<NativeModule> modules = new ArrayList<>();
         modules.add(new CallInterceptorModule(reactContext));
+        modules.add(new BlacklistModule(reactContext));     // ✅ Módulo de blacklist
+        modules.add(new ContactsModule(reactContext));      // ✅ Módulo de contactos/whitelist
+        modules.add(new AnswerHangupModule(reactContext));  // ✅ Módulo de answer+hangup
+        modules.add(new LogsModule(reactContext));          // ✅ Módulo de logs in-app
+        modules.add(new CallHistoryModule(reactContext));   // ✅ Módulo de historial de llamadas
         return modules;
     }
 
