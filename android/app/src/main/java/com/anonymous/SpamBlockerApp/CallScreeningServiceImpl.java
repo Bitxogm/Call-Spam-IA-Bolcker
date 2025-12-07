@@ -95,13 +95,14 @@ public class CallScreeningServiceImpl extends CallScreeningService {
                     // Marcar número para answer+hangup
                     answerHangupHelper.markForAnswerHangup(callerNumber);
 
-                    // Aceptar llamada en SILENCIO (CallStateReceiver se encargará de colgar)
+                    // PERMITIR la llamada normalmente (CallStateReceiver la contestará y colgará)
+                    // NO intentar silenciar aquí - causa "Invalid response State"
                     CallResponse response = new CallResponse.Builder()
                         .setDisallowCall(false)      // NO bloquear (permitir)
-                        .setRejectCall(false)        // NO rechazar (aceptar)
-                        .setSilenceCall(true)        // ✅ SILENCIAR (no suena)
+                        .setRejectCall(false)        // NO rechazar (permitir que suene)
+                        // .setSilenceCall(true)     // ❌ REMOVIDO - causa error
                         .setSkipCallLog(false)       // SÍ registrar en log
-                        .setSkipNotification(true)   // NO mostrar notificación (silencioso)
+                        .setSkipNotification(false)  // SÍ mostrar notificación del sistema
                         .build();
 
                     respondToCall(callDetails, response);

@@ -73,6 +73,50 @@ public class CallStateReceiver extends BroadcastReceiver {
 
         if (lastIncomingNumber != null) {
             Log.d(TAG, "📞 RINGING: " + lastIncomingNumber);
+            logsHelper.logDebug("RINGING detectado: " + lastIncomingNumber);
+
+            // Si este número está marcado para Answer+Hangup, contestar automáticamente
+            if (answerHangupHelper.shouldHangup(lastIncomingNumber)) {
+                Log.d(TAG, "🔇 Spam detectado - Contestando automáticamente...");
+                logsHelper.logInfo("Contestando automáticamente spam: " + lastIncomingNumber);
+                answerCall(context, lastIncomingNumber);
+            }
+        }
+    }
+
+    /**
+     * Contesta la llamada automáticamente
+     */
+    private void answerCall(Context context, String number) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                TelecomManager telecomManager = (TelecomManager) context.getSystemService(Context.TELECOM_SERVICE);
+
+                if (telecomManager != null) {
+                    boolean success = telecomManager.acceptRingingCall();
+
+                    if (success) {
+                        Log.d(TAG, "✅ Llamada contestada automáticamente: " + number);
+                        logsHelper.logInfo("✅ Llamada spam contestada automáticamente: " + number);
+                        showToast(context, "🔇 Spam contestado automáticamente");
+                    } else {
+                        Log.e(TAG, "❌ No se pudo contestar la llamada");
+                        logsHelper.logError("❌ TelecomManager.acceptRingingCall() retornó false");
+                    }
+                } else {
+                    Log.e(TAG, "TelecomManager es null");
+                    logsHelper.logError("❌ TelecomManager es null - No se puede contestar");
+                }
+            } else {
+                Log.w(TAG, "Android < 9: acceptRingingCall() no disponible");
+                logsHelper.logWarning("⚠️ Android < 9: Auto-answer no disponible (API " + Build.VERSION.SDK_INT + ")");
+            }
+        } catch (SecurityException e) {
+            Log.e(TAG, "❌ Sin permiso ANSWER_PHONE_CALLS", e);
+            logsHelper.logError("❌ SecurityException al contestar: " + e.getMessage());
+        } catch (Exception e) {
+            Log.e(TAG, "❌ Error contestando llamada", e);
+            logsHelper.logError("❌ Exception al contestar: " + e.getMessage());
         }
     }
 
