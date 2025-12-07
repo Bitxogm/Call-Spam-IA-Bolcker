@@ -154,6 +154,11 @@ public class CallStateReceiver extends BroadcastReceiver {
             return;
         }
 
+        // LOG MODO ACTUAL (antes de shouldProcess)
+        AnswerHangupHelper.Mode currentMode = answerHangupHelper.getMode();
+        Log.d(TAG, "📱 MODO ACTUAL CARGADO: " + currentMode.name());
+        logsHelper.logInfo("📱 Modo cargado desde prefs: " + currentMode.name());
+
         // Verificar si debe procesarse (hangup, IVR, o IA)
         boolean shouldProcess = answerHangupHelper.shouldHangup(incomingNumber);
         Log.d(TAG, "🔍 shouldProcess() = " + shouldProcess);
