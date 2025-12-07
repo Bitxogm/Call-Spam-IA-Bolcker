@@ -33,6 +33,10 @@ public class CallStateReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
+        // LOG INMEDIATO para debug
+        String action = intent.getAction();
+        Log.d(TAG, "🔔 onReceive llamado - Action: " + action);
+
         // Inicializar helpers
         if (answerHangupHelper == null) {
             answerHangupHelper = new AnswerHangupHelper(context);
@@ -41,8 +45,14 @@ public class CallStateReceiver extends BroadcastReceiver {
             logsHelper = new LogsHelper(context);
         }
 
+        // LOG: Estado de Answer+Hangup
+        boolean isEnabled = answerHangupHelper.isEnabled();
+        Log.d(TAG, "🔔 Answer+Hangup enabled: " + isEnabled);
+        logsHelper.logDebug("onReceive: action=" + action + ", A+H enabled=" + isEnabled);
+
         // Verificar si Answer+Hangup está habilitado
-        if (!answerHangupHelper.isEnabled()) {
+        if (!isEnabled) {
+            Log.d(TAG, "⚠️ Answer+Hangup desactivado, ignorando evento");
             return;
         }
 
@@ -50,10 +60,12 @@ public class CallStateReceiver extends BroadcastReceiver {
         String state = intent.getStringExtra(TelephonyManager.EXTRA_STATE);
 
         if (state == null) {
+            Log.w(TAG, "⚠️ Estado es null");
             return;
         }
 
         Log.d(TAG, "📞 Estado de llamada: " + state);
+        logsHelper.logDebug("Phone state: " + state);
 
         if (TelephonyManager.EXTRA_STATE_RINGING.equals(state)) {
             handleRinging(context, intent);
@@ -121,6 +133,7 @@ public class CallStateReceiver extends BroadcastReceiver {
      */
     private void handleOffhook(Context context, Intent intent) {
         Log.d(TAG, "📞 OFFHOOK (contestada)");
+        logsHelper.logInfo("OFFHOOK detectado - llamada contestada");
 
         // Si no tenemos número guardado, intentar obtenerlo del intent
         String incomingNumber = lastIncomingNumber;
@@ -128,17 +141,24 @@ public class CallStateReceiver extends BroadcastReceiver {
             incomingNumber = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER);
         }
 
+        Log.d(TAG, "🔍 Número entrante: " + incomingNumber);
+        logsHelper.logDebug("Número OFFHOOK: " + incomingNumber);
+
         if (incomingNumber == null) {
             Log.d(TAG, "No hay número de llamada entrante");
+            logsHelper.logWarning("OFFHOOK sin número - ignorando");
             return;
         }
 
         // Verificar si debe colgarse
         boolean shouldHangup = answerHangupHelper.shouldHangup(incomingNumber);
+        Log.d(TAG, "🔍 shouldHangup() = " + shouldHangup);
+        logsHelper.logDebug("shouldHangup para " + incomingNumber + ": " + shouldHangup);
 
         if (shouldHangup) {
             int delay = answerHangupHelper.getHangupDelay();
             Log.d(TAG, "⏱️ Esperando " + delay + " segundos antes de colgar...");
+            logsHelper.logInfo("⏱️ Programando hangup en " + delay + " segundos para: " + incomingNumber);
 
             showToast(context, "🔇 Llamada spam contestada silenciosamente");
 
@@ -147,8 +167,13 @@ public class CallStateReceiver extends BroadcastReceiver {
 
             // Esperar delay y colgar
             new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                Log.d(TAG, "🎯 Ejecutando hangup después de delay");
+                logsHelper.logInfo("🎯 Delay completado - ejecutando hangup");
                 hangupCall(context, numberToHangup);
             }, delay * 1000L);
+        } else {
+            Log.d(TAG, "⚠️ shouldHangup = false, NO se colgará");
+            logsHelper.logWarning("shouldHangup = false - número NO marcado para hangup: " + incomingNumber);
         }
     }
 
