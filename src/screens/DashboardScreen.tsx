@@ -410,6 +410,14 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
         </TouchableOpacity>
 
         <TouchableOpacity
+          style={[styles.button, { backgroundColor: '#ff9900' }]}
+          onPress={() => navigation.navigate('AnswerHangupSettings')}
+        >
+          <Text style={styles.buttonText}>⚙️ Answer+Hangup</Text>
+          <Text style={styles.buttonSubtext}>Configurar auto-respuesta y modos</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
           style={[styles.button, { backgroundColor: '#007bff' }]}
           onPress={() => navigation.navigate('Logs')}
         >

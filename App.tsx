@@ -9,7 +9,8 @@ import SpamNumbersScreen from './src/screens/SpamNumbersScreen';
 import AITestScreen from './src/screens/AITestsScreen';
 import WhitelistScreen from './src/screens/WhitelistScreen';
 import LogsScreen from './src/screens/LogsScreen';
-import CallHistoryScreen from './src/screens/CallHistoryScreen'; 
+import CallHistoryScreen from './src/screens/CallHistoryScreen';
+import AnswerHangupSettingsScreen from './src/screens/AnswerHangupSettingsScreen'; 
 // Crear el navegador tipo Stack (pantallas apiladas)
 const Stack = createStackNavigator();
 
@@ -71,6 +72,13 @@ export default function App() {
           name="CallHistory"
           component={CallHistoryScreen}
           options={{ title: '📞 Historial de Spam' }}
+        />
+
+        {/* Pantalla 7: Configuración Answer+Hangup */}
+        <Stack.Screen
+          name="AnswerHangupSettings"
+          component={AnswerHangupSettingsScreen}
+          options={{ title: '⚙️ Answer+Hangup' }}
         />
       </Stack.Navigator>
     </NavigationContainer>

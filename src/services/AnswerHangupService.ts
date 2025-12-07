@@ -73,6 +73,60 @@ class AnswerHangupService {
       return 'Error';
     }
   };
+
+  /**
+   * Obtiene el modo actual
+   */
+  getMode = async (): Promise<'HANGUP_IMMEDIATELY' | 'PLAY_MESSAGE' | 'AI_CONVERSATION'> => {
+    try {
+      const mode = await AnswerHangupModule.getMode();
+      return mode;
+    } catch (error) {
+      console.error('❌ Error obteniendo modo:', error);
+      return 'HANGUP_IMMEDIATELY'; // Default
+    }
+  };
+
+  /**
+   * Configura el modo de Answer+Hangup
+   */
+  setMode = async (mode: 'HANGUP_IMMEDIATELY' | 'PLAY_MESSAGE' | 'AI_CONVERSATION'): Promise<boolean> => {
+    try {
+      await AnswerHangupModule.setMode(mode);
+      console.log(`🎯 Modo configurado: ${mode}`);
+      return true;
+    } catch (error) {
+      console.error('❌ Error configurando modo:', error);
+      return false;
+    }
+  };
+
+  /**
+   * Obtiene toda la configuración de Answer+Hangup
+   */
+  getConfiguration = async (): Promise<{
+    enabled: boolean;
+    mode: 'HANGUP_IMMEDIATELY' | 'PLAY_MESSAGE' | 'AI_CONVERSATION';
+    hangupDelay: number;
+  }> => {
+    try {
+      const [enabled, mode, hangupDelay] = await Promise.all([
+        this.isEnabled(),
+        this.getMode(),
+        this.getHangupDelay(),
+      ]);
+
+      return { enabled, mode, hangupDelay };
+    } catch (error) {
+      console.error('❌ Error obteniendo configuración:', error);
+      return {
+        enabled: false,
+        mode: 'HANGUP_IMMEDIATELY',
+        hangupDelay: 2,
+      };
+    }
+  };
 }
 
-export default new AnswerHangupService();
+export const answerHangupService = new AnswerHangupService();
+export default answerHangupService;
