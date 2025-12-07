@@ -122,7 +122,7 @@ public class AnswerHangupHelper {
 
         if (match) {
             Log.d(TAG, "✅ Número coincide, debe colgarse: " + number);
-            clearMarked(); // Limpiar para no colgar múltiples veces
+            // NO limpiar aquí - se limpiará después del hangup exitoso
         } else {
             Log.d(TAG, "❌ Número NO coincide (" + normalizedIncoming + " vs " + normalizedMarked + ")");
         }

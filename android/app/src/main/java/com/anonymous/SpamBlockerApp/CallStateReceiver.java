@@ -201,6 +201,10 @@ public class CallStateReceiver extends BroadcastReceiver {
                         Log.d(TAG, "✅ Llamada colgada: " + number);
                         showToast(context, "✅ Spam colgado automáticamente");
                         logsHelper.logInfo("✅ Spam colgado automáticamente: " + number);
+
+                        // Limpiar número marcado después del hangup exitoso
+                        answerHangupHelper.clearMarked();
+                        Log.d(TAG, "🧹 Número marcado limpiado después de hangup exitoso");
                     } else {
                         Log.e(TAG, "❌ No se pudo colgar la llamada");
                         showToast(context, "❌ Error colgando llamada");
