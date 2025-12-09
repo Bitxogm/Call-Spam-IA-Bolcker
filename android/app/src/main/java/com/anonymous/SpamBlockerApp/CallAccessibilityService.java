@@ -78,20 +78,28 @@ public class CallAccessibilityService extends AccessibilityService {
             return;
         }
 
-        // Tipos de eventos que nos interesan
+        // Solo procesar eventos de ventana nueva (WINDOW_STATE_CHANGED)
+        // No procesar WINDOW_CONTENT_CHANGED porque hay demasiados eventos
         int eventType = event.getEventType();
+        if (eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            return;
+        }
+
         String packageName = event.getPackageName() != null ? event.getPackageName().toString() : "";
 
         // Log para debugging
-        if (eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
-            eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
-
-            Log.d(TAG, "📱 AccessibilityEvent: type=" + eventTypeToString(eventType) +
-                       ", package=" + packageName);
-        }
+        Log.d(TAG, "📱 AccessibilityEvent: type=" + eventTypeToString(eventType) +
+                   ", package=" + packageName);
 
         // Verificar si es un evento de una app de llamadas
         if (!isPhonePackage(packageName)) {
+            return;
+        }
+
+        // NO procesar si la ventana activa es nuestra propia app
+        // (para evitar clickear en nuestros propios botones)
+        if (packageName.contains(getPackageName())) {
+            Log.d(TAG, "⚠️ Evento de nuestra propia app - ignorando");
             return;
         }
 
