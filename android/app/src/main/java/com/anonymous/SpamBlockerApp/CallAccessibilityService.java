@@ -49,7 +49,8 @@ public class CallAccessibilityService extends AccessibilityService {
         "com.android.dialer",             // Google Dialer
         "com.google.android.dialer",      // Google Dialer (alternativo)
         "com.samsung.android.incallui",   // Samsung
-        "com.android.server.telecom"      // Telecom system
+        "com.android.server.telecom",     // Telecom system
+        "com.android.systemui"            // SystemUI (emuladores y dispositivos modernos)
     };
 
     @Override
