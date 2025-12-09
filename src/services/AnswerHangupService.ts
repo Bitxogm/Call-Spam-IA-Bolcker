@@ -153,6 +153,35 @@ class AnswerHangupService {
       };
     }
   };
+
+  /**
+   * Verifica si el servicio de Accesibilidad está habilitado
+   *
+   * CRÍTICO: Para que funcione Modo 2 (IVR) y Modo 3 (IA), necesitamos
+   * Accessibility Service que permita auto-contestar llamadas.
+   */
+  isAccessibilityServiceEnabled = async (): Promise<boolean> => {
+    try {
+      const isEnabled = await AnswerHangupModule.isAccessibilityServiceEnabled();
+      return isEnabled;
+    } catch (error) {
+      console.error('❌ Error verificando Accessibility Service:', error);
+      return false;
+    }
+  };
+
+  /**
+   * Abre la configuración de Accesibilidad
+   */
+  openAccessibilitySettings = async (): Promise<boolean> => {
+    try {
+      await AnswerHangupModule.openAccessibilitySettings();
+      return true;
+    } catch (error) {
+      console.error('❌ Error abriendo configuración de Accesibilidad:', error);
+      return false;
+    }
+  };
 }
 
 export const answerHangupService = new AnswerHangupService();

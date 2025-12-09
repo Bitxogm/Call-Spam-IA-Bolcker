@@ -2,7 +2,11 @@
 package com.anonymous.SpamBlockerApp;
 
 import android.Manifest;
+import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.provider.Settings;
+import android.text.TextUtils;
 import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
 
@@ -166,5 +170,82 @@ public class AnswerHangupModule extends ReactContextBaseJavaModule {
         } catch (Exception e) {
             promise.reject("CHECK_PERMISSION_ERROR", e.getMessage(), e);
         }
+    }
+
+    /**
+     * Verifica si el servicio de Accesibilidad está habilitado
+     *
+     * CRÍTICO: Para que funcione Modo 2 (IVR) y Modo 3 (IA), necesitamos
+     * Accessibility Service que permita auto-contestar llamadas.
+     */
+    @ReactMethod
+    public void isAccessibilityServiceEnabled(Promise promise) {
+        try {
+            boolean isEnabled = isAccessibilityEnabled(getReactApplicationContext());
+            promise.resolve(isEnabled);
+        } catch (Exception e) {
+            promise.reject("CHECK_ACCESSIBILITY_ERROR", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Abre la configuración de Accesibilidad para que el usuario active el servicio
+     */
+    @ReactMethod
+    public void openAccessibilitySettings(Promise promise) {
+        try {
+            Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+
+            if (getCurrentActivity() != null) {
+                getCurrentActivity().startActivity(intent);
+                promise.resolve(true);
+            } else {
+                getReactApplicationContext().startActivity(intent);
+                promise.resolve(true);
+            }
+        } catch (Exception e) {
+            promise.reject("OPEN_ACCESSIBILITY_ERROR", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Helper para verificar si Accessibility Service está habilitado
+     */
+    private boolean isAccessibilityEnabled(Context context) {
+        String serviceName = context.getPackageName() + "/.CallAccessibilityService";
+
+        try {
+            int accessibilityEnabled = Settings.Secure.getInt(
+                context.getContentResolver(),
+                Settings.Secure.ACCESSIBILITY_ENABLED,
+                0
+            );
+
+            if (accessibilityEnabled != 1) {
+                return false;
+            }
+
+            String settingValue = Settings.Secure.getString(
+                context.getContentResolver(),
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            );
+
+            if (settingValue != null) {
+                TextUtils.SimpleStringSplitter splitter = new TextUtils.SimpleStringSplitter(':');
+                splitter.setString(settingValue);
+
+                while (splitter.hasNext()) {
+                    String accessibilityService = splitter.next();
+                    if (accessibilityService.equalsIgnoreCase(serviceName)) {
+                        return true;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return false;
     }
 }
