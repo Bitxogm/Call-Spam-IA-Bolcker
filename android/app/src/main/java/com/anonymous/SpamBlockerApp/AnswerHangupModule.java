@@ -216,13 +216,20 @@ public class AnswerHangupModule extends ReactContextBaseJavaModule {
         String serviceName = context.getPackageName() + "/.CallAccessibilityService";
 
         try {
+            // Log para debugging
+            android.util.Log.d("AnswerHangupModule", "🔍 Buscando servicio: " + serviceName);
+            android.util.Log.d("AnswerHangupModule", "📦 Package name: " + context.getPackageName());
+
             int accessibilityEnabled = Settings.Secure.getInt(
                 context.getContentResolver(),
                 Settings.Secure.ACCESSIBILITY_ENABLED,
                 0
             );
 
+            android.util.Log.d("AnswerHangupModule", "♿ Accessibility enabled flag: " + accessibilityEnabled);
+
             if (accessibilityEnabled != 1) {
+                android.util.Log.w("AnswerHangupModule", "⚠️ Accessibility está DESACTIVADO en el sistema");
                 return false;
             }
 
@@ -231,18 +238,27 @@ public class AnswerHangupModule extends ReactContextBaseJavaModule {
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
             );
 
+            android.util.Log.d("AnswerHangupModule", "📋 Servicios habilitados: " + settingValue);
+
             if (settingValue != null) {
                 TextUtils.SimpleStringSplitter splitter = new TextUtils.SimpleStringSplitter(':');
                 splitter.setString(settingValue);
 
                 while (splitter.hasNext()) {
                     String accessibilityService = splitter.next();
+                    android.util.Log.d("AnswerHangupModule", "  🔹 Comparando: " + accessibilityService);
                     if (accessibilityService.equalsIgnoreCase(serviceName)) {
+                        android.util.Log.i("AnswerHangupModule", "✅ ¡Servicio encontrado!");
                         return true;
                     }
                 }
+            } else {
+                android.util.Log.w("AnswerHangupModule", "⚠️ No hay servicios de accesibilidad habilitados");
             }
+
+            android.util.Log.w("AnswerHangupModule", "❌ Servicio NO encontrado en la lista");
         } catch (Exception e) {
+            android.util.Log.e("AnswerHangupModule", "❌ Error verificando Accessibility: " + e.getMessage());
             e.printStackTrace();
         }
 
