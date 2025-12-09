@@ -8,6 +8,8 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.telecom.TelecomManager;
+import android.telephony.PhoneStateListener;
+import android.telephony.TelephonyManager;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -34,6 +36,10 @@ public class CallAccessibilityService extends AccessibilityService {
     private LogsHelper logsHelper;
     private Handler mainHandler;
 
+    // Phone state listener para detectar llamadas entrantes
+    private TelephonyManager telephonyManager;
+    private PhoneStateListener phoneStateListener;
+
     // Textos comunes de botón "Contestar" en diferentes idiomas
     private static final String[] ANSWER_BUTTON_TEXTS = {
         "answer",           // Inglés
@@ -47,13 +53,14 @@ public class CallAccessibilityService extends AccessibilityService {
     };
 
     // Paquetes de apps de llamadas comunes
+    // NOTA: NO incluimos systemui para evitar conflictos con nuestra propia UI
+    // En su lugar, usamos TelecomManager como fallback para contestar
     private static final String[] PHONE_PACKAGES = {
         "com.android.incallui",           // Android stock
         "com.android.dialer",             // Google Dialer
         "com.google.android.dialer",      // Google Dialer (alternativo)
         "com.samsung.android.incallui",   // Samsung
-        "com.android.server.telecom",     // Telecom system
-        "com.android.systemui"            // SystemUI (emuladores y dispositivos modernos)
+        "com.android.server.telecom"      // Telecom system
     };
 
     @Override
@@ -72,6 +79,42 @@ public class CallAccessibilityService extends AccessibilityService {
         Log.d(TAG, "🎯 Modo: " + mode.name());
 
         logsHelper.logInfo("🔓 AccessibilityService iniciado - A+H: " + (isEnabled ? "ON" : "OFF"));
+
+        // Registrar listener para detectar llamadas entrantes
+        setupPhoneStateListener();
+    }
+
+    /**
+     * Configura el listener para detectar llamadas entrantes
+     */
+    private void setupPhoneStateListener() {
+        telephonyManager = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
+
+        phoneStateListener = new PhoneStateListener() {
+            @Override
+            public void onCallStateChanged(int state, String phoneNumber) {
+                super.onCallStateChanged(state, phoneNumber);
+
+                if (!answerHangupHelper.isEnabled()) {
+                    return;
+                }
+
+                if (state == TelephonyManager.CALL_STATE_RINGING) {
+                    Log.d(TAG, "📞 Llamada entrante detectada via PhoneStateListener");
+                    logsHelper.logInfo("📞 Llamada entrante detectada");
+
+                    // Esperar 1 segundo para dar tiempo a que la UI aparezca
+                    mainHandler.postDelayed(() -> {
+                        answerCallProgrammatically();
+                    }, 1000);
+                }
+            }
+        };
+
+        if (telephonyManager != null) {
+            telephonyManager.listen(phoneStateListener, PhoneStateListener.LISTEN_CALL_STATE);
+            Log.d(TAG, "✅ PhoneStateListener registrado");
+        }
     }
 
     @Override
@@ -353,6 +396,12 @@ public class CallAccessibilityService extends AccessibilityService {
 
         if (mainHandler != null) {
             mainHandler.removeCallbacksAndMessages(null);
+        }
+
+        // Desregistrar PhoneStateListener
+        if (telephonyManager != null && phoneStateListener != null) {
+            telephonyManager.listen(phoneStateListener, PhoneStateListener.LISTEN_NONE);
+            Log.d(TAG, "✅ PhoneStateListener desregistrado");
         }
 
         Log.d(TAG, "💀 CallAccessibilityService destruido");
