@@ -2,9 +2,12 @@ package com.anonymous.SpamBlockerApp;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.content.Context;
 import android.content.Intent;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.telecom.TelecomManager;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -124,6 +127,7 @@ public class CallAccessibilityService extends AccessibilityService {
 
     /**
      * Intenta encontrar y clickear el botón de contestar
+     * Si no lo encuentra, usa TelecomManager como fallback
      */
     private void tryToAnswerCall() {
         Log.d(TAG, "🔍 Intentando contestar llamada...");
@@ -132,8 +136,9 @@ public class CallAccessibilityService extends AccessibilityService {
         AccessibilityNodeInfo rootNode = getRootInActiveWindow();
 
         if (rootNode == null) {
-            Log.w(TAG, "⚠️ No se pudo obtener nodo raíz");
+            Log.w(TAG, "⚠️ No se pudo obtener nodo raíz - intentando TelecomManager");
             logsHelper.logWarning("⚠️ No se pudo obtener ventana activa");
+            answerCallProgrammatically();
             return;
         }
 
@@ -152,21 +157,59 @@ public class CallAccessibilityService extends AccessibilityService {
                     Log.d(TAG, "🎯 Click simulado exitosamente");
                     logsHelper.logInfo("🎯 Llamada contestada automáticamente via Accessibility");
                 } else {
-                    Log.w(TAG, "⚠️ No se pudo simular click");
-                    logsHelper.logWarning("⚠️ Error al simular click en botón contestar");
+                    Log.w(TAG, "⚠️ No se pudo simular click - intentando TelecomManager");
+                    logsHelper.logWarning("⚠️ Error al simular click - usando fallback");
+                    answerCallProgrammatically();
                 }
 
                 answerButton.recycle();
             } else {
-                Log.d(TAG, "🔍 Botón de contestar no encontrado (aún)");
-                logsHelper.logDebug("🔍 Botón no encontrado - puede ser heads-up notification");
+                Log.d(TAG, "🔍 Botón de contestar no encontrado - es heads-up notification");
+                logsHelper.logDebug("🔍 Botón no encontrado - usando TelecomManager");
+                answerCallProgrammatically();
             }
 
         } catch (Exception e) {
             Log.e(TAG, "❌ Error buscando botón: " + e.getMessage(), e);
             logsHelper.logError("❌ Error Accessibility: " + e.getMessage());
+            answerCallProgrammatically();
         } finally {
             rootNode.recycle();
+        }
+    }
+
+    /**
+     * Contesta la llamada programáticamente usando TelecomManager
+     * Este método funciona con heads-up notifications y no requiere buscar botones
+     */
+    private void answerCallProgrammatically() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            Log.w(TAG, "⚠️ TelecomManager.acceptRingingCall requiere Android 8.0+");
+            logsHelper.logWarning("⚠️ Android version no soporta TelecomManager.acceptRingingCall");
+            return;
+        }
+
+        try {
+            TelecomManager telecomManager = (TelecomManager) getSystemService(Context.TELECOM_SERVICE);
+
+            if (telecomManager == null) {
+                Log.e(TAG, "❌ No se pudo obtener TelecomManager");
+                logsHelper.logError("❌ TelecomManager no disponible");
+                return;
+            }
+
+            // Contestar la llamada programáticamente
+            telecomManager.acceptRingingCall();
+
+            Log.i(TAG, "✅ Llamada contestada programáticamente via TelecomManager");
+            logsHelper.logInfo("✅ Llamada contestada automáticamente (TelecomManager)");
+
+        } catch (SecurityException e) {
+            Log.e(TAG, "❌ Permiso denegado: " + e.getMessage());
+            logsHelper.logError("❌ Falta permiso ANSWER_PHONE_CALLS");
+        } catch (Exception e) {
+            Log.e(TAG, "❌ Error contestando llamada: " + e.getMessage(), e);
+            logsHelper.logError("❌ Error TelecomManager: " + e.getMessage());
         }
     }
 
