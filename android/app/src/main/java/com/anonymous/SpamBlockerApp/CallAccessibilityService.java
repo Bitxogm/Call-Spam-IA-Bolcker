@@ -126,10 +126,14 @@ public class CallAccessibilityService extends AccessibilityService {
      * Intenta encontrar y clickear el botón de contestar
      */
     private void tryToAnswerCall() {
+        Log.d(TAG, "🔍 Intentando contestar llamada...");
+        logsHelper.logDebug("🔍 Buscando botón de contestar");
+
         AccessibilityNodeInfo rootNode = getRootInActiveWindow();
 
         if (rootNode == null) {
             Log.w(TAG, "⚠️ No se pudo obtener nodo raíz");
+            logsHelper.logWarning("⚠️ No se pudo obtener ventana activa");
             return;
         }
 
@@ -155,6 +159,7 @@ public class CallAccessibilityService extends AccessibilityService {
                 answerButton.recycle();
             } else {
                 Log.d(TAG, "🔍 Botón de contestar no encontrado (aún)");
+                logsHelper.logDebug("🔍 Botón no encontrado - puede ser heads-up notification");
             }
 
         } catch (Exception e) {
