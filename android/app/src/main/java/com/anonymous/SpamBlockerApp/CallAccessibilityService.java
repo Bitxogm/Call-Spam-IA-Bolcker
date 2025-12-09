@@ -84,6 +84,12 @@ public class CallAccessibilityService extends AccessibilityService {
         int eventType = event.getEventType();
         String packageName = event.getPackageName() != null ? event.getPackageName().toString() : "";
 
+        // CRÍTICO: NO procesar NINGÚN evento de nuestra propia app
+        // (para evitar clickear en nuestros propios botones)
+        if (packageName.equals(getPackageName())) {
+            return; // Salir inmediatamente, sin logging
+        }
+
         // DEBUG: Loguear TODOS los eventos de systemui para entender qué pasa durante una llamada
         if (packageName.contains("systemui")) {
             Log.d(TAG, "🔍 DEBUG SystemUI Event: type=" + eventTypeToString(eventType) +
@@ -104,13 +110,6 @@ public class CallAccessibilityService extends AccessibilityService {
 
         // Verificar si es un evento de una app de llamadas
         if (!isPhonePackage(packageName)) {
-            return;
-        }
-
-        // NO procesar si la ventana activa es nuestra propia app
-        // (para evitar clickear en nuestros propios botones)
-        if (packageName.contains(getPackageName())) {
-            Log.d(TAG, "⚠️ Evento de nuestra propia app - ignorando");
             return;
         }
 
