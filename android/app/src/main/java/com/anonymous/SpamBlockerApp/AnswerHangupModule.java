@@ -213,7 +213,8 @@ public class AnswerHangupModule extends ReactContextBaseJavaModule {
      * Helper para verificar si Accessibility Service está habilitado
      */
     private boolean isAccessibilityEnabled(Context context) {
-        String serviceName = context.getPackageName() + "/.CallAccessibilityService";
+        // Nombre completo del servicio (com.anonymous.SpamBlockerApp/com.anonymous.SpamBlockerApp.CallAccessibilityService)
+        String serviceName = context.getPackageName() + "/" + context.getPackageName() + ".CallAccessibilityService";
 
         try {
             // Log para debugging
