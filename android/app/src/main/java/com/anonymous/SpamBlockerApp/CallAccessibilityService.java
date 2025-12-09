@@ -78,16 +78,24 @@ public class CallAccessibilityService extends AccessibilityService {
             return;
         }
 
-        // Solo procesar eventos de ventana nueva (WINDOW_STATE_CHANGED)
-        // No procesar WINDOW_CONTENT_CHANGED porque hay demasiados eventos
         int eventType = event.getEventType();
-        if (eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+        String packageName = event.getPackageName() != null ? event.getPackageName().toString() : "";
+
+        // DEBUG: Loguear TODOS los eventos de systemui para entender qué pasa durante una llamada
+        if (packageName.contains("systemui")) {
+            Log.d(TAG, "🔍 DEBUG SystemUI Event: type=" + eventTypeToString(eventType) +
+                       ", package=" + packageName +
+                       ", className=" + (event.getClassName() != null ? event.getClassName() : "null"));
+        }
+
+        // Solo procesar eventos de ventana nueva o contenido cambiado
+        if (eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
+            eventType != AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) {
             return;
         }
 
-        String packageName = event.getPackageName() != null ? event.getPackageName().toString() : "";
-
-        // Log para debugging
+        // Log para debugging de eventos relevantes
         Log.d(TAG, "📱 AccessibilityEvent: type=" + eventTypeToString(eventType) +
                    ", package=" + packageName);
 
