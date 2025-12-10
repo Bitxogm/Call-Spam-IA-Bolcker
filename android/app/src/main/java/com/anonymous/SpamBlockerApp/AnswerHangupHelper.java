@@ -82,10 +82,14 @@ public class AnswerHangupHelper {
      */
     public Mode getMode() {
         String modeString = prefs.getString(KEY_MODE, DEFAULT_MODE.name());
+        Log.d(TAG, "📖 Leyendo modo de SharedPreferences: '" + modeString + "'");
+
         try {
-            return Mode.valueOf(modeString);
+            Mode mode = Mode.valueOf(modeString);
+            Log.d(TAG, "✅ Modo parseado correctamente: " + mode.name());
+            return mode;
         } catch (IllegalArgumentException e) {
-            Log.w(TAG, "Modo inválido en prefs, usando default: " + e.getMessage());
+            Log.w(TAG, "⚠️ Modo inválido en prefs ('" + modeString + "'), usando default: " + DEFAULT_MODE.name());
             return DEFAULT_MODE;
         }
     }
@@ -94,8 +98,21 @@ public class AnswerHangupHelper {
      * Configura el modo de Answer+Hangup
      */
     public void setMode(Mode mode) {
-        prefs.edit().putString(KEY_MODE, mode.name()).apply();
-        Log.d(TAG, "Modo configurado: " + mode.name());
+        Log.d(TAG, "💾 Guardando modo: " + mode.name());
+
+        boolean success = prefs.edit().putString(KEY_MODE, mode.name()).commit(); // Usar commit() en lugar de apply()
+
+        if (success) {
+            // Verificar que se guardó correctamente
+            String saved = prefs.getString(KEY_MODE, null);
+            Log.d(TAG, "✅ Modo guardado exitosamente. Verificación: '" + saved + "'");
+
+            if (!mode.name().equals(saved)) {
+                Log.e(TAG, "❌ ERROR: El modo guardado ('" + saved + "') NO coincide con el modo solicitado ('" + mode.name() + "')");
+            }
+        } else {
+            Log.e(TAG, "❌ ERROR: No se pudo guardar el modo en SharedPreferences");
+        }
     }
 
     /**
@@ -121,16 +138,26 @@ public class AnswerHangupHelper {
      * @return true si debe colgarse, false si no
      */
     public boolean shouldHangup(String number) {
+        Log.d(TAG, "🔍 ========================================");
+        Log.d(TAG, "🔍 Verificando shouldHangup()");
+        Log.d(TAG, "🔍 Número entrante: " + number);
+        Log.d(TAG, "🔍 Answer+Hangup enabled: " + isEnabled());
+
         if (!isEnabled()) {
-            Log.d(TAG, "Answer+Hangup desactivado");
+            Log.d(TAG, "❌ Answer+Hangup desactivado");
+            Log.d(TAG, "🔍 ========================================");
             return false;
         }
 
         String markedNumber = prefs.getString(KEY_LAST_SPAM_NUMBER, null);
         long markedTime = prefs.getLong(KEY_LAST_SPAM_TIME, 0);
 
+        Log.d(TAG, "🔍 Número marcado: " + markedNumber);
+        Log.d(TAG, "🔍 Tiempo marcado: " + markedTime);
+
         if (markedNumber == null || markedNumber.isEmpty()) {
-            Log.d(TAG, "No hay número marcado para colgar");
+            Log.d(TAG, "❌ No hay número marcado para colgar");
+            Log.d(TAG, "🔍 ========================================");
             return false;
         }
 
@@ -138,8 +165,12 @@ public class AnswerHangupHelper {
         long now = System.currentTimeMillis();
         long timeDiff = now - markedTime;
 
+        Log.d(TAG, "🔍 Tiempo actual: " + now);
+        Log.d(TAG, "🔍 Diferencia tiempo: " + timeDiff + "ms (max: " + MAX_TIME_DIFF_MS + "ms)");
+
         if (timeDiff > MAX_TIME_DIFF_MS) {
-            Log.d(TAG, "Tiempo excedido (" + timeDiff + "ms), no cuelgo");
+            Log.e(TAG, "❌ TIMEOUT! Tiempo excedido (" + timeDiff + "ms > " + MAX_TIME_DIFF_MS + "ms)");
+            Log.d(TAG, "🔍 ========================================");
             clearMarked(); // Limpiar para evitar colgar llamadas equivocadas
             return false;
         }
@@ -148,13 +179,18 @@ public class AnswerHangupHelper {
         String normalizedIncoming = normalizeNumber(number);
         String normalizedMarked = normalizeNumber(markedNumber);
 
+        Log.d(TAG, "🔍 Normalizado entrante: " + normalizedIncoming);
+        Log.d(TAG, "🔍 Normalizado marcado: " + normalizedMarked);
+
         boolean match = normalizedIncoming.equals(normalizedMarked);
 
         if (match) {
-            Log.d(TAG, "✅ Número coincide, debe colgarse: " + number);
+            Log.i(TAG, "✅ ¡MATCH! Número coincide, debe colgarse");
+            Log.d(TAG, "🔍 ========================================");
             // NO limpiar aquí - se limpiará después del hangup exitoso
         } else {
-            Log.d(TAG, "❌ Número NO coincide (" + normalizedIncoming + " vs " + normalizedMarked + ")");
+            Log.e(TAG, "❌ NO MATCH! Números NO coinciden");
+            Log.d(TAG, "🔍 ========================================");
         }
 
         return match;
