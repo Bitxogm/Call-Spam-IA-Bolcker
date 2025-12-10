@@ -93,7 +93,7 @@
       <intent-filter>
         <action android:name="android.telecom.InCallService" />
       </intent-filter>
-      <meta-data android:name="android.telecom.IN_CALL_SERVICE_UI" android:value="true" />
+      <meta-data android:name="android.telecom.IN_CALL_SERVICE_UI" android:value="false" />
     </service>
 
     <!-- Servicio foreground para operaciones en segundo plano -->
