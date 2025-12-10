@@ -111,8 +111,9 @@ public class SpamCallService extends InCallService {
                     logsHelper.logInfo("💀 Llamada desconectada");
 
                     // Detener IVR si estaba reproduciéndose
-                    if (ivrMessageHelper.isPlaying()) {
-                        ivrMessageHelper.stopIVR();
+                    IVRMessageHelper ivrHelper = IVRMessageHelper.getInstance(SpamCallService.this);
+                    if (ivrHelper.isPlaying()) {
+                        ivrHelper.stopIVR();
                     }
                 }
             }
