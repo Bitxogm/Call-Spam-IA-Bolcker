@@ -1,7 +1,8 @@
-// src/screens/AITestScreen.tsx 
-import React, { useState } from 'react';
+// src/screens/AITestScreen.tsx
+import React, { useState, useEffect } from 'react';
 import { geminiService, SPAM_PERSONALITIES } from '../services/GeminiServices';
 import { elevenLabsService } from '../services/ElevenLabService';
+import speechRecognitionService from '../services/SpeechRecognitionService';
 import {
   StyleSheet,
   Text,
@@ -12,7 +13,8 @@ import {
   Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  Animated
 } from 'react-native';
 
 type AITestScreenProps = {
@@ -26,9 +28,37 @@ export default function AITestScreen({ navigation }: AITestScreenProps) {
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isPlayingTTS, setIsPlayingTTS] = useState(false);
- 
+
+  // Estados para Speech Recognition
+  const [isRecording, setIsRecording] = useState(false);
+  const [isSpeechAvailable, setIsSpeechAvailable] = useState(false);
+  const [micScale] = useState(new Animated.Value(1));
 
   const isGeminiConfigured = geminiService.isConfigured();
+
+  // Verificar disponibilidad de Speech Recognition
+  useEffect(() => {
+    checkSpeechAvailability();
+
+    return () => {
+      // Cleanup al desmontar
+      speechRecognitionService.removeAllListeners();
+    };
+  }, []);
+
+  const checkSpeechAvailability = async () => {
+    try {
+      const available = await speechRecognitionService.isAvailable();
+      setIsSpeechAvailable(available);
+
+      if (!available) {
+        console.warn('⚠️ Speech Recognition no disponible en este dispositivo');
+      }
+    } catch (error) {
+      console.error('❌ Error verificando Speech Recognition:', error);
+      setIsSpeechAvailable(false);
+    }
+  };
 
   const startNewConversation = () => {
     const newConversationId = geminiService.startConversation('TEST_NUMBER', selectedPersonality);
@@ -162,6 +192,133 @@ export default function AITestScreen({ navigation }: AITestScreenProps) {
     }
   };
 
+  // 🎤 Función para PRESIONAR botón de micrófono (Push-to-Talk)
+  const handleMicPressIn = async () => {
+    if (!conversationId || isLoading || isPlayingTTS || !isSpeechAvailable) {
+      return;
+    }
+
+    try {
+      setIsRecording(true);
+
+      // Animación del botón
+      Animated.spring(micScale, {
+        toValue: 1.2,
+        useNativeDriver: true,
+      }).start();
+
+      // Iniciar reconocimiento
+      await speechRecognitionService.startListening('es-ES');
+      console.log('🎤 Grabación iniciada - HABLA AHORA');
+
+    } catch (error) {
+      console.error('❌ Error iniciando grabación:', error);
+      setIsRecording(false);
+
+      Animated.spring(micScale, {
+        toValue: 1,
+        useNativeDriver: true,
+      }).start();
+
+      Alert.alert('❌ Error', 'No se pudo iniciar el reconocimiento de voz');
+    }
+  };
+
+  // 🎤 Función para SOLTAR botón de micrófono (Push-to-Talk)
+  const handleMicPressOut = async () => {
+    if (!isRecording) return;
+
+    try {
+      // Animación del botón
+      Animated.spring(micScale, {
+        toValue: 1,
+        useNativeDriver: true,
+      }).start();
+
+      console.log('🛑 Grabación detenida - Procesando...');
+      setIsLoading(true);
+
+      // Detener reconocimiento y obtener resultado
+      const transcription = await speechRecognitionService.recognize('es-ES');
+
+      setIsRecording(false);
+
+      if (!transcription || transcription.trim() === '') {
+        console.log('⚠️ No se detectó voz');
+        setIsLoading(false);
+        Alert.alert('⚠️ Sin voz', 'No se detectó ninguna voz. Intenta de nuevo.');
+        return;
+      }
+
+      console.log('📝 Transcripción:', transcription);
+
+      // Enviar mensaje transcrito a la IA (reusar lógica existente)
+      await sendTranscribedMessage(transcription);
+
+    } catch (error) {
+      console.error('❌ Error procesando voz:', error);
+      setIsRecording(false);
+      setIsLoading(false);
+
+      Alert.alert('❌ Error', 'Error al procesar el audio. Intenta de nuevo.');
+    }
+  };
+
+  // Función auxiliar para enviar mensaje transcrito
+  const sendTranscribedMessage = async (text: string) => {
+    const userMsgObj = {
+      role: 'user' as const,
+      content: text,
+      timestamp: new Date()
+    };
+
+    setMessages(prev => [...prev, userMsgObj]);
+
+    try {
+      console.log('🤖 Enviando transcripción a Gemini:', text);
+      const response = await geminiService.generateResponse(conversationId!, text);
+
+      if (response.success && response.response) {
+        const aiMsgObj = {
+          role: 'assistant' as const,
+          content: response.response,
+          timestamp: new Date()
+        };
+
+        setMessages(prev => [...prev, aiMsgObj]);
+        console.log('✅ Respuesta recibida:', response.response);
+
+        // Reproducir respuesta con TTS
+        setIsPlayingTTS(true);
+        const personalityMap = {
+          abuelo: 'manolo' as const,
+          amaDeCasa: 'paquita' as const,
+          indeciso: 'roberto' as const
+        };
+
+        const voicePersonality = personalityMap[selectedPersonality];
+        const ttsSuccess = await elevenLabsService.speakText(response.response, voicePersonality);
+
+        if (!ttsSuccess) {
+          Alert.alert('⚠️ Audio', 'La respuesta se generó pero no se pudo reproducir el audio');
+        }
+
+        setIsPlayingTTS(false);
+
+        if (response.tokensUsed) {
+          console.log(`📊 Tokens usados: ${response.tokensUsed}`);
+        }
+      } else {
+        Alert.alert('❌ Error', response.error || 'No se pudo generar respuesta');
+      }
+    } catch (error) {
+      console.log('❌ Error enviando mensaje:', error);
+      Alert.alert('❌ Error', 'Error de conexión con la IA');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
 
 
   return (
@@ -261,25 +418,65 @@ export default function AITestScreen({ navigation }: AITestScreenProps) {
               behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
               keyboardVerticalOffset={100}
             >
+              {/* 🎤 BOTÓN PUSH-TO-TALK (Micrófono) */}
+              {isSpeechAvailable && (
+                <View style={styles.micContainer}>
+                  <Animated.View
+                    style={[
+                      styles.micButtonWrapper,
+                      {
+                        transform: [{ scale: micScale }]
+                      }
+                    ]}
+                  >
+                    <TouchableOpacity
+                      style={[
+                        styles.micButton,
+                        isRecording && styles.micButtonRecording,
+                        (isLoading || isPlayingTTS) && styles.micButtonDisabled
+                      ]}
+                      onPressIn={handleMicPressIn}
+                      onPressOut={handleMicPressOut}
+                      disabled={isLoading || isPlayingTTS}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.micButtonIcon}>
+                        {isRecording ? '🔴' : isLoading ? '⏳' : isPlayingTTS ? '🔊' : '🎤'}
+                      </Text>
+                    </TouchableOpacity>
+                  </Animated.View>
+
+                  <Text style={styles.micInstructions}>
+                    {isRecording
+                      ? '🗣️ Hablando... (Suelta para enviar)'
+                      : isLoading
+                      ? '⏳ Procesando...'
+                      : isPlayingTTS
+                      ? '🔊 IA respondiendo...'
+                      : '🎤 Mantén presionado para hablar'}
+                  </Text>
+                </View>
+              )}
+
+              {/* Input de texto (fallback) */}
               <View style={styles.inputContainer}>
                 <TextInput
                   style={styles.messageInput}
-                  placeholder="Actúa como spammer: '¡Oferta especial solo hoy!'"
+                  placeholder="O escribe: '¡Oferta especial solo hoy!'"
                   placeholderTextColor="#666"
                   value={inputMessage}
                   onChangeText={setInputMessage}
                   multiline
                   maxLength={500}
-                  editable={!isLoading && !isPlayingTTS}
+                  editable={!isLoading && !isPlayingTTS && !isRecording}
                   textAlignVertical="top"
                   numberOfLines={2}
                 />
 
-    
                 <TouchableOpacity
-                  style={[styles.sendButton, (!inputMessage.trim() || isLoading || isPlayingTTS) && styles.sendButtonDisabled]}
+                  style={[styles.sendButton, (!inputMessage.trim() || isLoading || isPlayingTTS || isRecording) && styles.sendButtonDisabled]}
                   onPress={sendMessageWithVoice}
-                  disabled={!inputMessage.trim() || isLoading || isPlayingTTS}
+                  disabled={!inputMessage.trim() || isLoading || isPlayingTTS || isRecording}
                 >
                   <Text style={styles.sendButtonText}>
                     {isLoading ? '⏳' : isPlayingTTS ? '🔊' : '📞'}
@@ -519,5 +716,43 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 14,
     fontWeight: 'bold',
+  },
+
+  // Estilos para botón de micrófono (Push-to-Talk)
+  micContainer: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  micButtonWrapper: {
+    marginBottom: 10,
+  },
+  micButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#00aa44',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 8,
+  },
+  micButtonRecording: {
+    backgroundColor: '#ff4444',
+  },
+  micButtonDisabled: {
+    backgroundColor: '#666666',
+    opacity: 0.5,
+  },
+  micButtonIcon: {
+    fontSize: 40,
+  },
+  micInstructions: {
+    fontSize: 14,
+    color: '#cccccc',
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
 });
