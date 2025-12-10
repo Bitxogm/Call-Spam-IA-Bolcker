@@ -2,11 +2,13 @@
 package com.anonymous.SpamBlockerApp;
 
 import android.Manifest;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.provider.Settings;
 import android.text.TextUtils;
+import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
 
@@ -206,6 +208,81 @@ public class AnswerHangupModule extends ReactContextBaseJavaModule {
             }
         } catch (Exception e) {
             promise.reject("OPEN_ACCESSIBILITY_ERROR", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Habilita SpamCallService (InCallService) programáticamente
+     *
+     * CRÍTICO: Necesario para que Android permita que el servicio se inicie
+     */
+    @ReactMethod
+    public void enableInCallService(Promise promise) {
+        try {
+            Context context = getReactApplicationContext();
+            ComponentName componentName = new ComponentName(
+                context.getPackageName(),
+                "com.anonymous.SpamBlockerApp.SpamCallService"
+            );
+
+            PackageManager pm = context.getPackageManager();
+            int currentState = pm.getComponentEnabledSetting(componentName);
+
+            Log.d("AnswerHangupModule", "🔍 Estado actual de SpamCallService: " + currentState);
+            Log.d("AnswerHangupModule", "  ENABLED = 1, DISABLED = 2, DEFAULT = 0");
+
+            if (currentState != PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {
+                pm.setComponentEnabledSetting(
+                    componentName,
+                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                    PackageManager.DONT_KILL_APP
+                );
+
+                Log.i("AnswerHangupModule", "✅ SpamCallService HABILITADO correctamente");
+                promise.resolve(true);
+            } else {
+                Log.d("AnswerHangupModule", "✅ SpamCallService ya estaba habilitado");
+                promise.resolve(true);
+            }
+        } catch (Exception e) {
+            Log.e("AnswerHangupModule", "❌ Error habilitando SpamCallService: " + e.getMessage());
+            promise.reject("ENABLE_INCALL_SERVICE_ERROR", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Verifica el estado de SpamCallService
+     */
+    @ReactMethod
+    public void checkInCallServiceStatus(Promise promise) {
+        try {
+            Context context = getReactApplicationContext();
+            ComponentName componentName = new ComponentName(
+                context.getPackageName(),
+                "com.anonymous.SpamBlockerApp.SpamCallService"
+            );
+
+            PackageManager pm = context.getPackageManager();
+            int state = pm.getComponentEnabledSetting(componentName);
+
+            WritableMap result = Arguments.createMap();
+            result.putInt("stateCode", state);
+            result.putBoolean("isEnabled", state == PackageManager.COMPONENT_ENABLED_STATE_ENABLED);
+            result.putBoolean("isDisabled", state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED);
+            result.putBoolean("isDefault", state == PackageManager.COMPONENT_ENABLED_STATE_DEFAULT);
+
+            String stateName = "UNKNOWN";
+            if (state == PackageManager.COMPONENT_ENABLED_STATE_ENABLED) stateName = "ENABLED";
+            else if (state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED) stateName = "DISABLED";
+            else if (state == PackageManager.COMPONENT_ENABLED_STATE_DEFAULT) stateName = "DEFAULT";
+
+            result.putString("stateName", stateName);
+
+            Log.d("AnswerHangupModule", "🔍 Estado de SpamCallService: " + stateName + " (" + state + ")");
+
+            promise.resolve(result);
+        } catch (Exception e) {
+            promise.reject("CHECK_INCALL_SERVICE_ERROR", e.getMessage(), e);
         }
     }
 

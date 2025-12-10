@@ -19,6 +19,7 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
   useEffect(() => {
     loadSettings();
     checkAccessibilityService();
+    ensureInCallServiceEnabled(); // CRÍTICO: Habilitar SpamCallService
   }, []);
 
   // Verificar Accessibility Service cuando cambie el modo o se active
@@ -42,6 +43,38 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
       Alert.alert('Error', 'No se pudo cargar la configuración');
     } finally {
       setLoading(false);
+    }
+  };
+
+  /**
+   * Asegura que SpamCallService (InCallService) esté habilitado
+   * CRÍTICO: Sin esto, el servicio no se inicia y Modo 2/3 no funcionan
+   */
+  const ensureInCallServiceEnabled = async () => {
+    try {
+      console.log('🔍 Verificando estado de SpamCallService...');
+
+      const status = await answerHangupService.checkInCallServiceStatus();
+      console.log(`📊 Estado actual: ${status.stateName} (${status.stateCode})`);
+
+      if (!status.isEnabled) {
+        console.log('⚠️ SpamCallService está DESHABILITADO, habilitando...');
+        const success = await answerHangupService.enableInCallService();
+
+        if (success) {
+          console.log('✅ SpamCallService habilitado correctamente');
+
+          // Verificar nuevamente el estado
+          const newStatus = await answerHangupService.checkInCallServiceStatus();
+          console.log(`📊 Nuevo estado: ${newStatus.stateName} (${newStatus.stateCode})`);
+        } else {
+          console.error('❌ No se pudo habilitar SpamCallService');
+        }
+      } else {
+        console.log('✅ SpamCallService ya está habilitado');
+      }
+    } catch (error) {
+      console.error('❌ Error verificando/habilitando SpamCallService:', error);
     }
   };
 

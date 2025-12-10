@@ -182,6 +182,48 @@ class AnswerHangupService {
       return false;
     }
   };
+
+  /**
+   * Habilita SpamCallService (InCallService) programáticamente
+   *
+   * CRÍTICO: Necesario para que Android permita que el servicio se inicie
+   */
+  enableInCallService = async (): Promise<boolean> => {
+    try {
+      await AnswerHangupModule.enableInCallService();
+      console.log('✅ SpamCallService habilitado programáticamente');
+      return true;
+    } catch (error) {
+      console.error('❌ Error habilitando SpamCallService:', error);
+      return false;
+    }
+  };
+
+  /**
+   * Verifica el estado de SpamCallService
+   */
+  checkInCallServiceStatus = async (): Promise<{
+    stateCode: number;
+    stateName: string;
+    isEnabled: boolean;
+    isDisabled: boolean;
+    isDefault: boolean;
+  }> => {
+    try {
+      const status = await AnswerHangupModule.checkInCallServiceStatus();
+      console.log(`🔍 Estado de SpamCallService: ${status.stateName} (${status.stateCode})`);
+      return status;
+    } catch (error) {
+      console.error('❌ Error verificando estado de SpamCallService:', error);
+      return {
+        stateCode: -1,
+        stateName: 'ERROR',
+        isEnabled: false,
+        isDisabled: false,
+        isDefault: false,
+      };
+    }
+  };
 }
 
 export const answerHangupService = new AnswerHangupService();
