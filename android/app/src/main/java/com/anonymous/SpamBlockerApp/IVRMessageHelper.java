@@ -20,9 +20,14 @@ import java.util.Locale;
  * durante una llamada activa.
  *
  * Mensajes corporativos irritantes estilo "pulse 1, pulse 2..."
+ *
+ * PATRÓN SINGLETON: Solo existe una instancia para evitar race conditions
+ * y asegurar que TTS esté siempre inicializado.
  */
 public class IVRMessageHelper {
     private static final String TAG = "IVRMessageHelper";
+    private static IVRMessageHelper instance;
+    private static final Object lock = new Object();
 
     // Mensajes IVR predefinidos
     public enum IVRType {
@@ -45,38 +50,64 @@ public class IVRMessageHelper {
     private int previousAudioMode;
     private boolean previousSpeakerphoneOn;
 
-    public IVRMessageHelper(Context context) {
-        this.context = context;
-        this.audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+    /**
+     * Constructor privado para Singleton
+     */
+    private IVRMessageHelper(Context context) {
+        this.context = context.getApplicationContext(); // Usar ApplicationContext para evitar leaks
+        this.audioManager = (AudioManager) this.context.getSystemService(Context.AUDIO_SERVICE);
         this.loopHandler = new Handler(Looper.getMainLooper());
         initializeTTS();
+    }
+
+    /**
+     * Obtiene la instancia única (Singleton)
+     */
+    public static IVRMessageHelper getInstance(Context context) {
+        if (instance == null) {
+            synchronized (lock) {
+                if (instance == null) {
+                    Log.d(TAG, "🔧 Creando nueva instancia de IVRMessageHelper (Singleton)");
+                    instance = new IVRMessageHelper(context);
+                }
+            }
+        }
+        return instance;
     }
 
     /**
      * Inicializa Text-to-Speech
      */
     private void initializeTTS() {
+        Log.d(TAG, "🔧 Iniciando inicialización de TTS...");
+
         tts = new TextToSpeech(context, status -> {
-            if (status == TextToSpeech.SUCCESS) {
-                // Configurar idioma español
-                int result = tts.setLanguage(new Locale("es", "ES"));
+            synchronized (lock) {
+                if (status == TextToSpeech.SUCCESS) {
+                    // Configurar idioma español
+                    int result = tts.setLanguage(new Locale("es", "ES"));
 
-                if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    Log.w(TAG, "⚠️ Español no soportado, usando inglés");
-                    tts.setLanguage(Locale.US);
+                    if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                        Log.w(TAG, "⚠️ Español no soportado, usando inglés");
+                        tts.setLanguage(Locale.US);
+                    }
+
+                    // Configurar velocidad normal (0.9 = ligeramente más lento para mejor comprensión)
+                    tts.setSpeechRate(0.9f);
+
+                    // Configurar pitch normal
+                    tts.setPitch(1.0f);
+
+                    isInitialized = true;
+                    Log.i(TAG, "✅ TTS inicializado correctamente (callback completado)");
+
+                    // Notificar a threads esperando
+                    lock.notifyAll();
+
+                } else {
+                    Log.e(TAG, "❌ Error inicializando TTS: " + status);
+                    lock.notifyAll(); // Notificar incluso en error
                 }
-
-                // Configurar velocidad normal (0.9 = ligeramente más lento para mejor comprensión)
-                tts.setSpeechRate(0.9f);
-
-                // Configurar pitch normal
-                tts.setPitch(1.0f);
-
-                isInitialized = true;
-                Log.d(TAG, "✅ TTS inicializado correctamente");
-
-            } else {
-                Log.e(TAG, "❌ Error inicializando TTS: " + status);
             }
         });
 
@@ -100,16 +131,55 @@ public class IVRMessageHelper {
     }
 
     /**
+     * Espera a que TTS esté inicializado (con timeout)
+     *
+     * @param timeoutMs Tiempo máximo de espera en milisegundos
+     * @return true si TTS se inicializó, false si timeout
+     */
+    private boolean waitForInitialization(int timeoutMs) {
+        if (isInitialized) {
+            return true;
+        }
+
+        Log.d(TAG, "⏳ Esperando inicialización de TTS (timeout: " + timeoutMs + "ms)...");
+
+        synchronized (lock) {
+            long startTime = System.currentTimeMillis();
+            long remainingTime = timeoutMs;
+
+            while (!isInitialized && remainingTime > 0) {
+                try {
+                    lock.wait(remainingTime);
+                    remainingTime = timeoutMs - (System.currentTimeMillis() - startTime);
+                } catch (InterruptedException e) {
+                    Log.w(TAG, "⚠️ Espera de TTS interrumpida");
+                    Thread.currentThread().interrupt();
+                    return false;
+                }
+            }
+        }
+
+        if (isInitialized) {
+            Log.i(TAG, "✅ TTS listo después de esperar");
+        } else {
+            Log.e(TAG, "❌ Timeout esperando TTS (" + timeoutMs + "ms)");
+        }
+
+        return isInitialized;
+    }
+
+    /**
      * Inicia el IVR durante una llamada
      */
     public boolean startIVR(IVRType type, int maxDurationSeconds) {
-        if (!isInitialized) {
-            Log.e(TAG, "❌ TTS no inicializado");
+        // Esperar hasta 3 segundos para que TTS se inicialice
+        if (!waitForInitialization(3000)) {
+            Log.e(TAG, "❌ TTS no pudo inicializarse a tiempo");
             return false;
         }
 
         try {
-            Log.d(TAG, "🔊 Iniciando IVR tipo: " + type.name());
+            Log.i(TAG, "🔊 Iniciando IVR tipo: " + type.name());
 
             // Guardar estado actual del audio
             previousAudioMode = audioManager.getMode();
