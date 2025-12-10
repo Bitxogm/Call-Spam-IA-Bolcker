@@ -37,7 +37,6 @@ public class SpamCallService extends InCallService {
     // Helpers
     private Handler mainHandler;
     private AnswerHangupHelper answerHangupHelper;
-    private IVRMessageHelper ivrMessageHelper;
     private LogsHelper logsHelper;
 
     @Override
@@ -45,7 +44,6 @@ public class SpamCallService extends InCallService {
         super.onCreate();
         mainHandler = new Handler(Looper.getMainLooper());
         answerHangupHelper = new AnswerHangupHelper(this);
-        ivrMessageHelper = new IVRMessageHelper(this);
         logsHelper = new LogsHelper(this);
 
         boolean answerHangupEnabled = answerHangupHelper.isEnabled();
@@ -223,7 +221,10 @@ public class SpamCallService extends InCallService {
 
                 showToast("🔊 Modo 2: Reproduciendo IVR...");
 
-                boolean ivrStarted = ivrMessageHelper.startIVR(
+                // Obtener instancia única de IVRMessageHelper
+                IVRMessageHelper ivrHelper = IVRMessageHelper.getInstance(this);
+
+                boolean ivrStarted = ivrHelper.startIVR(
                     IVRMessageHelper.IVRType.CORPORATE_INFINITE,
                     30  // 30 segundos máximo
                 );
@@ -236,7 +237,7 @@ public class SpamCallService extends InCallService {
                     mainHandler.postDelayed(() -> {
                         Log.d(TAG, "🎯 IVR terminado, colgando (Modo 2)");
                         logsHelper.logInfo("🎯 Modo 2 - IVR finalizado, ejecutando hangup");
-                        ivrMessageHelper.stopIVR();
+                        IVRMessageHelper.getInstance(this).stopIVR();
                         call.disconnect();
                         answerHangupHelper.clearMarked();
                     }, 31000L);
