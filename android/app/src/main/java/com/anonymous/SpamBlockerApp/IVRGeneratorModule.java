@@ -186,8 +186,12 @@ public class IVRGeneratorModule extends ReactContextBaseJavaModule {
                 File outputFile = new File(reactContext.getFilesDir(), "ivr_corporate.wav");
 
                 // Inicializar TTS
-                TextToSpeech tts = new TextToSpeech(reactContext, status -> {
+                // Usamos un array para poder acceder a la instancia dentro del callback
+                final TextToSpeech[] ttsArray = new TextToSpeech[1];
+
+                ttsArray[0] = new TextToSpeech(reactContext, status -> {
                     if (status == TextToSpeech.SUCCESS) {
+                        TextToSpeech tts = ttsArray[0];
                         Log.d(TAG, "✅ TTS inicializado");
 
                         // Configurar idioma español
