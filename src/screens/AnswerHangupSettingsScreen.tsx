@@ -1,7 +1,8 @@
 // src/screens/AnswerHangupSettingsScreen.tsx
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, Switch, PermissionsAndroid, Platform, Linking } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, Switch, PermissionsAndroid, Platform, Linking, ActivityIndicator } from 'react-native';
 import { answerHangupService } from '../services/AnswerHangupService';
+import ivrGeneratorService from '../services/IVRGeneratorService';
 
 type AnswerHangupSettingsScreenProps = {
   navigation: any;
@@ -15,11 +16,16 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
   const [isAccessibilityEnabled, setIsAccessibilityEnabled] = useState(false);
   const [checkingAccessibility, setCheckingAccessibility] = useState(false);
 
+  // Estados para generación de audio IVR
+  const [ivrAudioExists, setIvrAudioExists] = useState(false);
+  const [generatingIVR, setGeneratingIVR] = useState(false);
+
   // Cargar configuración al iniciar
   useEffect(() => {
     loadSettings();
     checkAccessibilityService();
     ensureInCallServiceEnabled(); // CRÍTICO: Habilitar SpamCallService
+    checkIVRAudioExists(); // Verificar si ya existe audio IVR generado
   }, []);
 
   // Verificar Accessibility Service cuando cambie el modo o se active
@@ -257,6 +263,58 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
     }
   };
 
+  /**
+   * Verifica si ya existe audio IVR pre-generado
+   */
+  const checkIVRAudioExists = async () => {
+    try {
+      const result = await ivrGeneratorService.checkExists();
+      setIvrAudioExists(result.exists);
+      console.log(`🔊 Audio IVR: ${result.exists ? 'Existe' : 'No existe'}`);
+    } catch (error) {
+      console.error('❌ Error verificando audio IVR:', error);
+      setIvrAudioExists(false);
+    }
+  };
+
+  /**
+   * Genera el audio IVR con TTS nativo
+   */
+  const handleGenerateIVRAudio = async () => {
+    try {
+      setGeneratingIVR(true);
+
+      Alert.alert(
+        '🔊 Generando Audio IVR',
+        'Generando mensaje corporativo con TTS nativo...\nEsto puede tardar unos segundos.',
+        [{ text: 'OK' }]
+      );
+
+      const result = await ivrGeneratorService.generateWithNativeTTS();
+
+      setIvrAudioExists(true);
+
+      Alert.alert(
+        '✅ Audio Generado',
+        `Mensaje IVR generado correctamente.\n\nRuta: ${result.path}\nTamaño: ${(result.size / 1024).toFixed(2)} KB\n\nAhora cuando uses Modo 2, el spammer escuchará este mensaje en lugar de escucharlo tú.`,
+        [{ text: 'Entendido' }]
+      );
+
+      console.log('✅ Audio IVR generado:', result);
+
+    } catch (error: any) {
+      console.error('❌ Error generando audio IVR:', error);
+
+      Alert.alert(
+        '❌ Error',
+        `No se pudo generar el audio IVR.\n\nError: ${error.message}`,
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setGeneratingIVR(false);
+    }
+  };
+
   const handleModeChange = async (newMode: 'HANGUP_IMMEDIATELY' | 'PLAY_MESSAGE' | 'AI_CONVERSATION') => {
     try {
       await answerHangupService.setMode(newMode);
@@ -471,6 +529,47 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
                   </TouchableOpacity>
                 ))}
               </View>
+            </View>
+          )}
+
+          {/* GENERAR AUDIO IVR (solo para Modo 2) */}
+          {mode === 'PLAY_MESSAGE' && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>🔊 Audio IVR Corporativo</Text>
+              <Text style={styles.sectionDescription}>
+                {ivrAudioExists
+                  ? '✅ Audio generado y listo para usar. El spammer escuchará este mensaje.'
+                  : '⚠️ Debes generar el audio IVR antes de usar Modo 2.\n\nSe genera UNA vez con TTS nativo (voz robótica) y se guarda localmente.'}
+              </Text>
+
+              <TouchableOpacity
+                style={[
+                  styles.generateIVRButton,
+                  ivrAudioExists && styles.generateIVRButtonSuccess,
+                  generatingIVR && styles.generateIVRButtonDisabled
+                ]}
+                onPress={handleGenerateIVRAudio}
+                disabled={generatingIVR}
+              >
+                {generatingIVR ? (
+                  <ActivityIndicator color="#ffffff" size="small" />
+                ) : (
+                  <>
+                    <Text style={styles.generateIVRButtonIcon}>
+                      {ivrAudioExists ? '✅' : '🔊'}
+                    </Text>
+                    <Text style={styles.generateIVRButtonText}>
+                      {ivrAudioExists ? 'Re-generar Audio IVR' : 'Generar Audio IVR'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              {ivrAudioExists && (
+                <Text style={styles.ivrSuccessNote}>
+                  💡 El audio ya está generado. Puedes probarlo activando Modo 2 y recibiendo una llamada.
+                </Text>
+              )}
             </View>
           )}
 
@@ -738,5 +837,41 @@ const styles = StyleSheet.create({
     color: '#00ff88',
     fontWeight: '600',
     flex: 1,
+  },
+  // Estilos para botón de generación IVR
+  generateIVRButton: {
+    backgroundColor: '#ff9900',
+    padding: 16,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  generateIVRButtonSuccess: {
+    backgroundColor: '#1a4a2a',
+    borderColor: '#00ff88',
+  },
+  generateIVRButtonDisabled: {
+    backgroundColor: '#3a3a3a',
+    opacity: 0.6,
+  },
+  generateIVRButtonIcon: {
+    fontSize: 20,
+    marginRight: 10,
+  },
+  generateIVRButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#ffffff',
+  },
+  ivrSuccessNote: {
+    fontSize: 13,
+    color: '#00ff88',
+    marginTop: 10,
+    fontStyle: 'italic',
+    textAlign: 'center',
   },
 });

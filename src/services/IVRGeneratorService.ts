@@ -17,11 +17,28 @@ export interface SaveResult {
 
 /**
  * Servicio para gestionar audio IVR pre-generado
- * Usa ElevenLabs para generar audio de alta calidad
+ * Usa TTS nativo o ElevenLabs para generar audio
  */
 class IVRGeneratorService {
   /**
+   * Genera audio IVR con TTS nativo de Android (GRATIS, voz robótica)
+   * Recomendado para testing y uso normal
+   */
+  async generateWithNativeTTS(): Promise<SaveResult> {
+    try {
+      console.log('🔊 Generando audio IVR con TTS nativo...');
+      const result = await IVRGeneratorModule.generateIVRWithNativeTTS();
+      console.log('✅ Audio IVR generado (TTS nativo):', result);
+      return result;
+    } catch (error) {
+      console.error('❌ Error generando audio IVR:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Guarda audio IVR desde URL (ElevenLabs streaming)
+   * Requiere API Key de ElevenLabs (DE PAGO)
    */
   async saveFromURL(audioURL: string): Promise<SaveResult> {
     try {

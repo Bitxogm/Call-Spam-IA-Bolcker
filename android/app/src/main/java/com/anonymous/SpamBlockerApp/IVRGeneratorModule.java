@@ -1,5 +1,9 @@
 package com.anonymous.SpamBlockerApp;
 
+import android.os.Build;
+import android.os.Bundle;
+import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -16,6 +20,8 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.HashMap;
+import java.util.Locale;
 
 /**
  * Módulo para pre-generar audio IVR con ElevenLabs
@@ -157,6 +163,119 @@ public class IVRGeneratorModule extends ReactContextBaseJavaModule {
             Log.e(TAG, "❌ Error verificando audio IVR: " + e.getMessage());
             promise.reject("CHECK_ERROR", e.getMessage(), e);
         }
+    }
+
+    /**
+     * Genera audio IVR usando TTS nativo de Android (GRATIS, sin ElevenLabs)
+     * Genera el mensaje corporativo y lo guarda como archivo WAV
+     */
+    @ReactMethod
+    public void generateIVRWithNativeTTS(Promise promise) {
+        new Thread(() -> {
+            try {
+                Log.d(TAG, "🔊 Generando audio IVR con TTS nativo...");
+
+                // Mensaje IVR corporativo
+                String ivrText = "Bienvenido al sistema de atención telefónica. " +
+                        "Para ventas, pulse 1. " +
+                        "Para soporte técnico, pulse 2. " +
+                        "Para hablar con un operador, pulse 3. " +
+                        "Para repetir este menú, pulse 9.";
+
+                // Archivo de salida
+                File outputFile = new File(reactContext.getFilesDir(), "ivr_corporate.wav");
+
+                // Inicializar TTS
+                TextToSpeech tts = new TextToSpeech(reactContext, status -> {
+                    if (status == TextToSpeech.SUCCESS) {
+                        Log.d(TAG, "✅ TTS inicializado");
+
+                        // Configurar idioma español
+                        int langResult = tts.setLanguage(new Locale("es", "ES"));
+
+                        if (langResult == TextToSpeech.LANG_MISSING_DATA ||
+                            langResult == TextToSpeech.LANG_NOT_SUPPORTED) {
+                            Log.w(TAG, "⚠️ Español no soportado, usando inglés");
+                            tts.setLanguage(Locale.US);
+                        }
+
+                        // Configurar velocidad y pitch
+                        tts.setSpeechRate(0.9f);  // Ligeramente más lento
+                        tts.setPitch(1.0f);       // Pitch normal
+
+                        // Listener de progreso
+                        tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                            @Override
+                            public void onStart(String utteranceId) {
+                                Log.d(TAG, "🔊 Generando audio...");
+                            }
+
+                            @Override
+                            public void onDone(String utteranceId) {
+                                Log.i(TAG, "✅ Audio IVR generado: " + outputFile.getAbsolutePath());
+
+                                // Convertir WAV a MP3 (simplificado: renombrar)
+                                File mp3File = new File(reactContext.getFilesDir(), "ivr_corporate.mp3");
+
+                                // Android TTS genera WAV, pero MediaPlayer acepta WAV
+                                // Así que simplemente copiamos el archivo
+                                try {
+                                    if (outputFile.exists()) {
+                                        // Renombrar/mover a .mp3 (aunque sea WAV, MediaPlayer lo acepta)
+                                        if (mp3File.exists()) {
+                                            mp3File.delete();
+                                        }
+                                        outputFile.renameTo(mp3File);
+                                    }
+                                } catch (Exception e) {
+                                    Log.e(TAG, "Error renombrando archivo: " + e.getMessage());
+                                }
+
+                                WritableMap result = Arguments.createMap();
+                                result.putString("path", mp3File.getAbsolutePath());
+                                result.putDouble("size", mp3File.length());
+                                result.putBoolean("success", true);
+                                result.putString("method", "native_tts");
+
+                                promise.resolve(result);
+
+                                // Limpiar TTS
+                                tts.shutdown();
+                            }
+
+                            @Override
+                            public void onError(String utteranceId) {
+                                Log.e(TAG, "❌ Error generando audio TTS");
+                                promise.reject("TTS_ERROR", "Error generando audio con TTS");
+                                tts.shutdown();
+                            }
+                        });
+
+                        // Generar audio a archivo
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                            Bundle params = new Bundle();
+                            params.putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "ivr_generation");
+
+                            tts.synthesizeToFile(ivrText, params, outputFile, "ivr_generation");
+                        } else {
+                            // API < 21
+                            HashMap<String, String> params = new HashMap<>();
+                            params.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "ivr_generation");
+
+                            tts.synthesizeToFile(ivrText, params, outputFile.getAbsolutePath());
+                        }
+
+                    } else {
+                        Log.e(TAG, "❌ Error inicializando TTS");
+                        promise.reject("TTS_INIT_ERROR", "No se pudo inicializar TTS");
+                    }
+                });
+
+            } catch (Exception e) {
+                Log.e(TAG, "❌ Error generando audio IVR: " + e.getMessage(), e);
+                promise.reject("GENERATE_ERROR", e.getMessage(), e);
+            }
+        }).start();
     }
 
     /**
