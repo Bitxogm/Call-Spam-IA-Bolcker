@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import { check, request, PERMISSIONS, RESULTS } from 'react-native-permissions';
 import ContactsService from '../services/ContactsService';
-import AnswerHangupService from '../services/AnswerHangupService';
 
 type WhitelistScreenProps = {
   navigation: any;
@@ -21,8 +20,6 @@ type WhitelistScreenProps = {
 export default function WhitelistScreen({ navigation }: WhitelistScreenProps) {
   const [modoRadical, setModoRadical] = useState(false);
   const [hasContactsPermission, setHasContactsPermission] = useState(false);
-  const [answerHangupEnabled, setAnswerHangupEnabled] = useState(false);
-  const [hangupDelay, setHangupDelay] = useState(2);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -31,22 +28,15 @@ export default function WhitelistScreen({ navigation }: WhitelistScreenProps) {
   }, []);
 
   /**
-   * Carga la configuración actual del Modo Radical y Answer+Hangup
+   * Carga la configuración actual del Modo Radical
    */
   const loadSettings = async () => {
     try {
-      const [radicalEnabled, ahEnabled, delay] = await Promise.all([
-        ContactsService.isModoRadicalEnabled(),
-        AnswerHangupService.isEnabled(),
-        AnswerHangupService.getHangupDelay()
-      ]);
+      const radicalEnabled = await ContactsService.isModoRadicalEnabled();
 
       setModoRadical(radicalEnabled);
-      setAnswerHangupEnabled(ahEnabled);
-      setHangupDelay(delay);
 
       console.log(`🔧 Modo Radical: ${radicalEnabled ? 'ON' : 'OFF'}`);
-      console.log(`🔇 Answer+Hangup: ${ahEnabled ? 'ON' : 'OFF'}, Delay: ${delay}s`);
     } catch (error) {
       console.error('❌ Error cargando settings:', error);
     } finally {
@@ -117,38 +107,6 @@ export default function WhitelistScreen({ navigation }: WhitelistScreenProps) {
     } else {
       setModoRadical(!value); // Revertir en caso de error
       Alert.alert('❌ Error', 'No se pudo cambiar el modo');
-    }
-  };
-
-  /**
-   * Activa/desactiva Answer+Hangup
-   */
-  const toggleAnswerHangup = async (value: boolean) => {
-    setAnswerHangupEnabled(value);
-    const success = await AnswerHangupService.setEnabled(value);
-
-    if (success) {
-      Alert.alert(
-        value ? '🔇 Answer+Hangup Activado' : '✅ Answer+Hangup Desactivado',
-        value
-          ? `Las llamadas spam se contestarán silenciosamente y se colgarán automáticamente después de ${hangupDelay} segundos.\n\n🎯 Efecto: Los spammers verán "contestado" y te quitarán de sus listas (reducción 80% spam).`
-          : 'Las llamadas spam mostrarán notificación normalmente.'
-      );
-    } else {
-      setAnswerHangupEnabled(!value);
-      Alert.alert('❌ Error', 'No se pudo cambiar Answer+Hangup');
-    }
-  };
-
-  /**
-   * Cambia el delay antes de colgar (1-5 segundos)
-   */
-  const changeHangupDelay = async (newDelay: number) => {
-    setHangupDelay(newDelay);
-    const success = await AnswerHangupService.setHangupDelay(newDelay);
-
-    if (!success) {
-      Alert.alert('❌ Error', 'No se pudo cambiar el delay');
     }
   };
 
@@ -226,75 +184,6 @@ export default function WhitelistScreen({ navigation }: WhitelistScreenProps) {
                 ⚠️ ADVERTENCIA: Con Modo Radical activo, TODAS las llamadas que no sean de tus contactos serán bloqueadas, incluso números legítimos (entregas, médicos, bancos, etc.)
               </Text>
             </View>
-          )}
-        </View>
-
-        {/* Answer+Hangup - Auto-colgar spam */}
-        <View style={styles.card}>
-          <View style={styles.modoRadicalHeader}>
-            <View style={styles.modoRadicalInfo}>
-              <Text style={styles.cardTitle}>🔇 Answer+Hangup</Text>
-              <Text style={styles.cardText}>
-                Contestar y colgar automáticamente llamadas spam
-              </Text>
-            </View>
-            <Switch
-              trackColor={{ false: '#767577', true: '#4CAF50' }}
-              thumbColor={answerHangupEnabled ? '#2E7D32' : '#f4f3f4'}
-              ios_backgroundColor="#3e3e3e"
-              onValueChange={toggleAnswerHangup}
-              value={answerHangupEnabled}
-            />
-          </View>
-
-          {answerHangupEnabled && (
-            <>
-              <View style={styles.successBox}>
-                <Text style={styles.successText}>
-                  ✅ Las llamadas spam se contestarán SILENCIOSAMENTE (no suenan) y se colgarán automáticamente.
-                  {'\n\n'}
-                  🎯 Efecto: Los spammers verán "contestado" y te quitarán de sus listas (reducción 80% spam según SpamBlocker).
-                </Text>
-              </View>
-
-              {/* Slider de Delay */}
-              <View style={styles.delayContainer}>
-                <Text style={styles.delayLabel}>
-                  ⏱️ Delay antes de colgar: {hangupDelay} segundo{hangupDelay > 1 ? 's' : ''}
-                </Text>
-                <View style={styles.delayButtons}>
-                  {[1, 2, 3, 4, 5].map(delay => (
-                    <TouchableOpacity
-                      key={delay}
-                      style={[
-                        styles.delayButton,
-                        hangupDelay === delay && styles.delayButtonActive
-                      ]}
-                      onPress={() => changeHangupDelay(delay)}
-                    >
-                      <Text
-                        style={[
-                          styles.delayButtonText,
-                          hangupDelay === delay && styles.delayButtonTextActive
-                        ]}
-                      >
-                        {delay}s
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-                <Text style={styles.delayHint}>
-                  ℹ️ Recomendado: 2 segundos. Más tiempo = más seguro, menos tiempo = más rápido.
-                </Text>
-              </View>
-
-              <View style={styles.infoBox}>
-                <Text style={styles.infoTitle}>ℹ️ Cómo funciona</Text>
-                <Text style={styles.infoText}>
-                  {`1. Detecta spam (blacklist, modo radical, etc.)\n2. Contesta la llamada SILENCIOSAMENTE (no suena)\n3. Espera ${hangupDelay} segundos\n4. Cuelga automáticamente\n5. Spammer ve "contestado" → te quita de su lista\n\n⚠️ Requiere Android 9+`}
-                </Text>
-              </View>
-            </>
           )}
         </View>
 

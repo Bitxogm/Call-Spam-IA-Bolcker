@@ -153,6 +153,77 @@ class AnswerHangupService {
       };
     }
   };
+
+  /**
+   * Verifica si el servicio de Accesibilidad está habilitado
+   *
+   * CRÍTICO: Para que funcione Modo 2 (IVR) y Modo 3 (IA), necesitamos
+   * Accessibility Service que permita auto-contestar llamadas.
+   */
+  isAccessibilityServiceEnabled = async (): Promise<boolean> => {
+    try {
+      const isEnabled = await AnswerHangupModule.isAccessibilityServiceEnabled();
+      return isEnabled;
+    } catch (error) {
+      console.error('❌ Error verificando Accessibility Service:', error);
+      return false;
+    }
+  };
+
+  /**
+   * Abre la configuración de Accesibilidad
+   */
+  openAccessibilitySettings = async (): Promise<boolean> => {
+    try {
+      await AnswerHangupModule.openAccessibilitySettings();
+      return true;
+    } catch (error) {
+      console.error('❌ Error abriendo configuración de Accesibilidad:', error);
+      return false;
+    }
+  };
+
+  /**
+   * Habilita SpamCallService (InCallService) programáticamente
+   *
+   * CRÍTICO: Necesario para que Android permita que el servicio se inicie
+   */
+  enableInCallService = async (): Promise<boolean> => {
+    try {
+      await AnswerHangupModule.enableInCallService();
+      console.log('✅ SpamCallService habilitado programáticamente');
+      return true;
+    } catch (error) {
+      console.error('❌ Error habilitando SpamCallService:', error);
+      return false;
+    }
+  };
+
+  /**
+   * Verifica el estado de SpamCallService
+   */
+  checkInCallServiceStatus = async (): Promise<{
+    stateCode: number;
+    stateName: string;
+    isEnabled: boolean;
+    isDisabled: boolean;
+    isDefault: boolean;
+  }> => {
+    try {
+      const status = await AnswerHangupModule.checkInCallServiceStatus();
+      console.log(`🔍 Estado de SpamCallService: ${status.stateName} (${status.stateCode})`);
+      return status;
+    } catch (error) {
+      console.error('❌ Error verificando estado de SpamCallService:', error);
+      return {
+        stateCode: -1,
+        stateName: 'ERROR',
+        isEnabled: false,
+        isDisabled: false,
+        isDefault: false,
+      };
+    }
+  };
 }
 
 export const answerHangupService = new AnswerHangupService();

@@ -2,4 +2,7 @@
   <string name="app_name">SpamBlockerApp</string>
   <string name="expo_splash_screen_resize_mode" translatable="false">contain</string>
   <string name="expo_splash_screen_status_bar_translucent" translatable="false">false</string>
+
+  <!-- Accessibility Service -->
+  <string name="accessibility_service_description">Permite a SpamBlocker contestar automáticamente llamadas spam y reproducir mensajes IVR. Este servicio NO recopila información personal y solo se activa cuando Answer+Hangup está habilitado.</string>
 </resources>

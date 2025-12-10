@@ -29,7 +29,6 @@ public class CallStateReceiver extends BroadcastReceiver {
 
     private AnswerHangupHelper answerHangupHelper;
     private LogsHelper logsHelper;
-    private IVRMessageHelper ivrMessageHelper;
     private String lastIncomingNumber = null;
 
     @Override
@@ -44,9 +43,6 @@ public class CallStateReceiver extends BroadcastReceiver {
         }
         if (logsHelper == null) {
             logsHelper = new LogsHelper(context);
-        }
-        if (ivrMessageHelper == null) {
-            ivrMessageHelper = new IVRMessageHelper(context);
         }
 
         // LOG: Estado de Answer+Hangup
@@ -201,8 +197,11 @@ public class CallStateReceiver extends BroadcastReceiver {
 
                     showToast(context, "🔊 Modo 2: Reproduciendo IVR");
 
+                    // Obtener instancia única de IVRMessageHelper
+                    IVRMessageHelper ivrHelper = IVRMessageHelper.getInstance(context);
+
                     // Iniciar IVR (30 segundos máximo)
-                    boolean ivrStarted = ivrMessageHelper.startIVR(
+                    boolean ivrStarted = ivrHelper.startIVR(
                         IVRMessageHelper.IVRType.CORPORATE_INFINITE,
                         30  // 30 segundos máximo
                     );
@@ -215,7 +214,7 @@ public class CallStateReceiver extends BroadcastReceiver {
                         new Handler(Looper.getMainLooper()).postDelayed(() -> {
                             Log.d(TAG, "🎯 IVR terminado, colgando (Modo 2)");
                             logsHelper.logInfo("🎯 Modo 2 - IVR finalizado, ejecutando hangup");
-                            ivrMessageHelper.stopIVR();
+                            IVRMessageHelper.getInstance(context).stopIVR();
                             hangupCall(context, number);
                         }, 31000L);  // 31s para asegurar que el IVR termine
                     } else {
@@ -251,9 +250,10 @@ public class CallStateReceiver extends BroadcastReceiver {
         Log.d(TAG, "📞 IDLE (sin llamada)");
 
         // Detener IVR si está reproduciéndose
-        if (ivrMessageHelper != null && ivrMessageHelper.isPlaying()) {
+        IVRMessageHelper ivrHelper = IVRMessageHelper.getInstance(context);
+        if (ivrHelper.isPlaying()) {
             Log.d(TAG, "🛑 Deteniendo IVR (llamada finalizada)");
-            ivrMessageHelper.stopIVR();
+            ivrHelper.stopIVR();
         }
 
         lastIncomingNumber = null;
