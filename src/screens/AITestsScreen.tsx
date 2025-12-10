@@ -14,7 +14,8 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Animated
+  Animated,
+  PermissionsAndroid
 } from 'react-native';
 
 type AITestScreenProps = {
@@ -46,14 +47,61 @@ export default function AITestScreen({ navigation }: AITestScreenProps) {
     };
   }, []);
 
+  /**
+   * Solicita permiso de RECORD_AUDIO (necesario para reconocimiento de voz)
+   */
+  const requestMicrophonePermission = async (): Promise<boolean> => {
+    if (Platform.OS !== 'android') {
+      return true; // iOS maneja permisos automáticamente
+    }
+
+    try {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        {
+          title: '🎤 Permiso de Micrófono',
+          message: 'La app necesita acceso al micrófono para el reconocimiento de voz',
+          buttonNeutral: 'Preguntar Luego',
+          buttonNegative: 'Cancelar',
+          buttonPositive: 'OK',
+        }
+      );
+
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    } catch (err) {
+      console.error('❌ Error solicitando permiso de micrófono:', err);
+      return false;
+    }
+  };
+
   const checkSpeechAvailability = async () => {
     try {
+      // 1. Primero verificar si el dispositivo tiene Speech Recognition
       const available = await speechRecognitionService.isAvailable();
-      setIsSpeechAvailable(available);
 
       if (!available) {
         console.warn('⚠️ Speech Recognition no disponible en este dispositivo');
+        setIsSpeechAvailable(false);
+        return;
       }
+
+      // 2. Solicitar permiso de micrófono
+      const hasPermission = await requestMicrophonePermission();
+
+      if (!hasPermission) {
+        console.warn('⚠️ Permiso de micrófono denegado');
+        setIsSpeechAvailable(false);
+        Alert.alert(
+          '🎤 Permiso Requerido',
+          'Para usar el reconocimiento de voz necesitas habilitar el permiso de micrófono en la configuración de la app.'
+        );
+        return;
+      }
+
+      // 3. Todo OK
+      setIsSpeechAvailable(true);
+      console.log('✅ Speech Recognition disponible y permiso concedido');
+
     } catch (error) {
       console.error('❌ Error verificando Speech Recognition:', error);
       setIsSpeechAvailable(false);
