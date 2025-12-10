@@ -342,4 +342,48 @@ public class AnswerHangupModule extends ReactContextBaseJavaModule {
 
         return false;
     }
+
+    /**
+     * Prueba si un número sería bloqueado por los prefijos 800/900
+     * TESTING: Para verificar que la lógica de bloqueo funciona
+     */
+    @ReactMethod
+    public void testPrefixBlocking(String phoneNumber, Promise promise) {
+        try {
+            String cleaned = phoneNumber.replaceAll("[^0-9]", "");
+
+            WritableMap result = Arguments.createMap();
+            result.putString("originalNumber", phoneNumber);
+            result.putString("cleanedNumber", cleaned);
+
+            // Lista de prefijos bloqueados (debe coincidir con CallScreeningServiceImpl)
+            String[] blockedPrefixes = {"800", "900", "901", "902", "803", "806", "807", "905"};
+            boolean isBlocked = false;
+            String matchedPrefix = "";
+
+            for (String prefix : blockedPrefixes) {
+                if (cleaned.startsWith(prefix)) {
+                    isBlocked = true;
+                    matchedPrefix = prefix;
+                    break;
+                }
+            }
+
+            result.putBoolean("wouldBeBlocked", isBlocked);
+            result.putString("matchedPrefix", matchedPrefix);
+
+            if (isBlocked) {
+                result.putString("blockReason", "Número de tarificación especial/comercial (prefijo " + matchedPrefix + ")");
+                Log.i("AnswerHangupModule", "🚫 TEST: " + phoneNumber + " → BLOQUEADO (prefijo " + matchedPrefix + ")");
+            } else {
+                result.putString("blockReason", "No bloqueado");
+                Log.i("AnswerHangupModule", "✅ TEST: " + phoneNumber + " → NO bloqueado");
+            }
+
+            promise.resolve(result);
+        } catch (Exception e) {
+            Log.e("AnswerHangupModule", "❌ Error en testPrefixBlocking: " + e.getMessage());
+            promise.reject("TEST_PREFIX_ERROR", e.getMessage(), e);
+        }
+    }
 }

@@ -236,15 +236,17 @@ public class CallScreeningServiceImpl extends CallScreeningService {
             return true;
         }
 
-        // 📞 PRIORIDAD 5: Números premium (900, 901, 902, etc.)
+        // 📞 PRIORIDAD 5: Números premium y comerciales (800, 900, 901, 902, etc.)
         String cleaned = number.replaceAll("[^0-9]", "");
-        if (cleaned.startsWith("900") ||
-            cleaned.startsWith("901") ||
-            cleaned.startsWith("902") ||
-            cleaned.startsWith("803") ||
-            cleaned.startsWith("806") ||
-            cleaned.startsWith("807")) {
-            Log.d(TAG, "📞 Número de tarificación especial - BLOQUEAR");
+        if (cleaned.startsWith("800") ||  // Números gratuitos comerciales
+            cleaned.startsWith("900") ||  // Tarificación especial
+            cleaned.startsWith("901") ||  // Tarificación especial
+            cleaned.startsWith("902") ||  // Tarificación especial
+            cleaned.startsWith("803") ||  // Servicios de participación
+            cleaned.startsWith("806") ||  // Servicios de entretenimiento
+            cleaned.startsWith("807") ||  // Servicios de entretenimiento
+            cleaned.startsWith("905")) {  // Servicios de valor añadido
+            Log.d(TAG, "📞 Número de tarificación especial/comercial - BLOQUEAR: " + cleaned.substring(0, 3));
             return true;
         }
 
