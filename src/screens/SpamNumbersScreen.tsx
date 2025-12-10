@@ -14,6 +14,7 @@ import {
 // Importar servicios
 import { databaseService, SpamNumber } from '../services/DataBaseService';
 import { blacklistService } from '../services/BlacklistService';
+import answerHangupService from '../services/AnswerHangupService';
 
 // Props de la pantalla
 type SpamNumbersScreenProps = {
@@ -29,6 +30,8 @@ export default function SpamNumbersScreen({ navigation }: SpamNumbersScreenProps
   const [loading, setLoading] = useState(true);
   const [showDebug, setShowDebug] = useState(false);
   const [debugInfo, setDebugInfo] = useState<any>(null);
+  const [verificationResults, setVerificationResults] = useState<Map<string, boolean>>(new Map());
+  const [isVerifying, setIsVerifying] = useState(false);
 
   // Cargar datos desde la base de datos al iniciar la pantalla
   useEffect(() => {
@@ -58,6 +61,45 @@ export default function SpamNumbersScreen({ navigation }: SpamNumbersScreenProps
       console.log('🔍 Debug info cargada:', info);
     } catch (error) {
       console.log('❌ Error cargando debug info:', error);
+    }
+  };
+
+  // 🧪 Función para verificar prefijos bloqueados (hardcoded)
+  const verifyAllPrefixes = async () => {
+    setIsVerifying(true);
+    const results = new Map<string, boolean>();
+
+    try {
+      console.log('🧪 Verificando prefijos bloqueados...');
+
+      for (const spamNumber of spamNumbers) {
+        try {
+          const result = await answerHangupService.testPrefixBlocking(spamNumber.number);
+          results.set(spamNumber.number, result.wouldBeBlocked);
+
+          if (result.wouldBeBlocked) {
+            console.log(`✅ ${spamNumber.number} → Bloqueado (prefijo ${result.matchedPrefix})`);
+          }
+        } catch (error) {
+          console.error(`❌ Error verificando ${spamNumber.number}:`, error);
+          results.set(spamNumber.number, false);
+        }
+      }
+
+      setVerificationResults(results);
+
+      const blockedCount = Array.from(results.values()).filter(v => v).length;
+      Alert.alert(
+        '🧪 Verificación Completa',
+        `${blockedCount} de ${spamNumbers.length} números serán bloqueados por el sistema hardcoded.\n\n✅ Bloqueo garantizado para números con prefijos: 800, 900, 901, 902, 803, 806, 807, 905`,
+        [{ text: 'OK' }]
+      );
+
+    } catch (error) {
+      console.error('❌ Error en verificación:', error);
+      Alert.alert('Error', 'No se pudo completar la verificación');
+    } finally {
+      setIsVerifying(false);
     }
   };
 
@@ -177,30 +219,43 @@ export default function SpamNumbersScreen({ navigation }: SpamNumbersScreenProps
   };
 
   // Renderizar cada elemento de la lista
-  const renderSpamNumber = ({ item }: { item: SpamNumber }) => (
-    <View style={styles.spamCard}>
-      <View style={styles.spamInfo}>
-        <Text style={styles.spamNumber}>📞 {item.number}</Text>
-        <Text style={styles.spamReason}>{item.reason}</Text>
-        <Text style={styles.spamSource}>
-          {item.source === 'manual' && '👤 Manual'}
-          {item.source === 'auto' && '🤖 Automático'}
-          {item.source === 'reported' && '🚨 Reportado'}
-          {' • '} {item.date_added}
-        </Text>
+  const renderSpamNumber = ({ item }: { item: SpamNumber }) => {
+    const isHardcodeBlocked = verificationResults.get(item.number);
+
+    return (
+      <View style={styles.spamCard}>
+        <View style={styles.spamInfo}>
+          <View style={styles.numberRow}>
+            <Text style={styles.spamNumber}>📞 {item.number}</Text>
+            {isHardcodeBlocked !== undefined && (
+              <View style={[styles.badge, isHardcodeBlocked ? styles.badgeBlocked : styles.badgeDb]}>
+                <Text style={styles.badgeText}>
+                  {isHardcodeBlocked ? '🔒 Hardcoded' : '📋 BD'}
+                </Text>
+              </View>
+            )}
+          </View>
+          <Text style={styles.spamReason}>{item.reason}</Text>
+          <Text style={styles.spamSource}>
+            {item.source === 'manual' && '👤 Manual'}
+            {item.source === 'auto' && '🤖 Automático'}
+            {item.source === 'reported' && '🚨 Reportado'}
+            {' • '} {item.date_added}
+          </Text>
+        </View>
+
+        {/* Botón eliminar (solo si es manual) */}
+        {item.source === 'manual' && (
+          <TouchableOpacity
+            style={styles.deleteButton}
+            onPress={() => deleteSpamNumber(item.id, item.number)}
+          >
+            <Text style={styles.deleteText}>🗑️</Text>
+          </TouchableOpacity>
+        )}
       </View>
-      
-      {/* Botón eliminar (solo si es manual) */}
-      {item.source === 'manual' && (
-        <TouchableOpacity 
-          style={styles.deleteButton}
-          onPress={() => deleteSpamNumber(item.id, item.number)}
-        >
-          <Text style={styles.deleteText}>🗑️</Text>
-        </TouchableOpacity>
-      )}
-    </View>
-  );
+    );
+  };
 
   // Mostrar loading mientras cargan los datos
   if (loading) {
@@ -230,6 +285,22 @@ export default function SpamNumbersScreen({ navigation }: SpamNumbersScreenProps
         <TouchableOpacity style={styles.autoButton} onPress={addAutomaticPrefixes}>
           <Text style={styles.buttonText}>🤖 Prefijos Automáticos</Text>
         </TouchableOpacity>
+      </View>
+
+      {/* BOTÓN DE VERIFICACIÓN */}
+      <View style={styles.verifyContainer}>
+        <TouchableOpacity
+          style={[styles.verifyButton, isVerifying && styles.verifyButtonDisabled]}
+          onPress={verifyAllPrefixes}
+          disabled={isVerifying || spamNumbers.length === 0}
+        >
+          <Text style={styles.buttonText}>
+            {isVerifying ? '⏳ Verificando...' : '🧪 Verificar Prefijos Bloqueados'}
+          </Text>
+        </TouchableOpacity>
+        <Text style={styles.verifyHint}>
+          Comprueba qué números están bloqueados por el sistema hardcoded (800, 900, etc.)
+        </Text>
       </View>
 
       {/* 🔍 SECCIÓN DEBUG */}
@@ -550,5 +621,50 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     marginTop: 15,
+  },
+  // Estilos para verificación de prefijos
+  verifyContainer: {
+    marginBottom: 15,
+  },
+  verifyButton: {
+    backgroundColor: '#9944ff',
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  verifyButtonDisabled: {
+    backgroundColor: '#666666',
+    opacity: 0.6,
+  },
+  verifyHint: {
+    fontSize: 12,
+    color: '#888888',
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  // Estilos para badges de verificación
+  numberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 5,
+  },
+  badge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 5,
+    marginLeft: 10,
+  },
+  badgeBlocked: {
+    backgroundColor: '#00aa44',
+  },
+  badgeDb: {
+    backgroundColor: '#4444ff',
+  },
+  badgeText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
 });
