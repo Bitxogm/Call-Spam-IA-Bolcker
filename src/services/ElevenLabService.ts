@@ -288,6 +288,54 @@ class ElevenLabsService {
       return null;
     }
   };
+
+  /**
+   * Genera audio IVR corporativo y lo guarda en el almacenamiento nativo
+   * Para ser usado en Modo 2 (Answer+Hangup con IVR)
+   */
+  generateAndSaveIVRAudio = async (): Promise<{ success: boolean; error?: string }> => {
+    try {
+      console.log('🔊 Generando audio IVR corporativo...');
+
+      if (!this.isConfigured()) {
+        console.warn('⚠️ ElevenLabs no configurado, no se puede generar audio');
+        return { success: false, error: 'ElevenLabs API Key no configurada' };
+      }
+
+      // Mensaje IVR corporativo (mismo que en IVRMessageHelper.java)
+      const ivrText = "Bienvenido al sistema de atención telefónica. " +
+                      "Para ventas, pulse 1. " +
+                      "Para soporte técnico, pulse 2. " +
+                      "Para hablar con un operador, pulse 3. " +
+                      "Para repetir este menú, pulse 9.";
+
+      // Generar audio con ElevenLabs (usando voz de Manolo - abuelo)
+      const ttsResult = await this.textToSpeech(ivrText, 'manolo');
+
+      if (!ttsResult.success || !ttsResult.audioUri) {
+        console.error('❌ Error generando audio IVR:', ttsResult.error);
+        return { success: false, error: ttsResult.error };
+      }
+
+      // Extraer Base64 del data URI
+      const base64Audio = ttsResult.audioUri.replace('data:audio/mpeg;base64,', '');
+
+      // Importar el servicio dinámicamente (para evitar dependencias circulares)
+      const ivrGeneratorService = require('./IVRGeneratorService').default;
+
+      // Guardar en almacenamiento nativo
+      const saveResult = await ivrGeneratorService.saveFromBase64(base64Audio);
+
+      console.log('✅ Audio IVR corporativo guardado:', saveResult.path);
+      console.log(`📊 Tamaño: ${(saveResult.size / 1024).toFixed(2)} KB`);
+
+      return { success: true };
+
+    } catch (error: any) {
+      console.error('❌ Error generando audio IVR:', error);
+      return { success: false, error: error.message };
+    }
+  };
 }
 
 // Crear instancia única
