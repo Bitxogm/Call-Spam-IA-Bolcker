@@ -229,10 +229,21 @@ public class SpamCallService extends InCallService {
                 showToast("🔊 Modo 2: Reproduciendo IVR...");
 
                 // Ruta del archivo de audio pre-generado
-                String audioPath = getFilesDir() + "/ivr_corporate.mp3";
+                String audioPath = getFilesDir().getAbsolutePath() + "/ivr_corporate.mp3";
+
+                // 🔍 DEBUG: Logs detallados de verificación de archivo
+                Log.d(TAG, "🔍 DEBUG - Ruta verificando: " + audioPath);
+                Log.d(TAG, "🔍 DEBUG - getFilesDir(): " + getFilesDir().getAbsolutePath());
 
                 // Verificar si existe audio pre-generado, sino fallback a TTS
                 java.io.File audioFile = new java.io.File(audioPath);
+
+                Log.d(TAG, "🔍 DEBUG - Archivo existe: " + audioFile.exists());
+                if (audioFile.exists()) {
+                    Log.d(TAG, "🔍 DEBUG - Tamaño archivo: " + audioFile.length() + " bytes");
+                    Log.d(TAG, "🔍 DEBUG - Puede leer: " + audioFile.canRead());
+                }
+
                 boolean ivrStarted;
 
                 if (audioFile.exists()) {

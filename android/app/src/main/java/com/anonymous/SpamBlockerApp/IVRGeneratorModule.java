@@ -235,6 +235,13 @@ public class IVRGeneratorModule extends ReactContextBaseJavaModule {
                                     Log.e(TAG, "Error renombrando archivo: " + e.getMessage());
                                 }
 
+                                // 🔍 DEBUG: Logs detallados de generación
+                                Log.d(TAG, "🔍 DEBUG - Archivo WAV generado: " + outputFile.getAbsolutePath());
+                                Log.d(TAG, "🔍 DEBUG - Archivo MP3 final: " + mp3File.getAbsolutePath());
+                                Log.d(TAG, "🔍 DEBUG - Archivo MP3 existe: " + mp3File.exists());
+                                Log.d(TAG, "🔍 DEBUG - Tamaño MP3: " + mp3File.length() + " bytes");
+                                Log.d(TAG, "🔍 DEBUG - getFilesDir(): " + reactContext.getFilesDir().getAbsolutePath());
+
                                 WritableMap result = Arguments.createMap();
                                 result.putString("path", mp3File.getAbsolutePath());
                                 result.putDouble("size", mp3File.length());
