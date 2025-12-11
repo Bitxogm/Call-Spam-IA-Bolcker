@@ -97,10 +97,10 @@ public class InCallActivity extends Activity {
             if (currentCall == null) return;
 
             isMuted = !isMuted;
-            currentCall.setMuted(isMuted);
+            SpamCallService.setMuted(isMuted);
             muteButton.setText(isMuted ? "🔇 Unmute" : "🎤 Mute");
 
-            Log.d(TAG, "🎤 Mute: " + isMuted);
+            Log.d(TAG, "🎤 Mute toggled: " + isMuted);
         });
 
         // Botón speaker
@@ -108,11 +108,10 @@ public class InCallActivity extends Activity {
             if (currentCall == null) return;
 
             isSpeakerOn = !isSpeakerOn;
-            // Nota: setAudioRoute requiere APIs adicionales
-            // Por ahora, solo toggle visual
+            SpamCallService.setSpeaker(isSpeakerOn);
             speakerButton.setText(isSpeakerOn ? "🔊 Earpiece" : "📢 Speaker");
 
-            Log.d(TAG, "🔊 Speaker: " + isSpeakerOn);
+            Log.d(TAG, "🔊 Speaker toggled: " + isSpeakerOn);
         });
     }
 

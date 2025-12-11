@@ -36,6 +36,7 @@ public class SpamCallService extends InCallService {
 
     // Llamada actual (para InCallActivity)
     private static Call currentCall = null;
+    private static SpamCallService instance = null;
 
     // Helpers
     private Handler mainHandler;
@@ -45,6 +46,7 @@ public class SpamCallService extends InCallService {
     @Override
     public void onCreate() {
         super.onCreate();
+        instance = this;  // Guardar instancia para acceso desde InCallActivity
         mainHandler = new Handler(Looper.getMainLooper());
         answerHangupHelper = new AnswerHangupHelper(this);
         logsHelper = new LogsHelper(this);
@@ -188,6 +190,50 @@ public class SpamCallService extends InCallService {
      */
     public static Call getCurrentCall() {
         return currentCall;
+    }
+
+    /**
+     * Control de audio: Mute/Unmute (desde InCallActivity)
+     */
+    public static void setMuted(boolean muted) {
+        if (instance != null) {
+            instance.setMuted(muted);
+            Log.d(TAG, "🎤 Mute: " + muted);
+        }
+    }
+
+    /**
+     * Control de audio: Speaker On/Off (desde InCallActivity)
+     */
+    public static void setSpeaker(boolean speakerOn) {
+        if (instance != null) {
+            int route = speakerOn ?
+                android.telecom.CallAudioState.ROUTE_SPEAKER :
+                android.telecom.CallAudioState.ROUTE_EARPIECE;
+            instance.setAudioRoute(route);
+            Log.d(TAG, "🔊 Speaker: " + speakerOn);
+        }
+    }
+
+    /**
+     * Obtiene estado de mute actual
+     */
+    public static boolean isMuted() {
+        if (instance != null && instance.getCallAudioState() != null) {
+            return instance.getCallAudioState().isMuted();
+        }
+        return false;
+    }
+
+    /**
+     * Obtiene estado de speaker actual
+     */
+    public static boolean isSpeakerOn() {
+        if (instance != null && instance.getCallAudioState() != null) {
+            int route = instance.getCallAudioState().getRoute();
+            return route == android.telecom.CallAudioState.ROUTE_SPEAKER;
+        }
+        return false;
     }
 
     /**
@@ -484,6 +530,9 @@ public class SpamCallService extends InCallService {
         if (mainHandler != null) {
             mainHandler.removeCallbacksAndMessages(null);
         }
+        // Limpiar referencias estáticas
+        instance = null;
+        currentCall = null;
         Log.d(TAG, "💀 SpamCallService destruido");
     }
 }
