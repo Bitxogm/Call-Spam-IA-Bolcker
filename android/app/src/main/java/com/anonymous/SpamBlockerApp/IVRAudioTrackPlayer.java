@@ -98,11 +98,18 @@ public class IVRAudioTrackPlayer {
             previousAudioMode = audioManager.getMode();
             previousSpeakerphoneOn = audioManager.isSpeakerphoneOn();
 
-            // ✅ CONFIGURACIÓN CRÍTICA: Audio debe ir al call stream
+            // ✅ WORKAROUND: Reproducir en SPEAKER para que el micrófono lo capte
+            // Android no permite inyectar audio directamente en el uplink de llamadas telefónicas
+            // Por lo tanto, reproducimos en speaker → micrófono captura → caller escucha
             audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-            audioManager.setSpeakerphoneOn(false);  // NO al speaker local
+            audioManager.setSpeakerphoneOn(true);  // ✅ SPEAKER ON para que micrófono capte
 
-            Log.d(TAG, "🔊 Audio configurado - Mode: IN_COMMUNICATION, Speaker: OFF");
+            // Ajustar volumen del speaker para transmisión óptima
+            int maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL);
+            int targetVolume = (int)(maxVolume * 0.7);  // 70% del volumen máximo
+            audioManager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, targetVolume, 0);
+
+            Log.d(TAG, "🔊 Audio configurado - Mode: IN_COMMUNICATION, Speaker: ON (para transmisión vía mic)");
 
             // Configurar loop
             this.maxLoops = loops;
@@ -219,25 +226,21 @@ public class IVRAudioTrackPlayer {
                 AudioFormat.ENCODING_PCM_16BIT
             );
 
-            // ✅ CONFIGURACIÓN CRÍTICA: AudioTrack con USAGE_VOICE_COMMUNICATION
-            AudioAttributes audioAttributes = new AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)  // ← TRANSMITE al caller
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                .build();
+            // ✅ WORKAROUND: Usar STREAM_VOICE_CALL para que salga por el speaker
+            // El micrófono capturará este audio y lo transmitirá al caller
+            // Esta es la única forma de inyectar audio en llamadas telefónicas sin APIs privadas
 
-            AudioFormat audioFormat = new AudioFormat.Builder()
-                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                .setSampleRate(sampleRate)
-                .setChannelMask(channelConfig)
-                .build();
-
-            audioTrack = new AudioTrack(
-                audioAttributes,
-                audioFormat,
+            // Usar constructor LEGACY con streamType explícito
+            @SuppressWarnings("deprecation")
+            AudioTrack audioTrackTemp = new AudioTrack(
+                AudioManager.STREAM_VOICE_CALL,      // Stream type - sale por speaker en MODE_IN_COMMUNICATION
+                sampleRate,
+                channelConfig,
+                AudioFormat.ENCODING_PCM_16BIT,
                 bufferSize,
-                AudioTrack.MODE_STREAM,
-                AudioManager.AUDIO_SESSION_ID_GENERATE
+                AudioTrack.MODE_STREAM
             );
+            audioTrack = audioTrackTemp;
 
             audioTrack.play();
 
