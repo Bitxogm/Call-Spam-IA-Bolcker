@@ -228,82 +228,89 @@ public class SpamCallService extends InCallService {
 
                 showToast("🔊 Modo 2: Reproduciendo IVR...");
 
-                // Ruta del archivo de audio pre-generado
-                String audioPath = getFilesDir().getAbsolutePath() + "/ivr_corporate.mp3";
+                // 🎯 CRÍTICO: Esperar 2 segundos para que el audio de llamada esté completamente establecido
+                // Sin este delay, el audio se reproduce localmente en vez de transmitirse al caller
+                Log.d(TAG, "⏱️ Esperando 2s para establecer audio de llamada...");
 
-                // 🔍 DEBUG: Logs detallados de verificación de archivo
-                Log.d(TAG, "🔍 DEBUG - Ruta verificando: " + audioPath);
-                Log.d(TAG, "🔍 DEBUG - getFilesDir(): " + getFilesDir().getAbsolutePath());
+                mainHandler.postDelayed(() -> {
+                    // Ruta del archivo de audio pre-generado
+                    String audioPath = getFilesDir().getAbsolutePath() + "/ivr_corporate.mp3";
 
-                // Verificar si existe audio pre-generado, sino fallback a TTS
-                java.io.File audioFile = new java.io.File(audioPath);
+                    // 🔍 DEBUG: Logs detallados de verificación de archivo
+                    Log.d(TAG, "🔍 DEBUG - Ruta verificando: " + audioPath);
+                    Log.d(TAG, "🔍 DEBUG - getFilesDir(): " + getFilesDir().getAbsolutePath());
 
-                Log.d(TAG, "🔍 DEBUG - Archivo existe: " + audioFile.exists());
-                if (audioFile.exists()) {
-                    Log.d(TAG, "🔍 DEBUG - Tamaño archivo: " + audioFile.length() + " bytes");
-                    Log.d(TAG, "🔍 DEBUG - Puede leer: " + audioFile.canRead());
-                }
+                    // Verificar si existe audio pre-generado, sino fallback a TTS
+                    java.io.File audioFile = new java.io.File(audioPath);
 
-                boolean ivrStarted;
-
-                if (audioFile.exists()) {
-                    // PLAN B: Usar MediaPlayer con audio pre-generado (ElevenLabs)
-                    Log.d(TAG, "✅ Audio IVR encontrado, usando MediaPlayer");
-                    logsHelper.logInfo("✅ Modo 2 - Usando audio pre-generado (ElevenLabs)");
-
-                    IVRAudioPlayer audioPlayer = IVRAudioPlayer.getInstance(this);
-                    ivrStarted = audioPlayer.playIVR(
-                        audioPath,
-                        0,   // Loops infinitos
-                        30   // 30 segundos máximo
-                    );
-
-                    if (ivrStarted) {
-                        Log.d(TAG, "✅ IVR (MediaPlayer) iniciado correctamente");
-
-                        // Colgar después de 31 segundos
-                        mainHandler.postDelayed(() -> {
-                            Log.d(TAG, "🎯 IVR terminado, colgando (Modo 2)");
-                            logsHelper.logInfo("🎯 Modo 2 - IVR finalizado, ejecutando hangup");
-                            IVRAudioPlayer.getInstance(this).stopIVR();
-                            call.disconnect();
-                            answerHangupHelper.clearMarked();
-                        }, 31000L);
-                    } else {
-                        Log.e(TAG, "❌ Error iniciando IVR (MediaPlayer), colgando");
-                        logsHelper.logError("❌ Modo 2 - Error IVR MediaPlayer, fallback a hangup");
-                        call.disconnect();
-                        answerHangupHelper.clearMarked();
+                    Log.d(TAG, "🔍 DEBUG - Archivo existe: " + audioFile.exists());
+                    if (audioFile.exists()) {
+                        Log.d(TAG, "🔍 DEBUG - Tamaño archivo: " + audioFile.length() + " bytes");
+                        Log.d(TAG, "🔍 DEBUG - Puede leer: " + audioFile.canRead());
                     }
 
-                } else {
-                    // FALLBACK: Usar TTS nativo (menos confiable)
-                    Log.w(TAG, "⚠️ Audio IVR no encontrado, usando TTS fallback");
-                    logsHelper.logWarning("⚠️ Modo 2 - Usando TTS fallback (no recomendado)");
+                    boolean ivrStarted;
 
-                    IVRMessageHelper ivrHelper = IVRMessageHelper.getInstance(this);
-                    ivrStarted = ivrHelper.startIVR(
-                        IVRMessageHelper.IVRType.CORPORATE_INFINITE,
-                        30
-                    );
+                    if (audioFile.exists()) {
+                        // PLAN B: Usar MediaPlayer con audio pre-generado (ElevenLabs)
+                        Log.d(TAG, "✅ Audio IVR encontrado, usando MediaPlayer desde InCallService");
+                        logsHelper.logInfo("✅ Modo 2 - Usando audio pre-generado (ElevenLabs) desde InCallService");
 
-                    if (ivrStarted) {
-                        Log.d(TAG, "✅ IVR (TTS) iniciado correctamente");
+                        IVRAudioPlayer audioPlayer = IVRAudioPlayer.getInstance(this);
+                        ivrStarted = audioPlayer.playIVR(
+                            audioPath,
+                            0,   // Loops infinitos
+                            30   // 30 segundos máximo
+                        );
 
-                        mainHandler.postDelayed(() -> {
-                            Log.d(TAG, "🎯 IVR terminado, colgando (Modo 2)");
-                            logsHelper.logInfo("🎯 Modo 2 - IVR finalizado, ejecutando hangup");
-                            IVRMessageHelper.getInstance(this).stopIVR();
+                        if (ivrStarted) {
+                            Log.d(TAG, "✅ IVR (MediaPlayer) iniciado correctamente desde InCallService context");
+                            Log.d(TAG, "🎙️ Audio debería transmitirse al CALLER, no reproducirse localmente");
+
+                            // Colgar después de 31 segundos
+                            mainHandler.postDelayed(() -> {
+                                Log.d(TAG, "🎯 IVR terminado (timeout 31s), colgando (Modo 2)");
+                                logsHelper.logInfo("🎯 Modo 2 - IVR finalizado, ejecutando hangup");
+                                IVRAudioPlayer.getInstance(this).stopIVR();
+                                call.disconnect();
+                                answerHangupHelper.clearMarked();
+                            }, 31000L);
+                        } else {
+                            Log.e(TAG, "❌ Error iniciando IVR (MediaPlayer), colgando");
+                            logsHelper.logError("❌ Modo 2 - Error IVR MediaPlayer, fallback a hangup");
                             call.disconnect();
                             answerHangupHelper.clearMarked();
-                        }, 31000L);
+                        }
+
                     } else {
-                        Log.e(TAG, "❌ Error iniciando IVR (TTS), colgando inmediatamente");
-                        logsHelper.logError("❌ Modo 2 - Error IVR, fallback a hangup");
-                        call.disconnect();
-                        answerHangupHelper.clearMarked();
+                        // FALLBACK: Usar TTS nativo (menos confiable)
+                        Log.w(TAG, "⚠️ Audio IVR no encontrado, usando TTS fallback");
+                        logsHelper.logWarning("⚠️ Modo 2 - Usando TTS fallback (no recomendado)");
+
+                        IVRMessageHelper ivrHelper = IVRMessageHelper.getInstance(this);
+                        ivrStarted = ivrHelper.startIVR(
+                            IVRMessageHelper.IVRType.CORPORATE_INFINITE,
+                            30
+                        );
+
+                        if (ivrStarted) {
+                            Log.d(TAG, "✅ IVR (TTS) iniciado correctamente");
+
+                            mainHandler.postDelayed(() -> {
+                                Log.d(TAG, "🎯 IVR terminado, colgando (Modo 2)");
+                                logsHelper.logInfo("🎯 Modo 2 - IVR finalizado, ejecutando hangup");
+                                IVRMessageHelper.getInstance(this).stopIVR();
+                                call.disconnect();
+                                answerHangupHelper.clearMarked();
+                            }, 31000L);
+                        } else {
+                            Log.e(TAG, "❌ Error iniciando IVR (TTS), colgando inmediatamente");
+                            logsHelper.logError("❌ Modo 2 - Error IVR, fallback a hangup");
+                            call.disconnect();
+                            answerHangupHelper.clearMarked();
+                        }
                     }
-                }
+                }, 2000L); // Cierre del delay de 2 segundos para establecer audio
                 break;
 
             case AI_CONVERSATION:

@@ -90,6 +90,21 @@ public class CallAccessibilityService extends AccessibilityService {
     }
 
     /**
+     * Verifica si somos el marcador predeterminado
+     */
+    private boolean isDefaultDialer() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            TelecomManager telecomManager = (TelecomManager) getSystemService(Context.TELECOM_SERVICE);
+            if (telecomManager != null) {
+                String defaultDialer = telecomManager.getDefaultDialerPackage();
+                String packageName = getPackageName();
+                return packageName.equals(defaultDialer);
+            }
+        }
+        return false;
+    }
+
+    /**
      * Configura el listener para detectar llamadas entrantes
      */
     private void setupPhoneStateListener() {
@@ -101,6 +116,18 @@ public class CallAccessibilityService extends AccessibilityService {
                 super.onCallStateChanged(state, phoneNumber);
 
                 if (!answerHangupHelper.isEnabled()) {
+                    return;
+                }
+
+                // 🎯 NUEVO: Si somos default dialer, SpamCallService manejará TODO
+                // AccessibilityService solo se usa como fallback cuando NO somos default
+                boolean isDefault = isDefaultDialer();
+                Log.d(TAG, "🔍 Default Dialer: " + (isDefault ? "SÍ (SpamCallService lo manejará)" : "NO (AccessibilityService lo manejará)"));
+
+                if (isDefault) {
+                    Log.d(TAG, "✅ Somos default dialer - SpamCallService (InCallService) manejará esta llamada");
+                    logsHelper.logInfo("✅ Default dialer activo - InCallService tiene control total");
+                    // NO hacer nada aquí, SpamCallService lo manejará
                     return;
                 }
 
