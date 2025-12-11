@@ -97,7 +97,7 @@ public class InCallActivity extends Activity {
             if (currentCall == null) return;
 
             isMuted = !isMuted;
-            SpamCallService.setMuted(isMuted);
+            SpamCallService.setCallMuted(isMuted);
             muteButton.setText(isMuted ? "🔇 Unmute" : "🎤 Mute");
 
             Log.d(TAG, "🎤 Mute toggled: " + isMuted);
@@ -108,7 +108,7 @@ public class InCallActivity extends Activity {
             if (currentCall == null) return;
 
             isSpeakerOn = !isSpeakerOn;
-            SpamCallService.setSpeaker(isSpeakerOn);
+            SpamCallService.setCallSpeaker(isSpeakerOn);
             speakerButton.setText(isSpeakerOn ? "🔊 Earpiece" : "📢 Speaker");
 
             Log.d(TAG, "🔊 Speaker toggled: " + isSpeakerOn);

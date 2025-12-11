@@ -195,7 +195,7 @@ public class SpamCallService extends InCallService {
     /**
      * Control de audio: Mute/Unmute (desde InCallActivity)
      */
-    public static void setMuted(boolean muted) {
+    public static void setCallMuted(boolean muted) {
         if (instance != null) {
             instance.setMuted(muted);
             Log.d(TAG, "🎤 Mute: " + muted);
@@ -205,7 +205,7 @@ public class SpamCallService extends InCallService {
     /**
      * Control de audio: Speaker On/Off (desde InCallActivity)
      */
-    public static void setSpeaker(boolean speakerOn) {
+    public static void setCallSpeaker(boolean speakerOn) {
         if (instance != null) {
             int route = speakerOn ?
                 android.telecom.CallAudioState.ROUTE_SPEAKER :
@@ -218,7 +218,7 @@ public class SpamCallService extends InCallService {
     /**
      * Obtiene estado de mute actual
      */
-    public static boolean isMuted() {
+    public static boolean isCallMuted() {
         if (instance != null && instance.getCallAudioState() != null) {
             return instance.getCallAudioState().isMuted();
         }
@@ -228,7 +228,7 @@ public class SpamCallService extends InCallService {
     /**
      * Obtiene estado de speaker actual
      */
-    public static boolean isSpeakerOn() {
+    public static boolean isCallSpeakerOn() {
         if (instance != null && instance.getCallAudioState() != null) {
             int route = instance.getCallAudioState().getRoute();
             return route == android.telecom.CallAudioState.ROUTE_SPEAKER;
