@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="32dp"
+    android:background="#1a1a1a">
+
+    <!-- Info de la llamada -->
+    <TextView
+        android:id="@+id/callInfoTextView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="📞 Llamada en curso..."
+        android:textSize="24sp"
+        android:textColor="#ffffff"
+        android:textAlignment="center"
+        android:layout_marginBottom="48dp" />
+
+    <!-- Botones de control -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center">
+
+        <!-- Botón Colgar (principal) -->
+        <Button
+            android:id="@+id/hangupButton"
+            android:layout_width="200dp"
+            android:layout_height="80dp"
+            android:text="🔴 Colgar"
+            android:textSize="20sp"
+            android:textColor="#ffffff"
+            android:background="@drawable/button_hangup"
+            android:layout_marginBottom="24dp" />
+
+        <!-- Fila de botones secundarios -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <!-- Botón Mute -->
+            <Button
+                android:id="@+id/muteButton"
+                android:layout_width="120dp"
+                android:layout_height="60dp"
+                android:text="🎤 Mute"
+                android:textSize="16sp"
+                android:textColor="#ffffff"
+                android:background="@drawable/button_secondary"
+                android:layout_marginEnd="16dp" />
+
+            <!-- Botón Speaker -->
+            <Button
+                android:id="@+id/speakerButton"
+                android:layout_width="120dp"
+                android:layout_height="60dp"
+                android:text="📢 Speaker"
+                android:textSize="16sp"
+                android:textColor="#ffffff"
+                android:background="@drawable/button_secondary" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</LinearLayout>

@@ -91,6 +91,15 @@
 
     </activity>
 
+    <!-- UI de llamada (pantalla con botones colgar/mute/speaker) -->
+    <activity android:name=".InCallActivity"
+              android:exported="false"
+              android:launchMode="singleInstance"
+              android:showWhenLocked="true"
+              android:turnScreenOn="true"
+              android:excludeFromRecents="true"
+              android:theme="@android:style/Theme.NoTitleBar.Fullscreen" />
+
     <!-- Servicio para interceptar llamadas entrantes -->
     <service android:name=".SpamCallService"
              android:enabled="true"

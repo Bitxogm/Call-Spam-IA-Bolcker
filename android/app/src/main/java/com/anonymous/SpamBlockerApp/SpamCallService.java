@@ -34,6 +34,9 @@ public class SpamCallService extends InCallService {
         EMERGENCY_NUMBERS.add("061"); // Emergencias Sanitarias España
     }
 
+    // Llamada actual (para InCallActivity)
+    private static Call currentCall = null;
+
     // Helpers
     private Handler mainHandler;
     private AnswerHangupHelper answerHangupHelper;
@@ -77,6 +80,18 @@ public class SpamCallService extends InCallService {
             logsHelper.logWarning("🚨 Número de emergencia detectado - No se intercepta");
             return;
         }
+
+        // 🎯 CRÍTICO: Solo procesar llamadas ENTRANTES (INCOMING)
+        // NO procesar llamadas SALIENTES (OUTGOING) - esas son las tuyas!
+        int callDirection = call.getDetails().getCallDirection();
+
+        if (callDirection == Call.Details.DIRECTION_OUTGOING) {
+            Log.d(TAG, "📤 Llamada SALIENTE detectada - NO aplicar Answer+Hangup");
+            logsHelper.logInfo("📤 Llamada saliente (tuya) - Ignorando");
+            return;
+        }
+
+        Log.d(TAG, "📥 Llamada ENTRANTE confirmada - Procesando...");
 
         // 🎯 PRIORIDAD 1: Verificar si este número está marcado para Answer+Hangup
         boolean isAnswerHangupEnabled = answerHangupHelper.isEnabled();
@@ -149,6 +164,10 @@ public class SpamCallService extends InCallService {
         } else {
             Log.d(TAG, "✅ DECISIÓN: Permitir llamada normal");
             logsHelper.logInfo("✅ Llamada normal permitida");
+
+            // Guardar llamada actual y lanzar UI de llamada
+            currentCall = call;
+            launchInCallUI();
         }
     }
 
@@ -157,6 +176,32 @@ public class SpamCallService extends InCallService {
         super.onCallRemoved(call);
         String callerNumber = getCallerNumber(call);
         Log.d(TAG, "📞 Llamada finalizada: " + callerNumber);
+
+        // Limpiar llamada actual
+        if (call == currentCall) {
+            currentCall = null;
+        }
+    }
+
+    /**
+     * Obtiene la llamada actual (usado por InCallActivity)
+     */
+    public static Call getCurrentCall() {
+        return currentCall;
+    }
+
+    /**
+     * Lanza la UI de llamada para llamadas normales
+     */
+    private void launchInCallUI() {
+        try {
+            android.content.Intent intent = new android.content.Intent(this, InCallActivity.class);
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(intent);
+            Log.d(TAG, "🖥️ InCallActivity lanzada");
+        } catch (Exception e) {
+            Log.e(TAG, "❌ Error lanzando InCallActivity: " + e.getMessage());
+        }
     }
 
     /**
