@@ -109,32 +109,49 @@ public class DefaultDialerModule extends ReactContextBaseJavaModule {
     private void requestViaRoleManager(Promise promise) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             try {
+                Log.d(TAG, "📱 Iniciando requestViaRoleManager...");
+
                 RoleManager roleManager = (RoleManager) reactContext.getSystemService(Context.ROLE_SERVICE);
 
-                if (roleManager != null && roleManager.isRoleAvailable(RoleManager.ROLE_DIALER)) {
-                    if (!roleManager.isRoleHeld(RoleManager.ROLE_DIALER)) {
-                        // Solicitar el rol de marcador
-                        Intent intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_DIALER);
+                if (roleManager != null) {
+                    Log.d(TAG, "✅ RoleManager obtenido");
+                    Log.d(TAG, "🔍 ROLE_DIALER disponible: " + roleManager.isRoleAvailable(RoleManager.ROLE_DIALER));
+                    Log.d(TAG, "🔍 ROLE_DIALER held: " + roleManager.isRoleHeld(RoleManager.ROLE_DIALER));
 
-                        if (getCurrentActivity() != null) {
-                            getCurrentActivity().startActivityForResult(intent, REQUEST_CODE_SET_DEFAULT_DIALER);
-                            Log.d(TAG, "✅ Solicitando rol de marcador via RoleManager");
-                            promise.resolve(true);
+                    if (roleManager.isRoleAvailable(RoleManager.ROLE_DIALER)) {
+                        if (!roleManager.isRoleHeld(RoleManager.ROLE_DIALER)) {
+                            // Solicitar el rol de marcador
+                            Intent intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_DIALER);
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+
+                            Log.d(TAG, "📱 Intent creado: " + intent);
+
+                            if (getCurrentActivity() != null) {
+                                Log.d(TAG, "✅ Activity disponible, usando startActivityForResult");
+                                getCurrentActivity().startActivityForResult(intent, REQUEST_CODE_SET_DEFAULT_DIALER);
+                                promise.resolve(true);
+                            } else {
+                                Log.w(TAG, "⚠️ Activity null, usando context.startActivity con FLAG_NEW_TASK");
+                                reactContext.startActivity(intent);
+                                promise.resolve(true);
+                            }
+
+                            Log.d(TAG, "✅ Diálogo de marcador predeterminado lanzado");
                         } else {
-                            Log.e(TAG, "❌ No hay Activity actual para mostrar diálogo");
-                            promise.reject("NO_ACTIVITY", "No hay Activity actual");
+                            Log.d(TAG, "✅ Ya es el marcador predeterminado");
+                            promise.resolve(true);
                         }
                     } else {
-                        Log.d(TAG, "✅ Ya es el marcador predeterminado");
-                        promise.resolve(true);
+                        Log.e(TAG, "❌ ROLE_DIALER no disponible");
+                        promise.reject("ROLE_NOT_AVAILABLE", "Rol de marcador no disponible en este dispositivo");
                     }
                 } else {
-                    Log.e(TAG, "❌ RoleManager no disponible o rol no disponible");
-                    promise.reject("ROLE_NOT_AVAILABLE", "RoleManager no disponible");
+                    Log.e(TAG, "❌ RoleManager es null");
+                    promise.reject("ROLE_MANAGER_NULL", "RoleManager no disponible");
                 }
 
             } catch (Exception e) {
-                Log.e(TAG, "❌ Error con RoleManager: " + e.getMessage());
+                Log.e(TAG, "❌ Error con RoleManager", e);
                 promise.reject("ROLE_ERROR", e.getMessage(), e);
             }
         }
@@ -146,36 +163,49 @@ public class DefaultDialerModule extends ReactContextBaseJavaModule {
     private void requestViaTelecomManager(Promise promise) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             try {
+                Log.d(TAG, "📱 Iniciando requestViaTelecomManager...");
+
                 TelecomManager telecomManager = (TelecomManager) reactContext.getSystemService(Context.TELECOM_SERVICE);
 
                 if (telecomManager != null) {
+                    Log.d(TAG, "✅ TelecomManager obtenido");
+
                     String packageName = reactContext.getPackageName();
                     String currentDialer = telecomManager.getDefaultDialerPackage();
+
+                    Log.d(TAG, "🔍 Package actual: " + packageName);
+                    Log.d(TAG, "🔍 Default dialer: " + currentDialer);
 
                     if (!packageName.equals(currentDialer)) {
                         // Crear intent para solicitar ser marcador predeterminado
                         Intent intent = new Intent(TelecomManager.ACTION_CHANGE_DEFAULT_DIALER);
                         intent.putExtra(TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME, packageName);
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+
+                        Log.d(TAG, "📱 Intent creado: " + intent);
 
                         if (getCurrentActivity() != null) {
+                            Log.d(TAG, "✅ Activity disponible, usando startActivity");
                             getCurrentActivity().startActivity(intent);
-                            Log.d(TAG, "✅ Solicitando ser marcador predeterminado via TelecomManager");
                             promise.resolve(true);
                         } else {
-                            Log.e(TAG, "❌ No hay Activity actual para mostrar diálogo");
-                            promise.reject("NO_ACTIVITY", "No hay Activity actual");
+                            Log.w(TAG, "⚠️ Activity null, usando context.startActivity con FLAG_NEW_TASK");
+                            reactContext.startActivity(intent);
+                            promise.resolve(true);
                         }
+
+                        Log.d(TAG, "✅ Diálogo de marcador predeterminado lanzado");
                     } else {
                         Log.d(TAG, "✅ Ya es el marcador predeterminado");
                         promise.resolve(true);
                     }
                 } else {
-                    Log.e(TAG, "❌ TelecomManager no disponible");
+                    Log.e(TAG, "❌ TelecomManager es null");
                     promise.reject("TELECOM_NOT_AVAILABLE", "TelecomManager no disponible");
                 }
 
             } catch (Exception e) {
-                Log.e(TAG, "❌ Error con TelecomManager: " + e.getMessage());
+                Log.e(TAG, "❌ Error con TelecomManager", e);
                 promise.reject("TELECOM_ERROR", e.getMessage(), e);
             }
         }
