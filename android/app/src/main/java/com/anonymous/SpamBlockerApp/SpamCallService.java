@@ -252,11 +252,12 @@ public class SpamCallService extends InCallService {
                     boolean ivrStarted;
 
                     if (audioFile.exists()) {
-                        // PLAN B: Usar MediaPlayer con audio pre-generado (ElevenLabs)
-                        Log.d(TAG, "✅ Audio IVR encontrado, usando MediaPlayer desde InCallService");
-                        logsHelper.logInfo("✅ Modo 2 - Usando audio pre-generado (ElevenLabs) desde InCallService");
+                        // ✅ Usar AudioTrack con audio pre-generado (ElevenLabs)
+                        // AudioTrack transmite audio al CALLER (vs MediaPlayer que solo reproduce localmente)
+                        Log.d(TAG, "✅ Audio IVR encontrado, usando AudioTrack desde InCallService");
+                        logsHelper.logInfo("✅ Modo 2 - Usando AudioTrack para transmisión al caller");
 
-                        IVRAudioPlayer audioPlayer = IVRAudioPlayer.getInstance(this);
+                        IVRAudioTrackPlayer audioPlayer = IVRAudioTrackPlayer.getInstance(this);
                         ivrStarted = audioPlayer.playIVR(
                             audioPath,
                             0,   // Loops infinitos
@@ -264,20 +265,20 @@ public class SpamCallService extends InCallService {
                         );
 
                         if (ivrStarted) {
-                            Log.d(TAG, "✅ IVR (MediaPlayer) iniciado correctamente desde InCallService context");
-                            Log.d(TAG, "🎙️ Audio debería transmitirse al CALLER, no reproducirse localmente");
+                            Log.d(TAG, "✅ IVR (AudioTrack) iniciado correctamente desde InCallService context");
+                            Log.d(TAG, "🎙️ Audio se transmitirá al CALLER via STREAM_VOICE_CALL");
 
                             // Colgar después de 31 segundos
                             mainHandler.postDelayed(() -> {
                                 Log.d(TAG, "🎯 IVR terminado (timeout 31s), colgando (Modo 2)");
                                 logsHelper.logInfo("🎯 Modo 2 - IVR finalizado, ejecutando hangup");
-                                IVRAudioPlayer.getInstance(this).stopIVR();
+                                IVRAudioTrackPlayer.getInstance(this).stopIVR();
                                 call.disconnect();
                                 answerHangupHelper.clearMarked();
                             }, 31000L);
                         } else {
-                            Log.e(TAG, "❌ Error iniciando IVR (MediaPlayer), colgando");
-                            logsHelper.logError("❌ Modo 2 - Error IVR MediaPlayer, fallback a hangup");
+                            Log.e(TAG, "❌ Error iniciando IVR (AudioTrack), colgando");
+                            logsHelper.logError("❌ Modo 2 - Error IVR AudioTrack, fallback a hangup");
                             call.disconnect();
                             answerHangupHelper.clearMarked();
                         }
