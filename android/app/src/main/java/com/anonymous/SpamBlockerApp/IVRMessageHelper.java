@@ -187,9 +187,13 @@ public class IVRMessageHelper {
 
             // Configurar audio para llamada
             audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-            audioManager.setSpeakerphoneOn(true);
+            audioManager.setSpeakerphoneOn(false);  // ❌ FALSE: No activar speaker local
 
-            Log.d(TAG, "🔊 Audio configurado - Mode: IN_COMMUNICATION, Speaker: ON");
+            // IMPORTANTE: Necesitamos que el audio vaya al stream de la llamada,
+            // NO al speaker local del teléfono. MODE_IN_COMMUNICATION + Speaker OFF
+            // debería rutear el audio TTS al stream de voz de la llamada.
+
+            Log.d(TAG, "🔊 Audio configurado - Mode: IN_COMMUNICATION, Speaker: OFF (routing to call stream)");
 
             // Configurar atributos de audio para TTS
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {

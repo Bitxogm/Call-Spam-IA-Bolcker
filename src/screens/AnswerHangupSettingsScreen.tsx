@@ -1,7 +1,9 @@
 // src/screens/AnswerHangupSettingsScreen.tsx
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, Switch, PermissionsAndroid, Platform, Linking } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, Switch, PermissionsAndroid, Platform, Linking, ActivityIndicator } from 'react-native';
 import { answerHangupService } from '../services/AnswerHangupService';
+import ivrGeneratorService from '../services/IVRGeneratorService';
+import defaultDialerService from '../services/DefaultDialerService';
 
 type AnswerHangupSettingsScreenProps = {
   navigation: any;
@@ -15,17 +17,34 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
   const [isAccessibilityEnabled, setIsAccessibilityEnabled] = useState(false);
   const [checkingAccessibility, setCheckingAccessibility] = useState(false);
 
+  // Estados para generación de audio IVR
+  const [ivrAudioExists, setIvrAudioExists] = useState(false);
+  const [generatingIVR, setGeneratingIVR] = useState(false);
+
+  // Estados para Default Dialer
+  const [isDefaultDialer, setIsDefaultDialer] = useState(false);
+  const [checkingDefaultDialer, setCheckingDefaultDialer] = useState(false);
+
   // Cargar configuración al iniciar
   useEffect(() => {
     loadSettings();
     checkAccessibilityService();
     ensureInCallServiceEnabled(); // CRÍTICO: Habilitar SpamCallService
+    checkIVRAudioExists(); // Verificar si ya existe audio IVR generado
+    checkDefaultDialerStatus(); // Verificar si la app es el marcador predeterminado
   }, []);
 
   // Verificar Accessibility Service cuando cambie el modo o se active
   useEffect(() => {
     if (isEnabled && (mode === 'PLAY_MESSAGE' || mode === 'AI_CONVERSATION')) {
       checkAccessibilityService();
+    }
+  }, [mode, isEnabled]);
+
+  // Verificar Default Dialer cuando cambie el modo a PLAY_MESSAGE
+  useEffect(() => {
+    if (isEnabled && mode === 'PLAY_MESSAGE') {
+      checkDefaultDialerStatus();
     }
   }, [mode, isEnabled]);
 
@@ -257,6 +276,130 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
     }
   };
 
+  /**
+   * Verifica si ya existe audio IVR pre-generado
+   */
+  const checkIVRAudioExists = async () => {
+    try {
+      const result = await ivrGeneratorService.checkExists();
+      setIvrAudioExists(result.exists);
+      console.log(`🔊 Audio IVR: ${result.exists ? 'Existe' : 'No existe'}`);
+    } catch (error) {
+      console.error('❌ Error verificando audio IVR:', error);
+      setIvrAudioExists(false);
+    }
+  };
+
+  /**
+   * Genera el audio IVR con TTS nativo
+   */
+  const handleGenerateIVRAudio = async () => {
+    try {
+      setGeneratingIVR(true);
+
+      Alert.alert(
+        '🔊 Generando Audio IVR',
+        'Generando mensaje corporativo con TTS nativo...\nEsto puede tardar unos segundos.',
+        [{ text: 'OK' }]
+      );
+
+      const result = await ivrGeneratorService.generateWithNativeTTS();
+
+      setIvrAudioExists(true);
+
+      Alert.alert(
+        '✅ Audio Generado',
+        `Mensaje IVR generado correctamente.\n\nRuta: ${result.path}\nTamaño: ${(result.size / 1024).toFixed(2)} KB\n\nAhora cuando uses Modo 2, el spammer escuchará este mensaje en lugar de escucharlo tú.`,
+        [{ text: 'Entendido' }]
+      );
+
+      console.log('✅ Audio IVR generado:', result);
+
+    } catch (error: any) {
+      console.error('❌ Error generando audio IVR:', error);
+
+      Alert.alert(
+        '❌ Error',
+        `No se pudo generar el audio IVR.\n\nError: ${error.message}`,
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setGeneratingIVR(false);
+    }
+  };
+
+  /**
+   * Verifica si la app es el marcador predeterminado
+   */
+  const checkDefaultDialerStatus = async () => {
+    try {
+      setCheckingDefaultDialer(true);
+      const isDefault = await defaultDialerService.isDefaultDialer();
+      setIsDefaultDialer(isDefault);
+      console.log('📱 Default Dialer:', isDefault ? 'SÍ (Esta app)' : 'NO (Otra app)');
+
+      if (!isDefault) {
+        const currentDialer = await defaultDialerService.getCurrentDefaultDialer();
+        console.log('📱 Marcador actual:', currentDialer);
+      }
+    } catch (error) {
+      console.error('❌ Error verificando Default Dialer:', error);
+      setIsDefaultDialer(false);
+    } finally {
+      setCheckingDefaultDialer(false);
+    }
+  };
+
+  /**
+   * Solicita al usuario establecer esta app como marcador predeterminado
+   */
+  const requestSetDefaultDialer = async () => {
+    try {
+      Alert.alert(
+        '📱 Marcador Predeterminado Requerido',
+        'Para que el IVR se escuche en el teléfono del spammer (no en el tuyo), esta app debe ser el marcador predeterminado.\n\n' +
+        '¿Por qué?\n' +
+        'Android/Samsung bloquean el control de audio para apps de terceros. Solo el marcador predeterminado puede enrutar el audio IVR al caller.\n\n' +
+        'La app seguirá funcionando normalmente para hacer llamadas.',
+        [
+          {
+            text: 'Cancelar',
+            style: 'cancel'
+          },
+          {
+            text: 'Configurar',
+            onPress: async () => {
+              const success = await defaultDialerService.requestSetDefaultDialer();
+
+              if (success) {
+                Alert.alert(
+                  '📱 Configuración Abierta',
+                  'Selecciona "SpamBlocker" en el diálogo que aparece.\n\n' +
+                  'Cuando regreses, la app verificará automáticamente el estado.',
+                  [
+                    {
+                      text: 'OK',
+                      onPress: () => {
+                        // Verificar después de 2 segundos
+                        setTimeout(() => {
+                          checkDefaultDialerStatus();
+                        }, 2000);
+                      }
+                    }
+                  ]
+                );
+              } else {
+                Alert.alert('Error', 'No se pudo abrir la configuración de marcador predeterminado');
+              }
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo solicitar marcador predeterminado');
+    }
+  };
+
   const handleModeChange = async (newMode: 'HANGUP_IMMEDIATELY' | 'PLAY_MESSAGE' | 'AI_CONVERSATION') => {
     try {
       await answerHangupService.setMode(newMode);
@@ -352,6 +495,52 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
         <View style={styles.accessibilitySuccess}>
           <Text style={styles.successIcon}>✅</Text>
           <Text style={styles.successText}>Servicio de Accesibilidad activado correctamente</Text>
+        </View>
+      )}
+
+      {/* ADVERTENCIA DE MARCADOR PREDETERMINADO (Solo para Modo 2) */}
+      {isEnabled && mode === 'PLAY_MESSAGE' && !isDefaultDialer && (
+        <View style={styles.defaultDialerWarning}>
+          <View style={styles.warningHeader}>
+            <Text style={styles.warningIcon}>📱</Text>
+            <Text style={styles.warningTitle}>Marcador Predeterminado Requerido</Text>
+          </View>
+
+          <Text style={styles.warningText}>
+            Para que el IVR se escuche en el teléfono del spammer (no en el tuyo), esta app debe ser el marcador predeterminado.
+          </Text>
+
+          <Text style={styles.warningDescription}>
+            <Text style={{ fontWeight: 'bold' }}>¿Por qué?{'\n'}</Text>
+            Android/Samsung bloquean el control de audio de llamadas para apps de terceros. Solo la app de marcador predeterminada puede enrutar el audio IVR correctamente al caller.{'\n\n'}
+            <Text style={{ fontWeight: 'bold' }}>¿Qué cambia?{'\n'}</Text>
+            La app se abrirá cuando toques números de teléfono. Puedes usar tu marcador normal en cualquier momento desde Configuración.
+          </Text>
+
+          <TouchableOpacity
+            style={styles.defaultDialerButton}
+            onPress={requestSetDefaultDialer}
+          >
+            <Text style={styles.defaultDialerButtonText}>📱 Establecer como Marcador Predeterminado</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.recheckButton}
+            onPress={checkDefaultDialerStatus}
+            disabled={checkingDefaultDialer}
+          >
+            <Text style={styles.recheckButtonText}>
+              {checkingDefaultDialer ? '🔄 Verificando...' : '🔄 Verificar de nuevo'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* CONFIRMACIÓN DE MARCADOR PREDETERMINADO (Solo para Modo 2) */}
+      {isEnabled && mode === 'PLAY_MESSAGE' && isDefaultDialer && (
+        <View style={styles.defaultDialerSuccess}>
+          <Text style={styles.successIcon}>✅</Text>
+          <Text style={styles.successText}>App establecida como marcador predeterminado - El IVR se enrutará correctamente al spammer</Text>
         </View>
       )}
 
@@ -474,13 +663,55 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
             </View>
           )}
 
+          {/* GENERAR AUDIO IVR (solo para Modo 2) */}
+          {mode === 'PLAY_MESSAGE' && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>🔊 Audio IVR Corporativo</Text>
+              <Text style={styles.sectionDescription}>
+                {ivrAudioExists
+                  ? '✅ Audio generado y listo para usar. El spammer escuchará este mensaje.'
+                  : '⚠️ Debes generar el audio IVR antes de usar Modo 2.\n\nSe genera UNA vez con TTS nativo (voz robótica) y se guarda localmente.'}
+              </Text>
+
+              <TouchableOpacity
+                style={[
+                  styles.generateIVRButton,
+                  ivrAudioExists && styles.generateIVRButtonSuccess,
+                  generatingIVR && styles.generateIVRButtonDisabled
+                ]}
+                onPress={handleGenerateIVRAudio}
+                disabled={generatingIVR}
+              >
+                {generatingIVR ? (
+                  <ActivityIndicator color="#ffffff" size="small" />
+                ) : (
+                  <>
+                    <Text style={styles.generateIVRButtonIcon}>
+                      {ivrAudioExists ? '✅' : '🔊'}
+                    </Text>
+                    <Text style={styles.generateIVRButtonText}>
+                      {ivrAudioExists ? 'Re-generar Audio IVR' : 'Generar Audio IVR'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              {ivrAudioExists && (
+                <Text style={styles.ivrSuccessNote}>
+                  💡 El audio ya está generado. Puedes probarlo activando Modo 2 y recibiendo una llamada.
+                </Text>
+              )}
+            </View>
+          )}
+
           {/* INFO ADICIONAL */}
           <View style={styles.infoBox}>
             <Text style={styles.infoTitle}>ℹ️ Información</Text>
             <Text style={styles.infoText}>
               • Answer+Hangup solo procesa llamadas detectadas como spam{'\n'}
               • Requiere permiso "Registro de llamadas" (READ_CALL_LOG){'\n'}
-              • Modo 2 y 3 requieren Servicio de Accesibilidad activado{'\n'}
+              • Modo 2 requiere: Servicio de Accesibilidad + Marcador Predeterminado{'\n'}
+              • Modo 3 requiere: Servicio de Accesibilidad activado{'\n'}
               • Los logs se guardan en "Logs de Debug"{'\n'}
               • El historial se guarda en "Historial de Spam"
             </Text>
@@ -738,5 +969,72 @@ const styles = StyleSheet.create({
     color: '#00ff88',
     fontWeight: '600',
     flex: 1,
+  },
+  // Estilos para botón de generación IVR
+  generateIVRButton: {
+    backgroundColor: '#ff9900',
+    padding: 16,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  generateIVRButtonSuccess: {
+    backgroundColor: '#1a4a2a',
+    borderColor: '#00ff88',
+  },
+  generateIVRButtonDisabled: {
+    backgroundColor: '#3a3a3a',
+    opacity: 0.6,
+  },
+  generateIVRButtonIcon: {
+    fontSize: 20,
+    marginRight: 10,
+  },
+  generateIVRButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#ffffff',
+  },
+  ivrSuccessNote: {
+    fontSize: 13,
+    color: '#00ff88',
+    marginTop: 10,
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
+  // Estilos para Default Dialer Warning
+  defaultDialerWarning: {
+    backgroundColor: '#3a2a1a',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: '#ff6600',
+  },
+  defaultDialerButton: {
+    backgroundColor: '#ff6600',
+    padding: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  defaultDialerButtonText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  defaultDialerSuccess: {
+    backgroundColor: '#1a3a2a',
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: '#00ff88',
+    flexDirection: 'row',
+    alignItems: 'center',
   },
 });

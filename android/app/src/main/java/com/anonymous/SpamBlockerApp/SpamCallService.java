@@ -34,6 +34,10 @@ public class SpamCallService extends InCallService {
         EMERGENCY_NUMBERS.add("061"); // Emergencias Sanitarias España
     }
 
+    // Llamada actual (para InCallActivity)
+    private static Call currentCall = null;
+    private static SpamCallService instance = null;
+
     // Helpers
     private Handler mainHandler;
     private AnswerHangupHelper answerHangupHelper;
@@ -42,6 +46,7 @@ public class SpamCallService extends InCallService {
     @Override
     public void onCreate() {
         super.onCreate();
+        instance = this;  // Guardar instancia para acceso desde InCallActivity
         mainHandler = new Handler(Looper.getMainLooper());
         answerHangupHelper = new AnswerHangupHelper(this);
         logsHelper = new LogsHelper(this);
@@ -78,6 +83,18 @@ public class SpamCallService extends InCallService {
             return;
         }
 
+        // 🎯 CRÍTICO: Solo procesar llamadas ENTRANTES (INCOMING)
+        // NO procesar llamadas SALIENTES (OUTGOING) - esas son las tuyas!
+        int callDirection = call.getDetails().getCallDirection();
+
+        if (callDirection == Call.Details.DIRECTION_OUTGOING) {
+            Log.d(TAG, "📤 Llamada SALIENTE detectada - NO aplicar Answer+Hangup");
+            logsHelper.logInfo("📤 Llamada saliente (tuya) - Ignorando");
+            return;
+        }
+
+        Log.d(TAG, "📥 Llamada ENTRANTE confirmada - Procesando...");
+
         // 🎯 PRIORIDAD 1: Verificar si este número está marcado para Answer+Hangup
         boolean isAnswerHangupEnabled = answerHangupHelper.isEnabled();
         boolean shouldAnswerHangup = answerHangupHelper.shouldHangup(callerNumber);
@@ -111,9 +128,15 @@ public class SpamCallService extends InCallService {
                     logsHelper.logInfo("💀 Llamada desconectada");
 
                     // Detener IVR si estaba reproduciéndose
+                    // Intentar detener ambos: TTS y MediaPlayer
                     IVRMessageHelper ivrHelper = IVRMessageHelper.getInstance(SpamCallService.this);
                     if (ivrHelper.isPlaying()) {
                         ivrHelper.stopIVR();
+                    }
+
+                    IVRAudioPlayer audioPlayer = IVRAudioPlayer.getInstance(SpamCallService.this);
+                    if (audioPlayer.isPlaying()) {
+                        audioPlayer.stopIVR();
                     }
                 }
             }
@@ -143,6 +166,10 @@ public class SpamCallService extends InCallService {
         } else {
             Log.d(TAG, "✅ DECISIÓN: Permitir llamada normal");
             logsHelper.logInfo("✅ Llamada normal permitida");
+
+            // Guardar llamada actual y lanzar UI de llamada
+            currentCall = call;
+            launchInCallUI();
         }
     }
 
@@ -151,6 +178,76 @@ public class SpamCallService extends InCallService {
         super.onCallRemoved(call);
         String callerNumber = getCallerNumber(call);
         Log.d(TAG, "📞 Llamada finalizada: " + callerNumber);
+
+        // Limpiar llamada actual
+        if (call == currentCall) {
+            currentCall = null;
+        }
+    }
+
+    /**
+     * Obtiene la llamada actual (usado por InCallActivity)
+     */
+    public static Call getCurrentCall() {
+        return currentCall;
+    }
+
+    /**
+     * Control de audio: Mute/Unmute (desde InCallActivity)
+     */
+    public static void setCallMuted(boolean muted) {
+        if (instance != null) {
+            instance.setMuted(muted);
+            Log.d(TAG, "🎤 Mute: " + muted);
+        }
+    }
+
+    /**
+     * Control de audio: Speaker On/Off (desde InCallActivity)
+     */
+    public static void setCallSpeaker(boolean speakerOn) {
+        if (instance != null) {
+            int route = speakerOn ?
+                android.telecom.CallAudioState.ROUTE_SPEAKER :
+                android.telecom.CallAudioState.ROUTE_EARPIECE;
+            instance.setAudioRoute(route);
+            Log.d(TAG, "🔊 Speaker: " + speakerOn);
+        }
+    }
+
+    /**
+     * Obtiene estado de mute actual
+     */
+    public static boolean isCallMuted() {
+        if (instance != null && instance.getCallAudioState() != null) {
+            return instance.getCallAudioState().isMuted();
+        }
+        return false;
+    }
+
+    /**
+     * Obtiene estado de speaker actual
+     */
+    public static boolean isCallSpeakerOn() {
+        if (instance != null && instance.getCallAudioState() != null) {
+            int route = instance.getCallAudioState().getRoute();
+            return route == android.telecom.CallAudioState.ROUTE_SPEAKER;
+        }
+        return false;
+    }
+
+    /**
+     * Lanza la UI de llamada para llamadas normales
+     */
+    private void launchInCallUI() {
+        try {
+            android.content.Intent intent = new android.content.Intent(this, InCallActivity.class);
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(intent);
+            Log.d(TAG, "🖥️ InCallActivity lanzada");
+        } catch (Exception e) {
+            Log.e(TAG, "❌ Error lanzando InCallActivity: " + e.getMessage());
+        }
     }
 
     /**
@@ -222,32 +319,90 @@ public class SpamCallService extends InCallService {
 
                 showToast("🔊 Modo 2: Reproduciendo IVR...");
 
-                // Obtener instancia única de IVRMessageHelper
-                IVRMessageHelper ivrHelper = IVRMessageHelper.getInstance(this);
+                // 🎯 CRÍTICO: Esperar 2 segundos para que el audio de llamada esté completamente establecido
+                // Sin este delay, el audio se reproduce localmente en vez de transmitirse al caller
+                Log.d(TAG, "⏱️ Esperando 2s para establecer audio de llamada...");
 
-                boolean ivrStarted = ivrHelper.startIVR(
-                    IVRMessageHelper.IVRType.CORPORATE_INFINITE,
-                    30  // 30 segundos máximo
-                );
+                mainHandler.postDelayed(() -> {
+                    // Ruta del archivo de audio pre-generado
+                    String audioPath = getFilesDir().getAbsolutePath() + "/ivr_corporate.mp3";
 
-                if (ivrStarted) {
-                    Log.d(TAG, "✅ IVR iniciado correctamente");
-                    logsHelper.logInfo("✅ Modo 2 - IVR iniciado correctamente");
+                    // 🔍 DEBUG: Logs detallados de verificación de archivo
+                    Log.d(TAG, "🔍 DEBUG - Ruta verificando: " + audioPath);
+                    Log.d(TAG, "🔍 DEBUG - getFilesDir(): " + getFilesDir().getAbsolutePath());
 
-                    // Colgar después de 31 segundos (asegurar que IVR termine)
-                    mainHandler.postDelayed(() -> {
-                        Log.d(TAG, "🎯 IVR terminado, colgando (Modo 2)");
-                        logsHelper.logInfo("🎯 Modo 2 - IVR finalizado, ejecutando hangup");
-                        IVRMessageHelper.getInstance(this).stopIVR();
-                        call.disconnect();
-                        answerHangupHelper.clearMarked();
-                    }, 31000L);
-                } else {
-                    Log.e(TAG, "❌ Error iniciando IVR, colgando inmediatamente");
-                    logsHelper.logError("❌ Modo 2 - Error IVR, fallback a hangup");
-                    call.disconnect();
-                    answerHangupHelper.clearMarked();
-                }
+                    // Verificar si existe audio pre-generado, sino fallback a TTS
+                    java.io.File audioFile = new java.io.File(audioPath);
+
+                    Log.d(TAG, "🔍 DEBUG - Archivo existe: " + audioFile.exists());
+                    if (audioFile.exists()) {
+                        Log.d(TAG, "🔍 DEBUG - Tamaño archivo: " + audioFile.length() + " bytes");
+                        Log.d(TAG, "🔍 DEBUG - Puede leer: " + audioFile.canRead());
+                    }
+
+                    boolean ivrStarted;
+
+                    if (audioFile.exists()) {
+                        // ✅ Usar AudioTrack con audio pre-generado (ElevenLabs)
+                        // AudioTrack transmite audio al CALLER (vs MediaPlayer que solo reproduce localmente)
+                        Log.d(TAG, "✅ Audio IVR encontrado, usando AudioTrack desde InCallService");
+                        logsHelper.logInfo("✅ Modo 2 - Usando AudioTrack para transmisión al caller");
+
+                        IVRAudioTrackPlayer audioPlayer = IVRAudioTrackPlayer.getInstance(this);
+                        ivrStarted = audioPlayer.playIVR(
+                            audioPath,
+                            0,   // Loops infinitos
+                            30   // 30 segundos máximo
+                        );
+
+                        if (ivrStarted) {
+                            Log.d(TAG, "✅ IVR (AudioTrack) iniciado correctamente desde InCallService context");
+                            Log.d(TAG, "🎙️ Audio se transmitirá al CALLER via STREAM_VOICE_CALL");
+
+                            // Colgar después de 31 segundos
+                            mainHandler.postDelayed(() -> {
+                                Log.d(TAG, "🎯 IVR terminado (timeout 31s), colgando (Modo 2)");
+                                logsHelper.logInfo("🎯 Modo 2 - IVR finalizado, ejecutando hangup");
+                                IVRAudioTrackPlayer.getInstance(this).stopIVR();
+                                call.disconnect();
+                                answerHangupHelper.clearMarked();
+                            }, 31000L);
+                        } else {
+                            Log.e(TAG, "❌ Error iniciando IVR (AudioTrack), colgando");
+                            logsHelper.logError("❌ Modo 2 - Error IVR AudioTrack, fallback a hangup");
+                            call.disconnect();
+                            answerHangupHelper.clearMarked();
+                        }
+
+                    } else {
+                        // FALLBACK: Usar TTS nativo (menos confiable)
+                        Log.w(TAG, "⚠️ Audio IVR no encontrado, usando TTS fallback");
+                        logsHelper.logWarning("⚠️ Modo 2 - Usando TTS fallback (no recomendado)");
+
+                        IVRMessageHelper ivrHelper = IVRMessageHelper.getInstance(this);
+                        ivrStarted = ivrHelper.startIVR(
+                            IVRMessageHelper.IVRType.CORPORATE_INFINITE,
+                            30
+                        );
+
+                        if (ivrStarted) {
+                            Log.d(TAG, "✅ IVR (TTS) iniciado correctamente");
+
+                            mainHandler.postDelayed(() -> {
+                                Log.d(TAG, "🎯 IVR terminado, colgando (Modo 2)");
+                                logsHelper.logInfo("🎯 Modo 2 - IVR finalizado, ejecutando hangup");
+                                IVRMessageHelper.getInstance(this).stopIVR();
+                                call.disconnect();
+                                answerHangupHelper.clearMarked();
+                            }, 31000L);
+                        } else {
+                            Log.e(TAG, "❌ Error iniciando IVR (TTS), colgando inmediatamente");
+                            logsHelper.logError("❌ Modo 2 - Error IVR, fallback a hangup");
+                            call.disconnect();
+                            answerHangupHelper.clearMarked();
+                        }
+                    }
+                }, 2000L); // Cierre del delay de 2 segundos para establecer audio
                 break;
 
             case AI_CONVERSATION:
@@ -375,6 +530,9 @@ public class SpamCallService extends InCallService {
         if (mainHandler != null) {
             mainHandler.removeCallbacksAndMessages(null);
         }
+        // Limpiar referencias estáticas
+        instance = null;
+        currentCall = null;
         Log.d(TAG, "💀 SpamCallService destruido");
     }
 }

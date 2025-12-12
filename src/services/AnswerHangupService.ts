@@ -224,6 +224,27 @@ class AnswerHangupService {
       };
     }
   };
+
+  /**
+   * Prueba si un número sería bloqueado por los prefijos 800/900
+   * TESTING: Para verificar que la lógica de bloqueo funciona
+   */
+  testPrefixBlocking = async (phoneNumber: string): Promise<{
+    originalNumber: string;
+    cleanedNumber: string;
+    wouldBeBlocked: boolean;
+    matchedPrefix: string;
+    blockReason: string;
+  }> => {
+    try {
+      const result = await AnswerHangupModule.testPrefixBlocking(phoneNumber);
+      console.log(`🧪 Test de bloqueo para ${phoneNumber}:`, result);
+      return result;
+    } catch (error) {
+      console.error('❌ Error en testPrefixBlocking:', error);
+      throw error;
+    }
+  };
 }
 
 export const answerHangupService = new AnswerHangupService();

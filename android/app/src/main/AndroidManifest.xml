@@ -71,6 +71,12 @@
       </intent-filter>
 
       <intent-filter android:priority="1000">
+        <action android:name="android.intent.action.DIAL"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <data android:scheme="tel"/>
+      </intent-filter>
+
+      <intent-filter android:priority="1000">
         <action android:name="android.intent.action.VIEW"/>
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
@@ -85,6 +91,15 @@
 
     </activity>
 
+    <!-- UI de llamada (pantalla con botones colgar/mute/speaker) -->
+    <activity android:name=".InCallActivity"
+              android:exported="false"
+              android:launchMode="singleInstance"
+              android:showWhenLocked="true"
+              android:turnScreenOn="true"
+              android:excludeFromRecents="true"
+              android:theme="@android:style/Theme.NoTitleBar.Fullscreen" />
+
     <!-- Servicio para interceptar llamadas entrantes -->
     <service android:name=".SpamCallService"
              android:enabled="true"
@@ -93,7 +108,8 @@
       <intent-filter>
         <action android:name="android.telecom.InCallService" />
       </intent-filter>
-      <meta-data android:name="android.telecom.IN_CALL_SERVICE_UI" android:value="false" />
+      <meta-data android:name="android.telecom.IN_CALL_SERVICE_UI" android:value="true" />
+      <meta-data android:name="android.telecom.IN_CALL_SERVICE_RINGING" android:value="true" />
     </service>
 
     <!-- Servicio foreground para operaciones en segundo plano -->
