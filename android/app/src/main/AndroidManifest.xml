@@ -5,6 +5,9 @@
   <uses-permission android:name="android.permission.READ_CALL_LOG"/>
   <uses-permission android:name="android.permission.WRITE_CALL_LOG"/>
 
+  <!-- Permisos de contactos (para Whitelist y Modo Radical) -->
+  <uses-permission android:name="android.permission.READ_CONTACTS"/>
+
   <!-- Permisos de servicios y notificaciones -->
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL"/>
