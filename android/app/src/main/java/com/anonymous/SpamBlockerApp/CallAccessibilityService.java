@@ -40,11 +40,6 @@ public class CallAccessibilityService extends AccessibilityService {
     private TelephonyManager telephonyManager;
     private PhoneStateListener phoneStateListener;
 
-    // IVR Audio Player para Modo 2
-    private IVRAudioPlayer ivrAudioPlayer;
-    private boolean ivrPlaying = false;
-    private Runnable hangupRunnable;
-
     // Textos comunes de botón "Contestar" en diferentes idiomas
     private static final String[] ANSWER_BUTTON_TEXTS = {
         "answer",           // Inglés
@@ -90,21 +85,6 @@ public class CallAccessibilityService extends AccessibilityService {
     }
 
     /**
-     * Verifica si somos el marcador predeterminado
-     */
-    private boolean isDefaultDialer() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            TelecomManager telecomManager = (TelecomManager) getSystemService(Context.TELECOM_SERVICE);
-            if (telecomManager != null) {
-                String defaultDialer = telecomManager.getDefaultDialerPackage();
-                String packageName = getPackageName();
-                return packageName.equals(defaultDialer);
-            }
-        }
-        return false;
-    }
-
-    /**
      * Configura el listener para detectar llamadas entrantes
      */
     private void setupPhoneStateListener() {
@@ -119,18 +99,6 @@ public class CallAccessibilityService extends AccessibilityService {
                     return;
                 }
 
-                // 🎯 NUEVO: Si somos default dialer, SpamCallService manejará TODO
-                // AccessibilityService solo se usa como fallback cuando NO somos default
-                boolean isDefault = isDefaultDialer();
-                Log.d(TAG, "🔍 Default Dialer: " + (isDefault ? "SÍ (SpamCallService lo manejará)" : "NO (AccessibilityService lo manejará)"));
-
-                if (isDefault) {
-                    Log.d(TAG, "✅ Somos default dialer - SpamCallService (InCallService) manejará esta llamada");
-                    logsHelper.logInfo("✅ Default dialer activo - InCallService tiene control total");
-                    // NO hacer nada aquí, SpamCallService lo manejará
-                    return;
-                }
-
                 if (state == TelephonyManager.CALL_STATE_RINGING) {
                     Log.d(TAG, "📞 Llamada entrante detectada via PhoneStateListener");
                     logsHelper.logInfo("📞 Llamada entrante detectada");
@@ -141,37 +109,22 @@ public class CallAccessibilityService extends AccessibilityService {
                     }, 1000);
 
                 } else if (state == TelephonyManager.CALL_STATE_OFFHOOK) {
-                    // Llamada ACTIVA - Reproducir IVR si está en Modo 2
+                    // Llamada ACTIVA - Colgar después del delay (Modo 1)
                     Log.d(TAG, "📞 Llamada ACTIVA detectada");
                     logsHelper.logInfo("📞 Llamada activa");
 
-                    AnswerHangupHelper.Mode mode = answerHangupHelper.getMode();
+                    int delay = answerHangupHelper.getHangupDelay();
+                    Log.d(TAG, "📵 MODO 1: Colgando en " + delay + " segundos...");
+                    logsHelper.logInfo("📵 Modo 1 - Hangup programado en " + delay + "s");
 
-                    if (mode == AnswerHangupHelper.Mode.PLAY_MESSAGE) {
-                        Log.d(TAG, "🔊 MODO 2: Iniciando IVR en AccessibilityService...");
-                        logsHelper.logInfo("🔊 Modo 2 - Iniciando IVR desde AccessibilityService");
-
-                        // Esperar 1 segundo para que el audio esté listo
-                        mainHandler.postDelayed(() -> {
-                            startIVRPlayback();
-                        }, 1000);
-
-                    } else if (mode == AnswerHangupHelper.Mode.HANGUP_IMMEDIATELY) {
-                        // Modo 1: Colgar después del delay
-                        int delay = answerHangupHelper.getHangupDelay();
-                        Log.d(TAG, "📵 MODO 1: Colgando en " + delay + " segundos...");
-                        logsHelper.logInfo("📵 Modo 1 - Hangup programado en " + delay + "s");
-
-                        mainHandler.postDelayed(() -> {
-                            hangupCall();
-                        }, delay * 1000L);
-                    }
+                    mainHandler.postDelayed(() -> {
+                        hangupCall();
+                    }, delay * 1000L);
 
                 } else if (state == TelephonyManager.CALL_STATE_IDLE) {
-                    // Llamada terminada - detener IVR si estaba reproduciéndose
+                    // Llamada terminada
                     Log.d(TAG, "💀 Llamada terminada");
                     logsHelper.logInfo("💀 Llamada terminada");
-                    stopIVRPlayback();
                 }
             }
         };
@@ -456,80 +409,6 @@ public class CallAccessibilityService extends AccessibilityService {
     }
 
     /**
-     * Inicia la reproducción del IVR (Modo 2)
-     */
-    private void startIVRPlayback() {
-        if (ivrPlaying) {
-            Log.w(TAG, "⚠️ IVR ya está reproduciéndose");
-            return;
-        }
-
-        // Ruta del archivo de audio pre-generado
-        String audioPath = getFilesDir().getAbsolutePath() + "/ivr_corporate.mp3";
-        java.io.File audioFile = new java.io.File(audioPath);
-
-        Log.d(TAG, "🔍 DEBUG - Ruta IVR: " + audioPath);
-        Log.d(TAG, "🔍 DEBUG - Archivo existe: " + audioFile.exists());
-
-        if (audioFile.exists()) {
-            Log.d(TAG, "🔍 DEBUG - Tamaño: " + audioFile.length() + " bytes");
-            Log.d(TAG, "✅ Audio IVR encontrado, usando MediaPlayer");
-            logsHelper.logInfo("✅ Modo 2 - Usando audio pre-generado");
-
-            // Inicializar IVRAudioPlayer
-            ivrAudioPlayer = IVRAudioPlayer.getInstance(this);
-
-            // Reproducir IVR (0 loops = repetir infinitamente, 30s timeout)
-            boolean started = ivrAudioPlayer.playIVR(audioPath, 0, 30);
-
-            if (started) {
-                ivrPlaying = true;
-                Log.d(TAG, "✅ IVR (MediaPlayer) iniciado correctamente");
-                logsHelper.logInfo("✅ IVR iniciado con MediaPlayer");
-
-                // Programar hangup después de 31 segundos
-                hangupRunnable = () -> {
-                    Log.d(TAG, "🎯 IVR terminado, colgando (Modo 2)");
-                    logsHelper.logInfo("🎯 Modo 2 - IVR finalizado, ejecutando hangup");
-                    stopIVRPlayback();
-                    hangupCall();
-                };
-
-                mainHandler.postDelayed(hangupRunnable, 31000L);
-
-            } else {
-                Log.e(TAG, "❌ Error iniciando IVR (MediaPlayer), colgando");
-                logsHelper.logError("❌ Modo 2 - Error IVR MediaPlayer");
-                hangupCall();
-            }
-
-        } else {
-            // Fallback: colgar inmediatamente si no hay audio
-            Log.w(TAG, "⚠️ Audio IVR no encontrado: " + audioPath);
-            logsHelper.logWarning("⚠️ Modo 2 - Audio no encontrado, colgando");
-            hangupCall();
-        }
-    }
-
-    /**
-     * Detiene la reproducción del IVR
-     */
-    private void stopIVRPlayback() {
-        if (ivrAudioPlayer != null && ivrPlaying) {
-            ivrAudioPlayer.stopIVR();
-            ivrPlaying = false;
-            Log.d(TAG, "🛑 IVR detenido");
-            logsHelper.logInfo("🛑 IVR detenido");
-        }
-
-        // Cancelar hangup programado si existe
-        if (hangupRunnable != null && mainHandler != null) {
-            mainHandler.removeCallbacks(hangupRunnable);
-            hangupRunnable = null;
-        }
-    }
-
-    /**
      * Cuelga la llamada activa
      */
     private void hangupCall() {
@@ -571,9 +450,6 @@ public class CallAccessibilityService extends AccessibilityService {
     @Override
     public void onDestroy() {
         super.onDestroy();
-
-        // Detener IVR si está reproduciéndose
-        stopIVRPlayback();
 
         if (mainHandler != null) {
             mainHandler.removeCallbacksAndMessages(null);
