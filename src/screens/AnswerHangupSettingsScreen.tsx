@@ -2,8 +2,6 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, Switch, PermissionsAndroid, Platform, Linking, ActivityIndicator } from 'react-native';
 import { answerHangupService } from '../services/AnswerHangupService';
-import ivrGeneratorService from '../services/IVRGeneratorService';
-import defaultDialerService from '../services/DefaultDialerService';
 
 type AnswerHangupSettingsScreenProps = {
   navigation: any;
@@ -11,49 +9,19 @@ type AnswerHangupSettingsScreenProps = {
 
 export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupSettingsScreenProps) {
   const [isEnabled, setIsEnabled] = useState(false);
-  const [mode, setMode] = useState<'HANGUP_IMMEDIATELY' | 'PLAY_MESSAGE' | 'AI_CONVERSATION'>('HANGUP_IMMEDIATELY');
   const [delay, setDelay] = useState(2);
   const [loading, setLoading] = useState(true);
-  const [isAccessibilityEnabled, setIsAccessibilityEnabled] = useState(false);
-  const [checkingAccessibility, setCheckingAccessibility] = useState(false);
-
-  // Estados para generación de audio IVR
-  const [ivrAudioExists, setIvrAudioExists] = useState(false);
-  const [generatingIVR, setGeneratingIVR] = useState(false);
-
-  // Estados para Default Dialer
-  const [isDefaultDialer, setIsDefaultDialer] = useState(false);
-  const [checkingDefaultDialer, setCheckingDefaultDialer] = useState(false);
 
   // Cargar configuración al iniciar
   useEffect(() => {
     loadSettings();
-    checkAccessibilityService();
-    ensureInCallServiceEnabled(); // CRÍTICO: Habilitar SpamCallService
-    checkIVRAudioExists(); // Verificar si ya existe audio IVR generado
-    checkDefaultDialerStatus(); // Verificar si la app es el marcador predeterminado
   }, []);
-
-  // Verificar Accessibility Service cuando cambie el modo o se active
-  useEffect(() => {
-    if (isEnabled && (mode === 'PLAY_MESSAGE' || mode === 'AI_CONVERSATION')) {
-      checkAccessibilityService();
-    }
-  }, [mode, isEnabled]);
-
-  // Verificar Default Dialer cuando cambie el modo a PLAY_MESSAGE
-  useEffect(() => {
-    if (isEnabled && mode === 'PLAY_MESSAGE') {
-      checkDefaultDialerStatus();
-    }
-  }, [mode, isEnabled]);
 
   const loadSettings = async () => {
     try {
       const config = await answerHangupService.getConfiguration();
 
       setIsEnabled(config.enabled);
-      setMode(config.mode);
       setDelay(config.hangupDelay);
 
       console.log('⚙️ Configuración cargada:', config);
@@ -62,38 +30,6 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
       Alert.alert('Error', 'No se pudo cargar la configuración');
     } finally {
       setLoading(false);
-    }
-  };
-
-  /**
-   * Asegura que SpamCallService (InCallService) esté habilitado
-   * CRÍTICO: Sin esto, el servicio no se inicia y Modo 2/3 no funcionan
-   */
-  const ensureInCallServiceEnabled = async () => {
-    try {
-      console.log('🔍 Verificando estado de SpamCallService...');
-
-      const status = await answerHangupService.checkInCallServiceStatus();
-      console.log(`📊 Estado actual: ${status.stateName} (${status.stateCode})`);
-
-      if (!status.isEnabled) {
-        console.log('⚠️ SpamCallService está DESHABILITADO, habilitando...');
-        const success = await answerHangupService.enableInCallService();
-
-        if (success) {
-          console.log('✅ SpamCallService habilitado correctamente');
-
-          // Verificar nuevamente el estado
-          const newStatus = await answerHangupService.checkInCallServiceStatus();
-          console.log(`📊 Nuevo estado: ${newStatus.stateName} (${newStatus.stateCode})`);
-        } else {
-          console.error('❌ No se pudo habilitar SpamCallService');
-        }
-      } else {
-        console.log('✅ SpamCallService ya está habilitado');
-      }
-    } catch (error) {
-      console.error('❌ Error verificando/habilitando SpamCallService:', error);
     }
   };
 
@@ -227,199 +163,6 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
     }
   };
 
-  /**
-   * Verifica si el Accessibility Service está habilitado
-   */
-  const checkAccessibilityService = async () => {
-    try {
-      setCheckingAccessibility(true);
-      const enabled = await answerHangupService.isAccessibilityServiceEnabled();
-      setIsAccessibilityEnabled(enabled);
-      console.log('♿ Accessibility Service:', enabled ? 'HABILITADO' : 'DESHABILITADO');
-    } catch (error) {
-      console.error('❌ Error verificando Accessibility Service:', error);
-      setIsAccessibilityEnabled(false);
-    } finally {
-      setCheckingAccessibility(false);
-    }
-  };
-
-  /**
-   * Abre la configuración de Accesibilidad
-   */
-  const openAccessibilitySettings = async () => {
-    try {
-      await answerHangupService.openAccessibilitySettings();
-
-      Alert.alert(
-        '📱 Configuración de Accesibilidad',
-        'Pasos a seguir:\n\n' +
-        '1. Busca "SpamBlocker" o "SpamBlockerApp" en la lista\n' +
-        '2. Activa el servicio moviendo el interruptor\n' +
-        '3. Acepta el permiso cuando se solicite\n' +
-        '4. Regresa a esta pantalla\n\n' +
-        'Cuando regreses, la app verificará automáticamente el estado.',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              // Verificar después de 3 segundos para dar tiempo al usuario
-              setTimeout(() => {
-                checkAccessibilityService();
-              }, 3000);
-            }
-          }
-        ]
-      );
-    } catch (error) {
-      Alert.alert('Error', 'No se pudo abrir la configuración de Accesibilidad');
-    }
-  };
-
-  /**
-   * Verifica si ya existe audio IVR pre-generado
-   */
-  const checkIVRAudioExists = async () => {
-    try {
-      const result = await ivrGeneratorService.checkExists();
-      setIvrAudioExists(result.exists);
-      console.log(`🔊 Audio IVR: ${result.exists ? 'Existe' : 'No existe'}`);
-    } catch (error) {
-      console.error('❌ Error verificando audio IVR:', error);
-      setIvrAudioExists(false);
-    }
-  };
-
-  /**
-   * Genera el audio IVR con TTS nativo
-   */
-  const handleGenerateIVRAudio = async () => {
-    try {
-      setGeneratingIVR(true);
-
-      Alert.alert(
-        '🔊 Generando Audio IVR',
-        'Generando mensaje corporativo con TTS nativo...\nEsto puede tardar unos segundos.',
-        [{ text: 'OK' }]
-      );
-
-      const result = await ivrGeneratorService.generateWithNativeTTS();
-
-      setIvrAudioExists(true);
-
-      Alert.alert(
-        '✅ Audio Generado',
-        `Mensaje IVR generado correctamente.\n\nRuta: ${result.path}\nTamaño: ${(result.size / 1024).toFixed(2)} KB\n\nAhora cuando uses Modo 2, el spammer escuchará este mensaje en lugar de escucharlo tú.`,
-        [{ text: 'Entendido' }]
-      );
-
-      console.log('✅ Audio IVR generado:', result);
-
-    } catch (error: any) {
-      console.error('❌ Error generando audio IVR:', error);
-
-      Alert.alert(
-        '❌ Error',
-        `No se pudo generar el audio IVR.\n\nError: ${error.message}`,
-        [{ text: 'OK' }]
-      );
-    } finally {
-      setGeneratingIVR(false);
-    }
-  };
-
-  /**
-   * Verifica si la app es el marcador predeterminado
-   */
-  const checkDefaultDialerStatus = async () => {
-    try {
-      setCheckingDefaultDialer(true);
-      const isDefault = await defaultDialerService.isDefaultDialer();
-      setIsDefaultDialer(isDefault);
-      console.log('📱 Default Dialer:', isDefault ? 'SÍ (Esta app)' : 'NO (Otra app)');
-
-      if (!isDefault) {
-        const currentDialer = await defaultDialerService.getCurrentDefaultDialer();
-        console.log('📱 Marcador actual:', currentDialer);
-      }
-    } catch (error) {
-      console.error('❌ Error verificando Default Dialer:', error);
-      setIsDefaultDialer(false);
-    } finally {
-      setCheckingDefaultDialer(false);
-    }
-  };
-
-  /**
-   * Solicita al usuario establecer esta app como marcador predeterminado
-   */
-  const requestSetDefaultDialer = async () => {
-    try {
-      Alert.alert(
-        '📱 Marcador Predeterminado Requerido',
-        'Para que el IVR se escuche en el teléfono del spammer (no en el tuyo), esta app debe ser el marcador predeterminado.\n\n' +
-        '¿Por qué?\n' +
-        'Android/Samsung bloquean el control de audio para apps de terceros. Solo el marcador predeterminado puede enrutar el audio IVR al caller.\n\n' +
-        'La app seguirá funcionando normalmente para hacer llamadas.',
-        [
-          {
-            text: 'Cancelar',
-            style: 'cancel'
-          },
-          {
-            text: 'Configurar',
-            onPress: async () => {
-              const success = await defaultDialerService.requestSetDefaultDialer();
-
-              if (success) {
-                Alert.alert(
-                  '📱 Configuración Abierta',
-                  'Selecciona "SpamBlocker" en el diálogo que aparece.\n\n' +
-                  'Cuando regreses, la app verificará automáticamente el estado.',
-                  [
-                    {
-                      text: 'OK',
-                      onPress: () => {
-                        // Verificar después de 2 segundos
-                        setTimeout(() => {
-                          checkDefaultDialerStatus();
-                        }, 2000);
-                      }
-                    }
-                  ]
-                );
-              } else {
-                Alert.alert('Error', 'No se pudo abrir la configuración de marcador predeterminado');
-              }
-            }
-          }
-        ]
-      );
-    } catch (error) {
-      Alert.alert('Error', 'No se pudo solicitar marcador predeterminado');
-    }
-  };
-
-  const handleModeChange = async (newMode: 'HANGUP_IMMEDIATELY' | 'PLAY_MESSAGE' | 'AI_CONVERSATION') => {
-    try {
-      await answerHangupService.setMode(newMode);
-      setMode(newMode);
-
-      const modeDescriptions = {
-        HANGUP_IMMEDIATELY: 'Las llamadas spam se colgarán automáticamente después del delay configurado.',
-        PLAY_MESSAGE: 'Se reproducirá un mensaje IVR corporativo para molestar al spammer antes de colgar.',
-        AI_CONVERSATION: 'La IA mantendrá una conversación con el spammer (próximamente).'
-      };
-
-      Alert.alert(
-        '✅ Modo Cambiado',
-        modeDescriptions[newMode]
-      );
-    } catch (error) {
-      Alert.alert('Error', 'No se pudo cambiar el modo');
-    }
-  };
-
   const handleDelayChange = async (newDelay: number) => {
     try {
       await answerHangupService.setHangupDelay(newDelay);
@@ -454,96 +197,6 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
         <Text style={styles.diagnosticButtonText}>🔍 Verificar Permisos</Text>
       </TouchableOpacity>
 
-      {/* ADVERTENCIA DE ACCESSIBILITY SERVICE */}
-      {isEnabled && (mode === 'PLAY_MESSAGE' || mode === 'AI_CONVERSATION') && !isAccessibilityEnabled && (
-        <View style={styles.accessibilityWarning}>
-          <View style={styles.warningHeader}>
-            <Text style={styles.warningIcon}>⚠️</Text>
-            <Text style={styles.warningTitle}>Servicio de Accesibilidad Requerido</Text>
-          </View>
-
-          <Text style={styles.warningText}>
-            Para usar Modo 2 (IVR) o Modo 3 (IA), necesitas activar el Servicio de Accesibilidad de SpamBlocker.
-          </Text>
-
-          <Text style={styles.warningDescription}>
-            Este servicio permite que la app conteste automáticamente las llamadas spam.
-            NO recopila información personal y solo se activa cuando Answer+Hangup está habilitado.
-          </Text>
-
-          <TouchableOpacity
-            style={styles.accessibilityButton}
-            onPress={openAccessibilitySettings}
-          >
-            <Text style={styles.accessibilityButtonText}>♿ Abrir Configuración de Accesibilidad</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.recheckButton}
-            onPress={checkAccessibilityService}
-            disabled={checkingAccessibility}
-          >
-            <Text style={styles.recheckButtonText}>
-              {checkingAccessibility ? '🔄 Verificando...' : '🔄 Verificar de nuevo'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* CONFIRMACIÓN DE ACCESSIBILITY SERVICE */}
-      {isEnabled && (mode === 'PLAY_MESSAGE' || mode === 'AI_CONVERSATION') && isAccessibilityEnabled && (
-        <View style={styles.accessibilitySuccess}>
-          <Text style={styles.successIcon}>✅</Text>
-          <Text style={styles.successText}>Servicio de Accesibilidad activado correctamente</Text>
-        </View>
-      )}
-
-      {/* ADVERTENCIA DE MARCADOR PREDETERMINADO (Solo para Modo 2) */}
-      {isEnabled && mode === 'PLAY_MESSAGE' && !isDefaultDialer && (
-        <View style={styles.defaultDialerWarning}>
-          <View style={styles.warningHeader}>
-            <Text style={styles.warningIcon}>📱</Text>
-            <Text style={styles.warningTitle}>Marcador Predeterminado Requerido</Text>
-          </View>
-
-          <Text style={styles.warningText}>
-            Para que el IVR se escuche en el teléfono del spammer (no en el tuyo), esta app debe ser el marcador predeterminado.
-          </Text>
-
-          <Text style={styles.warningDescription}>
-            <Text style={{ fontWeight: 'bold' }}>¿Por qué?{'\n'}</Text>
-            Android/Samsung bloquean el control de audio de llamadas para apps de terceros. Solo la app de marcador predeterminada puede enrutar el audio IVR correctamente al caller.{'\n\n'}
-            <Text style={{ fontWeight: 'bold' }}>¿Qué cambia?{'\n'}</Text>
-            La app se abrirá cuando toques números de teléfono. Puedes usar tu marcador normal en cualquier momento desde Configuración.
-          </Text>
-
-          <TouchableOpacity
-            style={styles.defaultDialerButton}
-            onPress={requestSetDefaultDialer}
-          >
-            <Text style={styles.defaultDialerButtonText}>📱 Establecer como Marcador Predeterminado</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.recheckButton}
-            onPress={checkDefaultDialerStatus}
-            disabled={checkingDefaultDialer}
-          >
-            <Text style={styles.recheckButtonText}>
-              {checkingDefaultDialer ? '🔄 Verificando...' : '🔄 Verificar de nuevo'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* CONFIRMACIÓN DE MARCADOR PREDETERMINADO (Solo para Modo 2) */}
-      {isEnabled && mode === 'PLAY_MESSAGE' && isDefaultDialer && (
-        <View style={styles.defaultDialerSuccess}>
-          <Text style={styles.successIcon}>✅</Text>
-          <Text style={styles.successText}>App establecida como marcador predeterminado - El IVR se enrutará correctamente al spammer</Text>
-        </View>
-      )}
-
       {/* ENABLE/DISABLE */}
       <View style={styles.section}>
         <View style={styles.switchContainer}>
@@ -562,147 +215,35 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
         </View>
       </View>
 
-      {/* SELECTOR DE MODO */}
+      {/* DELAY */}
       {isEnabled && (
         <>
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Modo de Acción</Text>
+            <Text style={styles.sectionTitle}>⏱️ Delay antes de colgar</Text>
             <Text style={styles.sectionDescription}>
-              ¿Qué hacer después de contestar la llamada?
+              Segundos de espera antes de colgar la llamada spam (1-5s)
             </Text>
 
-            {/* MODO 1: Colgar inmediatamente */}
-            <TouchableOpacity
-              style={[
-                styles.modeOption,
-                mode === 'HANGUP_IMMEDIATELY' && styles.modeOptionSelected
-              ]}
-              onPress={() => handleModeChange('HANGUP_IMMEDIATELY')}
-            >
-              <View style={styles.modeHeader}>
-                <Text style={styles.modeIcon}>📵</Text>
-                <Text style={styles.modeTitle}>Modo 1: Colgar Inmediatamente</Text>
-              </View>
-              <Text style={styles.modeDescription}>
-                Contestar y colgar después de {delay} segundo{delay > 1 ? 's' : ''}.
-                Rápido y efectivo.
-              </Text>
-              {mode === 'HANGUP_IMMEDIATELY' && (
-                <Text style={styles.modeStatus}>✅ Activo</Text>
-              )}
-            </TouchableOpacity>
-
-            {/* MODO 2: Reproducir mensaje IVR */}
-            <TouchableOpacity
-              style={[
-                styles.modeOption,
-                mode === 'PLAY_MESSAGE' && styles.modeOptionSelected
-              ]}
-              onPress={() => handleModeChange('PLAY_MESSAGE')}
-            >
-              <View style={styles.modeHeader}>
-                <Text style={styles.modeIcon}>🔊</Text>
-                <Text style={styles.modeTitle}>Modo 2: IVR Corporativo</Text>
-              </View>
-              <Text style={styles.modeDescription}>
-                "Bienvenido... pulse 1 para ventas, pulse 2 para soporte..."
-                Mantiene al spammer ocupado 30 segundos.
-              </Text>
-              {mode === 'PLAY_MESSAGE' && (
-                <Text style={styles.modeStatus}>✅ Activo</Text>
-              )}
-            </TouchableOpacity>
-
-            {/* MODO 3: IA Conversacional (próximamente) */}
-            <TouchableOpacity
-              style={[
-                styles.modeOption,
-                styles.modeOptionDisabled,
-                mode === 'AI_CONVERSATION' && styles.modeOptionSelected
-              ]}
-              onPress={() => Alert.alert('🤖 Próximamente', 'La IA conversacional estará disponible en una futura actualización')}
-            >
-              <View style={styles.modeHeader}>
-                <Text style={styles.modeIcon}>🤖</Text>
-                <Text style={styles.modeTitle}>Modo 3: IA Conversacional</Text>
-                <Text style={styles.comingSoonBadge}>Próximamente</Text>
-              </View>
-              <Text style={styles.modeDescription}>
-                La IA mantendrá una conversación con el spammer usando GPT/Claude.
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.delayContainer}>
+              {[1, 2, 3, 4, 5].map((seconds) => (
+                <TouchableOpacity
+                  key={seconds}
+                  style={[
+                    styles.delayButton,
+                    delay === seconds && styles.delayButtonSelected
+                  ]}
+                  onPress={() => handleDelayChange(seconds)}
+                >
+                  <Text style={[
+                    styles.delayButtonText,
+                    delay === seconds && styles.delayButtonTextSelected
+                  ]}>
+                    {seconds}s
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
-
-          {/* DELAY (solo para Modo 1) */}
-          {mode === 'HANGUP_IMMEDIATELY' && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Delay antes de colgar</Text>
-              <Text style={styles.sectionDescription}>
-                Segundos de espera antes de colgar (1-5s)
-              </Text>
-
-              <View style={styles.delayContainer}>
-                {[1, 2, 3, 4, 5].map((seconds) => (
-                  <TouchableOpacity
-                    key={seconds}
-                    style={[
-                      styles.delayButton,
-                      delay === seconds && styles.delayButtonSelected
-                    ]}
-                    onPress={() => handleDelayChange(seconds)}
-                  >
-                    <Text style={[
-                      styles.delayButtonText,
-                      delay === seconds && styles.delayButtonTextSelected
-                    ]}>
-                      {seconds}s
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          )}
-
-          {/* GENERAR AUDIO IVR (solo para Modo 2) */}
-          {mode === 'PLAY_MESSAGE' && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>🔊 Audio IVR Corporativo</Text>
-              <Text style={styles.sectionDescription}>
-                {ivrAudioExists
-                  ? '✅ Audio generado y listo para usar. El spammer escuchará este mensaje.'
-                  : '⚠️ Debes generar el audio IVR antes de usar Modo 2.\n\nSe genera UNA vez con TTS nativo (voz robótica) y se guarda localmente.'}
-              </Text>
-
-              <TouchableOpacity
-                style={[
-                  styles.generateIVRButton,
-                  ivrAudioExists && styles.generateIVRButtonSuccess,
-                  generatingIVR && styles.generateIVRButtonDisabled
-                ]}
-                onPress={handleGenerateIVRAudio}
-                disabled={generatingIVR}
-              >
-                {generatingIVR ? (
-                  <ActivityIndicator color="#ffffff" size="small" />
-                ) : (
-                  <>
-                    <Text style={styles.generateIVRButtonIcon}>
-                      {ivrAudioExists ? '✅' : '🔊'}
-                    </Text>
-                    <Text style={styles.generateIVRButtonText}>
-                      {ivrAudioExists ? 'Re-generar Audio IVR' : 'Generar Audio IVR'}
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-
-              {ivrAudioExists && (
-                <Text style={styles.ivrSuccessNote}>
-                  💡 El audio ya está generado. Puedes probarlo activando Modo 2 y recibiendo una llamada.
-                </Text>
-              )}
-            </View>
-          )}
 
           {/* INFO ADICIONAL */}
           <View style={styles.infoBox}>
@@ -710,8 +251,7 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
             <Text style={styles.infoText}>
               • Answer+Hangup solo procesa llamadas detectadas como spam{'\n'}
               • Requiere permiso "Registro de llamadas" (READ_CALL_LOG){'\n'}
-              • Modo 2 requiere: Servicio de Accesibilidad + Marcador Predeterminado{'\n'}
-              • Modo 3 requiere: Servicio de Accesibilidad activado{'\n'}
+              • La llamada se contesta y se cuelga después del delay configurado{'\n'}
               • Los logs se guardan en "Logs de Debug"{'\n'}
               • El historial se guarda en "Historial de Spam"
             </Text>
