@@ -1,6 +1,6 @@
 # 📱 Branch: Modo 1 Optimizado - Spam Call Blocker
 
-**Branch Name:** `claude/modo1-optimized`
+**Branch Name:** `claude/modo1-optimized-01KAWsdwPsM88H55dEWN8Xqf`
 **Status:** ✅ Production-ready approach
 **Date:** Diciembre 2025
 
@@ -120,12 +120,12 @@ Implementar **Modo 1 Optimizado**: Detección y bloqueo automático de llamadas 
 ```
 main
 ├── claude/fix-call-permissions-01KAWsdwPsM88H55dEWN8Xqf  ← Modo 2 (experimental, archivado)
-└── claude/modo1-optimized                                ← ESTE BRANCH (producción)
+└── claude/modo1-optimized-01KAWsdwPsM88H55dEWN8Xqf       ← ESTE BRANCH (producción)
     └── dev (usuario)                                      ← Branch del usuario para testing
 ```
 
 **Flujo de trabajo:**
-1. Claude trabaja en `claude/modo1-optimized`
+1. Claude trabaja en `claude/modo1-optimized-01KAWsdwPsM88H55dEWN8Xqf`
 2. Usuario hace pull y merge a `dev`
 3. Usuario prueba en `dev`
 4. Cuando está estable, merge a `main`
@@ -188,7 +188,7 @@ main
 
 ## 👥 Desarrollo
 
-**Branch:** `claude/modo1-optimized`
+**Branch:** `claude/modo1-optimized-01KAWsdwPsM88H55dEWN8Xqf`
 **Estado:** En desarrollo activo
 **Target:** Producción (Play Store)
 
