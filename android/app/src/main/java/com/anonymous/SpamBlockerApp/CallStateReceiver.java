@@ -190,51 +190,11 @@ public class CallStateReceiver extends BroadcastReceiver {
                     }, delay * 1000L);
                     break;
 
-                case PLAY_MESSAGE:
-                    // Modo 2: Reproducir IVR corporativo
-                    Log.d(TAG, "🔊 MODO 2: Iniciando IVR corporativo...");
-                    logsHelper.logInfo("🔊 Modo 2 - Iniciando IVR");
-
-                    showToast(context, "🔊 Modo 2: Reproduciendo IVR");
-
-                    // Obtener instancia única de IVRMessageHelper
-                    IVRMessageHelper ivrHelper = IVRMessageHelper.getInstance(context);
-
-                    // Iniciar IVR (30 segundos máximo)
-                    boolean ivrStarted = ivrHelper.startIVR(
-                        IVRMessageHelper.IVRType.CORPORATE_INFINITE,
-                        30  // 30 segundos máximo
-                    );
-
-                    if (ivrStarted) {
-                        Log.d(TAG, "✅ IVR iniciado correctamente");
-                        logsHelper.logInfo("✅ Modo 2 - IVR iniciado (30s max)");
-
-                        // Colgar después de 30 segundos
-                        new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                            Log.d(TAG, "🎯 IVR terminado, colgando (Modo 2)");
-                            logsHelper.logInfo("🎯 Modo 2 - IVR finalizado, ejecutando hangup");
-                            IVRMessageHelper.getInstance(context).stopIVR();
-                            hangupCall(context, number);
-                        }, 31000L);  // 31s para asegurar que el IVR termine
-                    } else {
-                        Log.e(TAG, "❌ Error iniciando IVR, colgando directamente");
-                        logsHelper.logError("❌ Modo 2 - Error IVR, fallback a hangup");
-                        hangupCall(context, number);
-                    }
-                    break;
-
-                case AI_CONVERSATION:
-                    // Modo 3: IA conversacional (futuro)
-                    Log.d(TAG, "🤖 MODO 3: IA Conversacional (no implementado aún)");
-                    logsHelper.logWarning("🤖 Modo 3 - No implementado, fallback a hangup");
-
-                    showToast(context, "🤖 Modo 3: No disponible (colgando)");
-
-                    // Fallback: colgar después de 2 segundos
-                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                        hangupCall(context, number);
-                    }, 2000L);
+                default:
+                    // Fallback: cualquier modo desconocido, colgar inmediatamente
+                    Log.w(TAG, "⚠️ Modo desconocido: " + mode + ", colgando inmediatamente");
+                    logsHelper.logWarning("Modo desconocido, fallback a hangup");
+                    hangupCall(context, number);
                     break;
             }
         } else {
@@ -248,14 +208,7 @@ public class CallStateReceiver extends BroadcastReceiver {
      */
     private void handleIdle(Context context) {
         Log.d(TAG, "📞 IDLE (sin llamada)");
-
-        // Detener IVR si está reproduciéndose
-        IVRMessageHelper ivrHelper = IVRMessageHelper.getInstance(context);
-        if (ivrHelper.isPlaying()) {
-            Log.d(TAG, "🛑 Deteniendo IVR (llamada finalizada)");
-            ivrHelper.stopIVR();
-        }
-
+        logsHelper.logInfo("IDLE detectado - llamada terminada");
         lastIncomingNumber = null;
     }
 
