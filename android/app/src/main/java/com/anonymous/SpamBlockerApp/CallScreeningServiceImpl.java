@@ -68,10 +68,10 @@ public class CallScreeningServiceImpl extends CallScreeningService {
             return;
         }
 
-        // Verificar si es spam o desconocido
-        boolean isPotentialSpam = shouldShowNotification(callerNumber);
+        // Verificar si es spam o desconocido (retorna SpamDetectionResult con score)
+        SpamDetectionResult spamDetection = detectSpam(callerNumber);
 
-        if (isPotentialSpam) {
+        if (spamDetection.isSpam) {
             Log.d(TAG, "🤖 SPAM POTENCIAL");
             showToast("🤖 SPAM DETECTADO: " + callerNumber);
             logsHelper.logWarning("SPAM detectado: " + callerNumber);
@@ -90,7 +90,14 @@ public class CallScreeningServiceImpl extends CallScreeningService {
                     Log.d(TAG, "🔇 Answer+Hangup ACTIVO - Marcar para colgar");
                     showToast("🔇 Spam: Contestar y colgar automáticamente");
                     logsHelper.logInfo("Answer+Hangup activado para: " + callerNumber);
-                    callHistoryHelper.addSpamCall(callerNumber, "Spam", "Answer+Hangup");
+                    // Guardar con score y categoría
+                    callHistoryHelper.addSpamCall(
+                        callerNumber,
+                        spamDetection.reason,
+                        "Answer+Hangup",
+                        spamDetection.score,
+                        spamDetection.category
+                    );
 
                     // Marcar número para answer+hangup
                     answerHangupHelper.markForAnswerHangup(callerNumber);
@@ -110,7 +117,14 @@ public class CallScreeningServiceImpl extends CallScreeningService {
                 // Modo normal: Mostrar notificación
                 Log.d(TAG, "📲 Mostrando notificación de spam");
                 logsHelper.logInfo("Notificación de spam enviada para: " + callerNumber);
-                callHistoryHelper.addSpamCall(callerNumber, "Spam", "Notification");
+                // Guardar con score y categoría
+                callHistoryHelper.addSpamCall(
+                    callerNumber,
+                    spamDetection.reason,
+                    "Notification",
+                    spamDetection.score,
+                    spamDetection.category
+                );
                 SpamNotificationManager.showIncomingSpamNotification(
                     this,
                     callerNumber
@@ -136,7 +150,14 @@ public class CallScreeningServiceImpl extends CallScreeningService {
 
                 // Fallback: Modo normal con notificación
                 SpamNotificationManager.showIncomingSpamNotification(this, callerNumber);
-                callHistoryHelper.addSpamCall(callerNumber, "Spam", "Notification (fallback)");
+                // Guardar con score y categoría
+                callHistoryHelper.addSpamCall(
+                    callerNumber,
+                    spamDetection.reason,
+                    "Notification (fallback)",
+                    spamDetection.score,
+                    spamDetection.category
+                );
                 CallResponse response = new CallResponse.Builder()
                     .setDisallowCall(false)
                     .setRejectCall(false)
@@ -189,19 +210,38 @@ public class CallScreeningServiceImpl extends CallScreeningService {
     }
 
     /**
-     * Decide si mostrar notificación de spam
+     * Clase interna para resultado de detección de spam
+     */
+    private static class SpamDetectionResult {
+        public final boolean isSpam;
+        public final int score;
+        public final String reason;
+        public final String category;
+
+        public SpamDetectionResult(boolean isSpam, int score, String reason, String category) {
+            this.isSpam = isSpam;
+            this.score = score;
+            this.reason = reason;
+            this.category = category;
+        }
+    }
+
+    /**
+     * Detecta si un número es spam
      * ORDEN DE PRIORIDAD:
      * 1. Blacklist (máxima prioridad, incluso sobre contactos)
      * 2. Contactos (whitelist automática)
      * 3. Modo Radical (si NO es contacto)
      * 4. Detección de patrones España 2025 (SpamPatternDetector)
+     *
+     * @return SpamDetectionResult con score, reason y category
      */
-    private boolean shouldShowNotification(String number) {
+    private SpamDetectionResult detectSpam(String number) {
         // 🚫 PRIORIDAD 1: BLACKLIST (incluso si es contacto)
         if (prefsHelper != null && prefsHelper.isInBlacklist(number)) {
             Log.d(TAG, "🚫 Número en LISTA NEGRA - BLOQUEAR");
             showToast("🚫 BLACKLIST: " + number);
-            return true;
+            return new SpamDetectionResult(true, 100, "Blacklist", "BLACKLIST");
         }
 
         // 👤 PRIORIDAD 2: Verificar si está en CONTACTOS (Whitelist automática)
@@ -213,7 +253,7 @@ public class CallScreeningServiceImpl extends CallScreeningService {
                 isContact = true;
                 Log.d(TAG, "👤 ES CONTACTO: " + contact.name + " - PERMITIR");
                 showToast("👤 Contacto: " + contact.name);
-                return false;  // NO mostrar notificación, es contacto conocido
+                return new SpamDetectionResult(false, 0, "Contacto", "CONTACT");
             }
         } catch (Exception e) {
             Log.e(TAG, "Error verificando contactos: " + e.getMessage());
@@ -224,7 +264,7 @@ public class CallScreeningServiceImpl extends CallScreeningService {
         if (modoRadical && !isContact) {
             Log.d(TAG, "🚫 MODO RADICAL ACTIVO - NO es contacto → BLOQUEAR");
             showToast("🚫 MODO RADICAL: No es contacto");
-            return true;  // Mostrar notificación de spam
+            return new SpamDetectionResult(true, 95, "Modo Radical", "MODO_RADICAL");
         }
 
         // 🇪🇸 PRIORIDAD 4: DETECCIÓN DE PATRONES ESPAÑA 2025
@@ -241,12 +281,17 @@ public class CallScreeningServiceImpl extends CallScreeningService {
             logsHelper.logWarning("Spam detectado - " + spamResult.description +
                                 " - Score: " + spamResult.score);
 
-            return true;  // Es spam
+            return new SpamDetectionResult(
+                true,
+                spamResult.score,
+                spamResult.description,
+                spamResult.category.toString()
+            );
         }
 
         // ✅ Todo lo demás: Número normal
         Log.d(TAG, "✅ Número normal: " + number + " (score: " + spamResult.score + ")");
-        return false;  // Número normal, no mostrar notificación
+        return new SpamDetectionResult(false, 0, "Normal", "NOT_SPAM");
     }
 
     /**

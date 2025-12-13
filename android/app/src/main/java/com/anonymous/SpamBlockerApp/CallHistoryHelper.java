@@ -32,9 +32,9 @@ public class CallHistoryHelper {
     }
 
     /**
-     * Añade una llamada spam al historial
+     * Añade una llamada spam al historial (versión mejorada con score y categoría)
      */
-    public void addSpamCall(String number, String reason, String action) {
+    public void addSpamCall(String number, String reason, String action, int spamScore, String category) {
         try {
             JSONArray history = getHistory();
 
@@ -44,6 +44,8 @@ public class CallHistoryHelper {
             record.put("number", number);
             record.put("reason", reason);  // "Blacklist", "Modo Radical", "Premium", etc.
             record.put("action", action);  // "Answer+Hangup", "Notification", "Blocked"
+            record.put("spamScore", spamScore);  // 0-100
+            record.put("category", category);  // "TELEMARKETING_LEGAL", "PREMIUM", etc.
 
             // Añadir al principio (más reciente primero)
             JSONArray newHistory = new JSONArray();
@@ -56,11 +58,20 @@ public class CallHistoryHelper {
             // Guardar
             prefs.edit().putString(KEY_HISTORY, newHistory.toString()).apply();
 
-            Log.d(TAG, "Spam call recorded: " + number + " (" + reason + ")");
+            Log.d(TAG, "Spam call recorded: " + number + " (" + reason + ", score:" + spamScore + ", cat:" + category + ")");
 
         } catch (JSONException e) {
             Log.e(TAG, "Error añadiendo llamada al historial: " + e.getMessage());
         }
+    }
+
+    /**
+     * Añade una llamada spam al historial (versión legacy sin score)
+     * @deprecated Usar addSpamCall con score y categoría
+     */
+    @Deprecated
+    public void addSpamCall(String number, String reason, String action) {
+        addSpamCall(number, reason, action, 0, "UNKNOWN");
     }
 
     /**
@@ -91,7 +102,9 @@ public class CallHistoryHelper {
                     record.getString("timestamp"),
                     record.getString("number"),
                     record.getString("reason"),
-                    record.getString("action")
+                    record.getString("action"),
+                    record.optInt("spamScore", 0),  // Default 0 si no existe
+                    record.optString("category", "UNKNOWN")  // Default UNKNOWN
                 );
                 recordsList.add(entry);
             }
@@ -133,12 +146,22 @@ public class CallHistoryHelper {
         public String number;
         public String reason;
         public String action;
+        public int spamScore;      // 0-100
+        public String category;    // TELEMARKETING_LEGAL, PREMIUM, etc.
 
-        public SpamCallRecord(String timestamp, String number, String reason, String action) {
+        public SpamCallRecord(String timestamp, String number, String reason, String action, int spamScore, String category) {
             this.timestamp = timestamp;
             this.number = number;
             this.reason = reason;
             this.action = action;
+            this.spamScore = spamScore;
+            this.category = category;
+        }
+
+        // Constructor legacy para compatibilidad
+        @Deprecated
+        public SpamCallRecord(String timestamp, String number, String reason, String action) {
+            this(timestamp, number, reason, action, 0, "UNKNOWN");
         }
     }
 }
