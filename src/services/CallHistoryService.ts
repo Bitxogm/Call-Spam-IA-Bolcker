@@ -6,8 +6,10 @@ const { CallHistoryModule } = NativeModules;
 export interface SpamCallRecord {
   timestamp: string;
   number: string;
-  reason: string;    // "Blacklist", "Modo Radical", "Premium", etc.
-  action: string;    // "Answer+Hangup", "Notification", "Blocked"
+  reason: string;      // "Blacklist", "Modo Radical", "Premium", etc.
+  action: string;      // "Answer+Hangup", "Notification", "Blocked"
+  spamScore: number;   // 0-100
+  category: string;    // "BLACKLIST", "TELEMARKETING_LEGAL", "PREMIUM", etc.
 }
 
 class CallHistoryService {

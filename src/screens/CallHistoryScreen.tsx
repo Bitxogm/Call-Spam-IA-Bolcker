@@ -10,6 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import CallHistoryService, { SpamCallRecord } from '../services/CallHistoryService';
+import SpamLookupService from '../services/SpamLookupService';
 
 const CallHistoryScreen: React.FC = () => {
   const [history, setHistory] = useState<SpamCallRecord[]>([]);
@@ -98,6 +99,24 @@ const CallHistoryScreen: React.FC = () => {
     }
   };
 
+  const getScoreColor = (score: number) => {
+    if (score >= 90) return '#dc3545';  // Rojo
+    if (score >= 85) return '#fd7e14';  // Naranja oscuro
+    if (score >= 75) return '#ffc107';  // Amarillo
+    return '#28a745';  // Verde
+  };
+
+  const getScoreEmoji = (score: number) => {
+    if (score >= 90) return '🔴';
+    if (score >= 85) return '🟠';
+    if (score >= 75) return '🟡';
+    return '🟢';
+  };
+
+  const handleLookupNumber = (phoneNumber: string) => {
+    SpamLookupService.showLookupOptions(phoneNumber);
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -158,6 +177,35 @@ const CallHistoryScreen: React.FC = () => {
                   {getActionIcon(record.action)} {record.action}
                 </Text>
               </View>
+
+              {/* Spam Score Badge */}
+              {record.spamScore > 0 && (
+                <View style={styles.scoreRow}>
+                  <View
+                    style={[
+                      styles.scoreBadge,
+                      { backgroundColor: getScoreColor(record.spamScore) },
+                    ]}
+                  >
+                    <Text style={styles.scoreText}>
+                      {getScoreEmoji(record.spamScore)} Score: {record.spamScore}/100
+                    </Text>
+                  </View>
+                  <Text style={styles.categoryText}>
+                    {record.category}
+                  </Text>
+                </View>
+              )}
+
+              {/* Lookup Button */}
+              <TouchableOpacity
+                style={styles.lookupButton}
+                onPress={() => handleLookupNumber(record.number)}
+              >
+                <Text style={styles.lookupButtonText}>
+                  🔍 Consultar en web
+                </Text>
+              </TouchableOpacity>
             </View>
           ))
         )}
@@ -279,6 +327,40 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#007bff',
     fontWeight: '600',
+  },
+  scoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+    gap: 10,
+  },
+  scoreBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 5,
+  },
+  scoreText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  categoryText: {
+    fontSize: 11,
+    color: '#666',
+    fontStyle: 'italic',
+  },
+  lookupButton: {
+    backgroundColor: '#007bff',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 5,
+    marginTop: 10,
+    alignItems: 'center',
+  },
+  lookupButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
 });
 
