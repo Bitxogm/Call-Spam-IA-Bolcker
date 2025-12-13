@@ -88,8 +88,8 @@ public class CallScreeningServiceImpl extends CallScreeningService {
 
                 if (answerHangupHelper != null && answerHangupHelper.isEnabled()) {
                     Log.d(TAG, "🔇 Answer+Hangup ACTIVO - Marcar para colgar");
-                    showToast("🔇 Spam: Contestar y colgar automáticamente");
                     logsHelper.logInfo("Answer+Hangup activado para: " + callerNumber);
+
                     // Guardar con score y categoría
                     callHistoryHelper.addSpamCall(
                         callerNumber,
@@ -97,6 +97,15 @@ public class CallScreeningServiceImpl extends CallScreeningService {
                         "Answer+Hangup",
                         spamDetection.score,
                         spamDetection.category
+                    );
+
+                    // Mostrar notificación de spam bloqueado
+                    SpamNotificationManager.showSpamBlockedNotification(
+                        this,
+                        callerNumber,
+                        spamDetection.score,
+                        spamDetection.category,
+                        "Answer+Hangup"
                     );
 
                     // Marcar número para answer+hangup
