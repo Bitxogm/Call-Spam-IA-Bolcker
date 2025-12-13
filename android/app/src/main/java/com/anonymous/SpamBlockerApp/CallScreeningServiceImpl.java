@@ -194,14 +194,13 @@ public class CallScreeningServiceImpl extends CallScreeningService {
      * 1. Blacklist (máxima prioridad, incluso sobre contactos)
      * 2. Contactos (whitelist automática)
      * 3. Modo Radical (si NO es contacto)
-     * 4. Números desconocidos/privados
-     * 5. Números premium (900, 902, etc.)
+     * 4. Detección de patrones España 2025 (SpamPatternDetector)
      */
     private boolean shouldShowNotification(String number) {
         // 🚫 PRIORIDAD 1: BLACKLIST (incluso si es contacto)
         if (prefsHelper != null && prefsHelper.isInBlacklist(number)) {
             Log.d(TAG, "🚫 Número en LISTA NEGRA - BLOQUEAR");
-            showToast("🚫 SPAM DETECTADO: " + number);
+            showToast("🚫 BLACKLIST: " + number);
             return true;
         }
 
@@ -228,30 +227,25 @@ public class CallScreeningServiceImpl extends CallScreeningService {
             return true;  // Mostrar notificación de spam
         }
 
-        // 📱 PRIORIDAD 4: Número desconocido/privado
-        if (number.equals("Desconocido") ||
-            number.equals("Privado") ||
-            number.equals("Número oculto")) {
-            Log.d(TAG, "📱 Número desconocido - BLOQUEAR");
-            return true;
-        }
+        // 🇪🇸 PRIORIDAD 4: DETECCIÓN DE PATRONES ESPAÑA 2025
+        SpamPatternDetector.SpamResult spamResult = SpamPatternDetector.analyze(number);
 
-        // 📞 PRIORIDAD 5: Números premium y comerciales (800, 900, 901, 902, etc.)
-        String cleaned = number.replaceAll("[^0-9]", "");
-        if (cleaned.startsWith("800") ||  // Números gratuitos comerciales
-            cleaned.startsWith("900") ||  // Tarificación especial
-            cleaned.startsWith("901") ||  // Tarificación especial
-            cleaned.startsWith("902") ||  // Tarificación especial
-            cleaned.startsWith("803") ||  // Servicios de participación
-            cleaned.startsWith("806") ||  // Servicios de entretenimiento
-            cleaned.startsWith("807") ||  // Servicios de entretenimiento
-            cleaned.startsWith("905")) {  // Servicios de valor añadido
-            Log.d(TAG, "📞 Número de tarificación especial/comercial - BLOQUEAR: " + cleaned.substring(0, 3));
-            return true;
+        Log.d(TAG, "📊 SpamPatternDetector: " + spamResult.toString());
+
+        if (spamResult.isSpam) {
+            Log.d(TAG, "🚫 SPAM DETECTADO - Score: " + spamResult.score +
+                       ", Categoría: " + spamResult.category +
+                       ", Descripción: " + spamResult.description);
+
+            showToast("🚫 SPAM: " + spamResult.description + " (score:" + spamResult.score + ")");
+            logsHelper.logWarning("Spam detectado - " + spamResult.description +
+                                " - Score: " + spamResult.score);
+
+            return true;  // Es spam
         }
 
         // ✅ Todo lo demás: Número normal
-        Log.d(TAG, "✅ Número normal: " + number);
+        Log.d(TAG, "✅ Número normal: " + number + " (score: " + spamResult.score + ")");
         return false;  // Número normal, no mostrar notificación
     }
 
