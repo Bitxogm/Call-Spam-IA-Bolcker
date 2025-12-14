@@ -65,7 +65,7 @@ class SpamLookupService {
   };
 
   /**
-   * Muestra opciones de consulta
+   * Muestra opciones de consulta (usando Chrome Custom Tabs)
    */
   showLookupOptions = (phoneNumber: string) => {
     Alert.alert(
@@ -75,6 +75,14 @@ class SpamLookupService {
         {
           text: 'ListaSpam.com',
           onPress: () => this.openListaSpam(phoneNumber),
+        },
+        {
+          text: 'Truecaller',
+          onPress: () => this.openTruecaller(phoneNumber),
+        },
+        {
+          text: 'ResponderONo.es',
+          onPress: () => this.openResponderONo(phoneNumber),
         },
         {
           text: 'CleverDialer.es',

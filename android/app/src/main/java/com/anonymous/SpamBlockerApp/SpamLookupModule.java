@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.net.Uri;
 import android.util.Log;
 import androidx.annotation.NonNull;
+import androidx.browser.customtabs.CustomTabsIntent;
 
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
@@ -38,10 +39,7 @@ public class SpamLookupModule extends ReactContextBaseJavaModule {
             String url = "https://www.listaspam.com/busca.php?Telefono=" + cleanNumber;
 
             Log.d(TAG, "🔍 Abriendo ListaSpam: " + url);
-
-            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            getReactApplicationContext().startActivity(intent);
+            openUrlInCustomTab(url);
 
             promise.resolve(true);
         } catch (Exception e) {
@@ -60,10 +58,7 @@ public class SpamLookupModule extends ReactContextBaseJavaModule {
             String url = "https://www.truecaller.com/search/es/" + cleanNumber;
 
             Log.d(TAG, "🔍 Abriendo Truecaller: " + url);
-
-            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            getReactApplicationContext().startActivity(intent);
+            openUrlInCustomTab(url);
 
             promise.resolve(true);
         } catch (Exception e) {
@@ -82,10 +77,7 @@ public class SpamLookupModule extends ReactContextBaseJavaModule {
             String url = "https://www.responderono.es/numero/" + cleanNumber;
 
             Log.d(TAG, "🔍 Abriendo ResponderONo: " + url);
-
-            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            getReactApplicationContext().startActivity(intent);
+            openUrlInCustomTab(url);
 
             promise.resolve(true);
         } catch (Exception e) {
@@ -104,10 +96,7 @@ public class SpamLookupModule extends ReactContextBaseJavaModule {
             String url = "https://www.cleverdialer.es/numero/" + cleanNumber;
 
             Log.d(TAG, "🔍 Abriendo CleverDialer: " + url);
-
-            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            getReactApplicationContext().startActivity(intent);
+            openUrlInCustomTab(url);
 
             promise.resolve(true);
         } catch (Exception e) {
@@ -130,5 +119,15 @@ public class SpamLookupModule extends ReactContextBaseJavaModule {
         }
 
         return cleaned;
+    }
+
+    /**
+     * Abre URL usando Chrome Custom Tabs (evita redirecciones a app stores)
+     */
+    private void openUrlInCustomTab(String url) {
+        CustomTabsIntent.Builder builder = new CustomTabsIntent.Builder();
+        CustomTabsIntent customTabsIntent = builder.build();
+        customTabsIntent.intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        customTabsIntent.launchUrl(getReactApplicationContext(), Uri.parse(url));
     }
 }
