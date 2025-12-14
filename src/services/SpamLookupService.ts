@@ -1,5 +1,5 @@
 // SpamLookupService.ts
-import { NativeModules, Alert } from 'react-native';
+import { NativeModules, Alert, ActionSheetIOS, Platform } from 'react-native';
 
 const { SpamLookupModule } = NativeModules;
 
@@ -65,17 +65,37 @@ class SpamLookupService {
   };
 
   /**
-   * Muestra opciones de consulta (usando Chrome Custom Tabs)
+   * Muestra primer grupo de opciones (Android limita Alert a 3 botones)
    */
-  showLookupOptions = (phoneNumber: string) => {
+  private showFirstGroup = (phoneNumber: string) => {
     Alert.alert(
-      '🔍 Consultar Número',
+      '🔍 Consultar Número (1/2)',
       `¿Dónde quieres consultar ${phoneNumber}?`,
       [
         {
           text: 'ListaSpam.com',
           onPress: () => this.openListaSpam(phoneNumber),
         },
+        {
+          text: 'CleverDialer.es',
+          onPress: () => this.openCleverDialer(phoneNumber),
+        },
+        {
+          text: 'Más opciones →',
+          onPress: () => this.showSecondGroup(phoneNumber),
+        },
+      ]
+    );
+  };
+
+  /**
+   * Muestra segundo grupo de opciones
+   */
+  private showSecondGroup = (phoneNumber: string) => {
+    Alert.alert(
+      '🔍 Consultar Número (2/2)',
+      `¿Dónde quieres consultar ${phoneNumber}?`,
+      [
         {
           text: 'Truecaller',
           onPress: () => this.openTruecaller(phoneNumber),
@@ -85,15 +105,18 @@ class SpamLookupService {
           onPress: () => this.openResponderONo(phoneNumber),
         },
         {
-          text: 'CleverDialer.es',
-          onPress: () => this.openCleverDialer(phoneNumber),
-        },
-        {
-          text: 'Cancelar',
-          style: 'cancel',
+          text: '← Volver',
+          onPress: () => this.showFirstGroup(phoneNumber),
         },
       ]
     );
+  };
+
+  /**
+   * Muestra opciones de consulta (dividido en 2 pantallas por límite de Android)
+   */
+  showLookupOptions = (phoneNumber: string) => {
+    this.showFirstGroup(phoneNumber);
   };
 }
 
