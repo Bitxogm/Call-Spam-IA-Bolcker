@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import CallHistoryService, { SpamCallRecord } from '../services/CallHistoryService';
 import SpamLookupService from '../services/SpamLookupService';
+import { blacklistService } from '../services/BlacklistService';
 
 const CallHistoryScreen: React.FC = () => {
   const [history, setHistory] = useState<SpamCallRecord[]>([]);
@@ -117,6 +118,52 @@ const CallHistoryScreen: React.FC = () => {
     SpamLookupService.showLookupOptions(phoneNumber);
   };
 
+  const handleAddToBlacklist = async (phoneNumber: string) => {
+    // Verificar si ya está en blacklist
+    const isInBlacklist = await blacklistService.isInBlacklist(phoneNumber);
+
+    if (isInBlacklist) {
+      Alert.alert(
+        '⚠️ Ya en Lista Negra',
+        `El número ${phoneNumber} ya está en la lista negra.`,
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    // Confirmar antes de añadir
+    Alert.alert(
+      '🚫 Agregar a Lista Negra',
+      `¿Deseas agregar ${phoneNumber} a la lista negra?\n\nLas futuras llamadas de este número serán bloqueadas automáticamente.`,
+      [
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+        },
+        {
+          text: 'Agregar',
+          style: 'destructive',
+          onPress: async () => {
+            const success = await blacklistService.addNumber(phoneNumber);
+            if (success) {
+              Alert.alert(
+                '✅ Agregado',
+                `${phoneNumber} ha sido agregado a la lista negra.`,
+                [{ text: 'OK' }]
+              );
+            } else {
+              Alert.alert(
+                '❌ Error',
+                'No se pudo agregar el número a la lista negra.',
+                [{ text: 'OK' }]
+              );
+            }
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -197,15 +244,26 @@ const CallHistoryScreen: React.FC = () => {
                 </View>
               )}
 
-              {/* Lookup Button */}
-              <TouchableOpacity
-                style={styles.lookupButton}
-                onPress={() => handleLookupNumber(record.number)}
-              >
-                <Text style={styles.lookupButtonText}>
-                  🔍 Consultar en web
-                </Text>
-              </TouchableOpacity>
+              {/* Action Buttons Row */}
+              <View style={styles.buttonRow}>
+                <TouchableOpacity
+                  style={styles.lookupButton}
+                  onPress={() => handleLookupNumber(record.number)}
+                >
+                  <Text style={styles.lookupButtonText}>
+                    🔍 Consultar
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.blacklistButton}
+                  onPress={() => handleAddToBlacklist(record.number)}
+                >
+                  <Text style={styles.blacklistButtonText}>
+                    🚫 A Lista Negra
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           ))
         )}
@@ -349,15 +407,33 @@ const styles = StyleSheet.create({
     color: '#666',
     fontStyle: 'italic',
   },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
+  },
   lookupButton: {
+    flex: 1,
     backgroundColor: '#007bff',
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 5,
-    marginTop: 10,
     alignItems: 'center',
   },
   lookupButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  blacklistButton: {
+    flex: 1,
+    backgroundColor: '#dc3545',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 5,
+    alignItems: 'center',
+  },
+  blacklistButtonText: {
     color: '#fff',
     fontSize: 12,
     fontWeight: 'bold',

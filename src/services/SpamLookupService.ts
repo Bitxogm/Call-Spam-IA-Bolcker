@@ -35,6 +35,36 @@ class SpamLookupService {
   };
 
   /**
+   * Abre ResponderONo.es para consultar número
+   */
+  openResponderONo = async (phoneNumber: string): Promise<boolean> => {
+    try {
+      await SpamLookupModule.openResponderONo(phoneNumber);
+      console.log(`🔍 Abriendo ResponderONo para: ${phoneNumber}`);
+      return true;
+    } catch (error) {
+      console.error('❌ Error abriendo ResponderONo:', error);
+      Alert.alert('Error', 'No se pudo abrir ResponderONo');
+      return false;
+    }
+  };
+
+  /**
+   * Abre CleverDialer.es para consultar número
+   */
+  openCleverDialer = async (phoneNumber: string): Promise<boolean> => {
+    try {
+      await SpamLookupModule.openCleverDialer(phoneNumber);
+      console.log(`🔍 Abriendo CleverDialer para: ${phoneNumber}`);
+      return true;
+    } catch (error) {
+      console.error('❌ Error abriendo CleverDialer:', error);
+      Alert.alert('Error', 'No se pudo abrir CleverDialer');
+      return false;
+    }
+  };
+
+  /**
    * Muestra opciones de consulta
    */
   showLookupOptions = (phoneNumber: string) => {
@@ -49,6 +79,14 @@ class SpamLookupService {
         {
           text: 'Truecaller',
           onPress: () => this.openTruecaller(phoneNumber),
+        },
+        {
+          text: 'ResponderONo.es',
+          onPress: () => this.openResponderONo(phoneNumber),
+        },
+        {
+          text: 'CleverDialer.es',
+          onPress: () => this.openCleverDialer(phoneNumber),
         },
         {
           text: 'Cancelar',

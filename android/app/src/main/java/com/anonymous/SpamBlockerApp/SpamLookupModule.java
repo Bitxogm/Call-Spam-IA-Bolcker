@@ -73,6 +73,50 @@ public class SpamLookupModule extends ReactContextBaseJavaModule {
     }
 
     /**
+     * Abre ResponderONo.es para consultar número
+     */
+    @ReactMethod
+    public void openResponderONo(String phoneNumber, Promise promise) {
+        try {
+            String cleanNumber = cleanPhoneNumber(phoneNumber);
+            String url = "https://www.responderono.es/numero/" + cleanNumber;
+
+            Log.d(TAG, "🔍 Abriendo ResponderONo: " + url);
+
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getReactApplicationContext().startActivity(intent);
+
+            promise.resolve(true);
+        } catch (Exception e) {
+            Log.e(TAG, "❌ Error abriendo ResponderONo: " + e.getMessage());
+            promise.reject("ERROR", "No se pudo abrir ResponderONo: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Abre CleverDialer.es para consultar número
+     */
+    @ReactMethod
+    public void openCleverDialer(String phoneNumber, Promise promise) {
+        try {
+            String cleanNumber = cleanPhoneNumber(phoneNumber);
+            String url = "https://www.cleverdialer.es/numero/" + cleanNumber;
+
+            Log.d(TAG, "🔍 Abriendo CleverDialer: " + url);
+
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getReactApplicationContext().startActivity(intent);
+
+            promise.resolve(true);
+        } catch (Exception e) {
+            Log.e(TAG, "❌ Error abriendo CleverDialer: " + e.getMessage());
+            promise.reject("ERROR", "No se pudo abrir CleverDialer: " + e.getMessage());
+        }
+    }
+
+    /**
      * Limpia el número de teléfono (quita +34, espacios, etc.)
      */
     private String cleanPhoneNumber(String phoneNumber) {
