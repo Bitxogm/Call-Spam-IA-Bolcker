@@ -77,14 +77,6 @@ class SpamLookupService {
           onPress: () => this.openListaSpam(phoneNumber),
         },
         {
-          text: 'Truecaller',
-          onPress: () => this.openTruecaller(phoneNumber),
-        },
-        {
-          text: 'ResponderONo.es',
-          onPress: () => this.openResponderONo(phoneNumber),
-        },
-        {
           text: 'CleverDialer.es',
           onPress: () => this.openCleverDialer(phoneNumber),
         },
