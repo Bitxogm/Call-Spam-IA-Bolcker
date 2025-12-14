@@ -14,7 +14,7 @@ import com.facebook.react.bridge.Promise;
 
 /**
  * Native Module para consultar números en servicios externos
- * (ListaSpam, Truecaller, etc.)
+ * (ListaSpam, CleverDialer)
  */
 public class SpamLookupModule extends ReactContextBaseJavaModule {
     private static final String TAG = "SpamLookupModule";
@@ -45,44 +45,6 @@ public class SpamLookupModule extends ReactContextBaseJavaModule {
         } catch (Exception e) {
             Log.e(TAG, "❌ Error abriendo ListaSpam: " + e.getMessage());
             promise.reject("ERROR", "No se pudo abrir ListaSpam: " + e.getMessage());
-        }
-    }
-
-    /**
-     * Abre Truecaller para consultar número
-     */
-    @ReactMethod
-    public void openTruecaller(String phoneNumber, Promise promise) {
-        try {
-            String cleanNumber = cleanPhoneNumber(phoneNumber);
-            String url = "https://www.truecaller.com/search/es/" + cleanNumber;
-
-            Log.d(TAG, "🔍 Abriendo Truecaller: " + url);
-            openUrlInCustomTab(url);
-
-            promise.resolve(true);
-        } catch (Exception e) {
-            Log.e(TAG, "❌ Error abriendo Truecaller: " + e.getMessage());
-            promise.reject("ERROR", "No se pudo abrir Truecaller: " + e.getMessage());
-        }
-    }
-
-    /**
-     * Abre ResponderONo.es para consultar número
-     */
-    @ReactMethod
-    public void openResponderONo(String phoneNumber, Promise promise) {
-        try {
-            String cleanNumber = cleanPhoneNumber(phoneNumber);
-            String url = "https://www.responderono.es/numero/" + cleanNumber;
-
-            Log.d(TAG, "🔍 Abriendo ResponderONo: " + url);
-            openUrlInCustomTab(url);
-
-            promise.resolve(true);
-        } catch (Exception e) {
-            Log.e(TAG, "❌ Error abriendo ResponderONo: " + e.getMessage());
-            promise.reject("ERROR", "No se pudo abrir ResponderONo: " + e.getMessage());
         }
     }
 
