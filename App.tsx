@@ -6,9 +6,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 // Importar nuestras pantallas (las vamos a crear)
 import DashboardScreen from './src/screens/DashboardScreen';
 import SpamNumbersScreen from './src/screens/SpamNumbersScreen';
-import AITestScreen from './src/screens/AITestsScreen';
 import WhitelistScreen from './src/screens/WhitelistScreen';
-import LogsScreen from './src/screens/LogsScreen';
 import CallHistoryScreen from './src/screens/CallHistoryScreen';
 import AnswerHangupSettingsScreen from './src/screens/AnswerHangupSettingsScreen'; 
 // Crear el navegador tipo Stack (pantallas apiladas)
@@ -40,41 +38,27 @@ export default function App() {
         />
         
         {/* Pantalla 2: Gestión de números */}
-        <Stack.Screen 
-          name="SpamNumbers" 
+        <Stack.Screen
+          name="SpamNumbers"
           component={SpamNumbersScreen}
           options={{ title: '📋 Gestionar Números' }}
         />
 
-        {/* Pantalla 3: Testing IA */}
-        <Stack.Screen
-          name="AITest"
-          component={AITestScreen}
-          options={{ title: '🤖 Testing IA' }}
-        />
-
-        {/* Pantalla 4: Whitelist de Contactos */}
+        {/* Pantalla 3: Whitelist de Contactos */}
         <Stack.Screen
           name="Whitelist"
           component={WhitelistScreen}
           options={{ title: '👥 Whitelist' }}
         />
 
-        {/* Pantalla 5: Logs de Debug */}
-        <Stack.Screen
-          name="Logs"
-          component={LogsScreen}
-          options={{ title: '📋 Logs de Debug' }}
-        />
-
-        {/* Pantalla 6: Historial de Llamadas Spam */}
+        {/* Pantalla 4: Historial de Llamadas Spam */}
         <Stack.Screen
           name="CallHistory"
           component={CallHistoryScreen}
           options={{ title: '📞 Historial de Spam' }}
         />
 
-        {/* Pantalla 7: Configuración Answer+Hangup */}
+        {/* Pantalla 5: Configuración Answer+Hangup */}
         <Stack.Screen
           name="AnswerHangupSettings"
           component={AnswerHangupSettingsScreen}

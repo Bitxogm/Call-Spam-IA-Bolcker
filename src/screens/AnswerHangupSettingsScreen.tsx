@@ -252,7 +252,6 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
               • Answer+Hangup solo procesa llamadas detectadas como spam{'\n'}
               • Requiere permiso "Registro de llamadas" (READ_CALL_LOG){'\n'}
               • La llamada se contesta y se cuelga después del delay configurado{'\n'}
-              • Los logs se guardan en "Logs de Debug"{'\n'}
               • El historial se guarda en "Historial de Spam"
             </Text>
           </View>
