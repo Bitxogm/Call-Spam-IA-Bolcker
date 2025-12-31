@@ -125,7 +125,7 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
     try {
       Alert.alert(
         "📞 App de Teléfono Predeterminada",
-        "SpamBlocker necesita ser tu app de teléfono predeterminada para:\n\n✅ Contestar llamadas automáticamente\n✅ Bloquear spam en tiempo real\n✅ Hacer que tu agente IA converse con spammers\n\n➡️ Ve a: Ajustes → Apps → Apps predeterminadas → App de teléfono\n\n¿Abrir configuración del sistema?",
+        "SpamBlocker necesita ser tu app de teléfono predeterminada para:\n\n✅ Contestar llamadas automáticamente\n✅ Bloquear spam en tiempo real\n✅ Colgar llamadas de spam (Answer+Hangup)\n\n➡️ Ve a: Ajustes → Apps → Apps predeterminadas → App de teléfono\n\n¿Abrir configuración del sistema?",
         [
           { text: "Cancelar", style: "cancel" },
           {
@@ -194,46 +194,6 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
     navigation.navigate('SpamNumbers');
   };
 
-  // Función para simular bloquear llamada
-  const simulateBlockCall = async () => {
-    try {
-      // Generar número fake para simular
-      const fakeSpamNumber = `900${Math.floor(Math.random() * 1000000).toString().padStart(6, '0')}`;
-
-      // Si modo radical está activo, verificar si está en contactos
-      let blockReason = 'Simulación de bloqueo';
-      if (radicalMode && contactsPermission) {
-        const { shouldBlock, reason } = await contactsService.shouldBlockInRadicalMode(fakeSpamNumber);
-        blockReason = `Modo radical: ${reason}`;
-
-        if (!shouldBlock) {
-          Alert.alert(
-            "ℹ️ Llamada Permitida",
-            `📞 ${fakeSpamNumber}\\n🟢 ${reason}\\n\\n¡El modo radical habría permitido esta llamada!`
-          );
-          return;
-        }
-      }
-      // Función para probar Twilio
-
-      // Registrar la llamada bloqueada
-      await databaseService.logBlockedCall(fakeSpamNumber, blockReason);
-      const newCount = await databaseService.incrementBlockedCalls();
-
-      setBlockedCalls(newCount);
-
-      Alert.alert(
-        "📱 Llamada Bloqueada",
-        `¡Spam detectado y bloqueado!\\n📞 ${fakeSpamNumber}\\n🛡️ ${blockReason}\\n\\n📊 Total bloqueadas: ${newCount}`
-      );
-
-      console.log(`📱 Llamada simulada bloqueada: ${fakeSpamNumber}`);
-    } catch (error) {
-      console.log('❌ Error simulando bloqueo:', error);
-      Alert.alert('Error', 'No se pudo simular el bloqueo');
-    }
-  };
-
   // Función para toggle del modo radical
   const toggleRadicalMode = async () => {
     try {
@@ -272,69 +232,6 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
     }
   };
 
-  // Función para probar un número específico
-  const testNumber = () => {
-    Alert.prompt(
-      "🧪 Probar Número",
-      "Introduce un número para probar si sería bloqueado:",
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Probar",
-          onPress: async (inputNumber) => {
-            if (!inputNumber) return;
-
-            try {
-              // Verificar en lista negra
-              const isSpam = await databaseService.isSpamNumber(inputNumber);
-
-              if (isSpam) {
-                Alert.alert("🚫 BLOQUEADO", `${inputNumber}\\nRazón: En lista negra`);
-                return;
-              }
-
-              // Si modo radical, verificar contactos
-              if (radicalMode && contactsPermission) {
-                const { shouldBlock, reason } = await contactsService.shouldBlockInRadicalMode(inputNumber);
-
-                Alert.alert(
-                  shouldBlock ? "🚫 BLOQUEADO" : "✅ PERMITIDO",
-                  `${inputNumber}\\nRazón: ${reason}`
-                );
-              } else {
-                Alert.alert("✅ PERMITIDO", `${inputNumber}\\nRazón: No está en lista negra`);
-              }
-            } catch (error) {
-              Alert.alert("❌ Error", "No se pudo verificar el número");
-            }
-          }
-        }
-      ],
-      "plain-text",
-      "",
-      "phone-pad"
-    );
-
-  };
-
-  // Función para probar notificación de spam
-  const testSpamNotification = async () => {
-    if (!CallInterceptorModule) {
-      Alert.alert('Error', 'CallInterceptorModule no disponible');
-      return;
-    }
-
-    try {
-      const result = await CallInterceptorModule.testSpamNotification();
-      Alert.alert('✅ Éxito', result + '\n\n¿Apareció la notificación con botones?');
-    } catch (error: any) {
-      Alert.alert('❌ Error', error.message || 'No se pudo enviar notificación de prueba');
-    }
-  };
-
-
-
-
   // Mostrar loading
   if (loading) {
     return (
@@ -363,11 +260,10 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
       <View style={styles.statsContainer}>
 
         {/* Llamadas bloqueadas */}
-        <TouchableOpacity style={styles.statCard} onPress={testNumber}>
+        <View style={styles.statCard}>
           <Text style={styles.statNumber}>{blockedCalls}</Text>
           <Text style={styles.statLabel}>📱 Llamadas Bloqueadas</Text>
-          <Text style={styles.statHint}>👆 Toca para probar número</Text>
-        </TouchableOpacity>
+        </View>
 
         {/* Números en lista negra */}
         <TouchableOpacity style={styles.statCard} onPress={navigateToSpamNumbers}>
@@ -403,13 +299,6 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.buttonAI}
-          onPress={() => navigation.navigate('AITest')}
-        >
-          <Text style={styles.buttonText}>🤖 Probar IA Anti-Spam</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
           style={[styles.button, { backgroundColor: '#ff9900' }]}
           onPress={() => navigation.navigate('AnswerHangupSettings')}
         >
@@ -418,33 +307,11 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.button, { backgroundColor: '#007bff' }]}
-          onPress={() => navigation.navigate('Logs')}
-        >
-          <Text style={styles.buttonText}>📋 Logs de Debug</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
           style={[styles.button, { backgroundColor: '#dc3545' }]}
           onPress={() => navigation.navigate('CallHistory')}
         >
           <Text style={styles.buttonText}>📞 Historial de Spam</Text>
         </TouchableOpacity>
-
-        <TouchableOpacity style={styles.buttonTest} onPress={simulateBlockCall}>
-          <Text style={styles.buttonText}>🧪 SIMULAR BLOQUEO</Text>
-        </TouchableOpacity>
-
-        {/* BOTÓN TEST NOTIFICACIÓN */}
-        {Platform.OS === 'android' && CallInterceptorModule && (
-          <TouchableOpacity
-            style={[styles.button, { backgroundColor: '#ff9900' }]}
-            onPress={testSpamNotification}
-          >
-            <Text style={styles.buttonText}>🔔 TEST NOTIFICACIÓN</Text>
-            <Text style={styles.buttonSubtext}>Probar notificación con botones</Text>
-          </TouchableOpacity>
-        )}
 
         {/* BOTÓN CRÍTICO: Configurar como app de teléfono */}
         {Platform.OS === 'android' && (
