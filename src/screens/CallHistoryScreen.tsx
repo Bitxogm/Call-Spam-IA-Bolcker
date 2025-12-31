@@ -12,6 +12,7 @@ import {
 import CallHistoryService, { SpamCallRecord } from '../services/CallHistoryService';
 import SpamLookupService from '../services/SpamLookupService';
 import { blacklistService } from '../services/BlacklistService';
+import { databaseService } from '../services/DataBaseService';
 
 const CallHistoryScreen: React.FC = () => {
   const [history, setHistory] = useState<SpamCallRecord[]>([]);
@@ -144,17 +145,35 @@ const CallHistoryScreen: React.FC = () => {
           text: 'Agregar',
           style: 'destructive',
           onPress: async () => {
-            const success = await blacklistService.addNumber(phoneNumber);
-            if (success) {
-              Alert.alert(
-                '✅ Agregado',
-                `${phoneNumber} ha sido agregado a la lista negra.`,
-                [{ text: 'OK' }]
-              );
-            } else {
+            try {
+              // ✅ DUAL STORAGE: Guardar en SharedPreferences (bloqueo) Y SQLite (UI)
+              const [prefsSuccess, dbSuccess] = await Promise.all([
+                blacklistService.addNumber(phoneNumber),
+                databaseService.addSpamNumber(
+                  phoneNumber,
+                  'Añadido desde historial',
+                  'manual'
+                )
+              ]);
+
+              if (prefsSuccess && dbSuccess) {
+                Alert.alert(
+                  '✅ Agregado',
+                  `${phoneNumber} ha sido agregado a la lista negra.\n\nAhora puedes verlo en la pantalla "Lista Negra".`,
+                  [{ text: 'OK' }]
+                );
+              } else {
+                Alert.alert(
+                  '❌ Error',
+                  'No se pudo agregar el número a la lista negra.',
+                  [{ text: 'OK' }]
+                );
+              }
+            } catch (error) {
+              console.error('❌ Error añadiendo a blacklist:', error);
               Alert.alert(
                 '❌ Error',
-                'No se pudo agregar el número a la lista negra.',
+                'Error al agregar el número.',
                 [{ text: 'OK' }]
               );
             }
