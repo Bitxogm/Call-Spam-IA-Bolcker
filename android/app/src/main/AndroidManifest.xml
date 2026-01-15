@@ -18,6 +18,12 @@
   <uses-permission android:name="android.permission.RECORD_AUDIO"/>
   <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
 
+  <!-- ⭐ Permisos PRIVILEGIADOS para BCP Method (IVR Audio Injection) -->
+  <!-- Solo funcionan si la app está instalada como app de sistema -->
+  <!-- Requeridos para usar setPreferredDevice(TYPE_TELEPHONY) -->
+  <uses-permission android:name="android.permission.MODIFY_PHONE_STATE"/>
+  <uses-permission android:name="android.permission.MODIFY_AUDIO_ROUTING"/>
+
   <!-- Permisos de almacenamiento -->
   <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
   <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>

@@ -2,12 +2,14 @@ package com.anonymous.SpamBlockerApp;
 
 import android.content.Context;
 import android.media.AudioAttributes;
+import android.media.AudioDeviceInfo;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioTrack;
 import android.media.MediaCodec;
 import android.media.MediaExtractor;
 import android.media.MediaFormat;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -16,17 +18,23 @@ import java.io.File;
 import java.nio.ByteBuffer;
 
 /**
- * Reproductor de audio IVR usando AudioTrack para transmisión al caller
+ * Reproductor de audio IVR usando AudioTrack + BCP Method para transmisión al caller
  *
- * DIFERENCIA CLAVE vs MediaPlayer:
- * - MediaPlayer solo reproduce localmente (earpiece/speaker)
- * - AudioTrack escribe a STREAM_VOICE_CALL que se transmite al caller
+ * MÉTODO BCP (Google Pixel Call Screening):
+ * - Usa AudioTrack con AudioAttributes USAGE_VOICE_COMMUNICATION
+ * - Busca dispositivo TYPE_TELEPHONY (solo en Pixel y algunos Samsung)
+ * - Usa setPreferredDevice() para inyectar audio en uplink telefónico
+ * - Fallback: speaker + micrófono si TYPE_TELEPHONY no disponible
  *
  * Flujo:
  * 1. MediaExtractor lee MP3
  * 2. MediaCodec decodifica MP3 → PCM
- * 3. AudioTrack reproduce PCM en STREAM_VOICE_CALL
- * 4. Android transmite este audio al caller (como si fuera micrófono)
+ * 3. AudioTrack con setPreferredDevice(TYPE_TELEPHONY) inyecta en uplink
+ * 4. Caller ESCUCHA el audio directamente (no a través de micrófono)
+ *
+ * Referencias:
+ * - https://github.com/chenxiaolong/BCP
+ * - Requiere permisos: MODIFY_PHONE_STATE, MODIFY_AUDIO_ROUTING (privilegiados)
  */
 public class IVRAudioTrackPlayer {
     private static final String TAG = "IVRAudioTrackPlayer";
@@ -74,6 +82,105 @@ public class IVRAudioTrackPlayer {
             }
         }
         return instance;
+    }
+
+    /**
+     * Busca y configura el dispositivo TYPE_TELEPHONY para inyección de audio en uplink
+     *
+     * Este método implementa la técnica BCP (Google Pixel Call Screening)
+     *
+     * @return true si se encontró y configuró TYPE_TELEPHONY, false si no está disponible
+     */
+    private boolean setTelephonyDevice() {
+        if (audioTrack == null) {
+            Log.e(TAG, "❌ AudioTrack no inicializado, no se puede configurar dispositivo");
+            return false;
+        }
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            Log.w(TAG, "⚠️ API level < 23, setPreferredDevice() no disponible");
+            return false;
+        }
+
+        try {
+            // Obtener todos los dispositivos de audio
+            AudioDeviceInfo[] devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
+
+            Log.d(TAG, "🔍 Buscando dispositivo TYPE_TELEPHONY entre " + devices.length + " dispositivos");
+
+            AudioDeviceInfo telephonyDevice = null;
+
+            for (AudioDeviceInfo device : devices) {
+                int type = device.getType();
+                String typeName = getDeviceTypeName(type);
+
+                Log.d(TAG, "  📱 Dispositivo: " + device.getProductName() + " - Tipo: " + typeName + " (" + type + ")");
+
+                // TYPE_TELEPHONY = 18 (Android 11+)
+                // Solo disponible en dispositivos Pixel y algunos Samsung
+                if (type == 18) { // AudioDeviceInfo.TYPE_TELEPHONY
+                    telephonyDevice = device;
+                    Log.i(TAG, "  ✅ TYPE_TELEPHONY encontrado: " + device.getProductName());
+                    break;
+                }
+            }
+
+            if (telephonyDevice != null) {
+                // Configurar dispositivo preferido para inyección en uplink
+                boolean success = audioTrack.setPreferredDevice(telephonyDevice);
+
+                if (success) {
+                    Log.i(TAG, "✅ setPreferredDevice(TYPE_TELEPHONY) exitoso - Audio se inyectará en uplink");
+                    return true;
+                } else {
+                    Log.e(TAG, "❌ setPreferredDevice() falló (posible falta de permisos privilegiados)");
+                    return false;
+                }
+            } else {
+                Log.w(TAG, "⚠️ TYPE_TELEPHONY no disponible en este dispositivo");
+                Log.w(TAG, "⚠️ Requiere: Pixel/GrapheneOS o Samsung con soporte");
+                return false;
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "❌ Error configurando TYPE_TELEPHONY: " + e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /**
+     * Helper: Convierte device type a nombre legible para logs
+     */
+    private String getDeviceTypeName(int type) {
+        switch (type) {
+            case 1: return "EARPIECE";
+            case 2: return "SPEAKER";
+            case 3: return "WIRED_HEADSET";
+            case 4: return "WIRED_HEADPHONES";
+            case 5: return "LINE_ANALOG";
+            case 6: return "LINE_DIGITAL";
+            case 7: return "BLUETOOTH_SCO";
+            case 8: return "BLUETOOTH_A2DP";
+            case 9: return "HDMI";
+            case 10: return "HDMI_ARC";
+            case 11: return "USB_DEVICE";
+            case 12: return "USB_ACCESSORY";
+            case 13: return "DOCK";
+            case 14: return "FM";
+            case 15: return "BUILTIN_MIC";
+            case 16: return "FM_TUNER";
+            case 17: return "TV_TUNER";
+            case 18: return "TYPE_TELEPHONY"; // ← ESTE ES EL IMPORTANTE
+            case 19: return "AUX_LINE";
+            case 20: return "IP";
+            case 21: return "BUS";
+            case 22: return "USB_HEADSET";
+            case 23: return "HEARING_AID";
+            case 24: return "BUILTIN_SPEAKER_SAFE";
+            case 26: return "BLE_HEADSET";
+            case 27: return "BLE_SPEAKER";
+            default: return "UNKNOWN(" + type + ")";
+        }
     }
 
     /**
@@ -226,25 +333,39 @@ public class IVRAudioTrackPlayer {
                 AudioFormat.ENCODING_PCM_16BIT
             );
 
-            // ✅ WORKAROUND: Usar STREAM_VOICE_CALL para que salga por el speaker
-            // El micrófono capturará este audio y lo transmitirá al caller
-            // Esta es la única forma de inyectar audio en llamadas telefónicas sin APIs privadas
+            // 🎯 MÉTODO BCP: Usar AudioAttributes + TYPE_TELEPHONY device
+            // Esto funciona en Pixel (GrapheneOS) y algunos Samsung
 
-            // Usar constructor LEGACY con streamType explícito
-            @SuppressWarnings("deprecation")
-            AudioTrack audioTrackTemp = new AudioTrack(
-                AudioManager.STREAM_VOICE_CALL,      // Stream type - sale por speaker en MODE_IN_COMMUNICATION
-                sampleRate,
-                channelConfig,
-                AudioFormat.ENCODING_PCM_16BIT,
-                bufferSize,
-                AudioTrack.MODE_STREAM
-            );
-            audioTrack = audioTrackTemp;
+            AudioAttributes audioAttributes = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build();
+
+            AudioFormat audioFormat = new AudioFormat.Builder()
+                .setSampleRate(sampleRate)
+                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                .setChannelMask(channelConfig)
+                .build();
+
+            audioTrack = new AudioTrack.Builder()
+                .setAudioAttributes(audioAttributes)
+                .setAudioFormat(audioFormat)
+                .setBufferSizeInBytes(bufferSize)
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .build();
+
+            // 🔑 CLAVE: Buscar dispositivo TYPE_TELEPHONY e inyectar audio en uplink
+            boolean telephonyDeviceFound = setTelephonyDevice();
 
             audioTrack.play();
 
-            Log.d(TAG, "🎙️ AudioTrack iniciado - Audio se transmitirá al CALLER");
+            if (telephonyDeviceFound) {
+                Log.i(TAG, "✅ AudioTrack iniciado con TYPE_TELEPHONY - Audio inyectado en UPLINK");
+            } else {
+                Log.w(TAG, "⚠️ TYPE_TELEPHONY no disponible - Usando fallback (speaker + mic)");
+                // Fallback: speaker alto para que micrófono lo capture
+                audioManager.setSpeakerphoneOn(true);
+            }
 
             // 4️⃣ DECODE LOOP: MediaCodec → AudioTrack
             boolean outputDone = false;
