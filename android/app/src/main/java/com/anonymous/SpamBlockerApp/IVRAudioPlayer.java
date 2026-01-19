@@ -2,8 +2,10 @@ package com.anonymous.SpamBlockerApp;
 
 import android.content.Context;
 import android.media.AudioAttributes;
+import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -37,6 +39,8 @@ public class IVRAudioPlayer {
     // Estado previo del audio
     private int previousAudioMode;
     private boolean previousSpeakerphoneOn;
+    private Runnable audioRoutingEnforcer;
+    private final Handler handler = new Handler(Looper.getMainLooper());
 
     /**
      * Constructor privado (Singleton)
@@ -84,9 +88,21 @@ public class IVRAudioPlayer {
             previousAudioMode = audioManager.getMode();
             previousSpeakerphoneOn = audioManager.isSpeakerphoneOn();
 
-            // ✅ CONFIGURACIÓN CRÍTICA: Audio debe ir al call stream
-            audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-            audioManager.setSpeakerphoneOn(false);  // NO al speaker local
+            // ✅ CONFIGURACIÓN CRÍTICA: Audio debe ir al call stream (AURICULAR)
+            // Configurar audio inicial
+            ensureDiscreetAudio();
+
+            // Programar reforzador de ruteo (cada 500ms) para evitar que Samsung lo cambie
+            audioRoutingEnforcer = new Runnable() {
+                @Override
+                public void run() {
+                    if (isPlaying) {
+                        ensureDiscreetAudio();
+                        handler.postDelayed(this, 500);
+                    }
+                }
+            };
+            handler.postDelayed(audioRoutingEnforcer, 500);
 
             Log.d(TAG, "🔊 Audio configurado - Mode: IN_COMMUNICATION, Speaker: OFF");
 
@@ -177,10 +193,11 @@ public class IVRAudioPlayer {
 
             isPlaying = false;
 
-            // Cancelar timeout pendiente
-            if (loopHandler != null) {
-                loopHandler.removeCallbacksAndMessages(null);
+            // Cancelar enforcer y timeout
+            if (handler != null) {
+                handler.removeCallbacksAndMessages(null);
             }
+            audioRoutingEnforcer = null;
 
             // Detener MediaPlayer
             if (mediaPlayer != null) {
@@ -212,6 +229,51 @@ public class IVRAudioPlayer {
      */
     public boolean isPlaying() {
         return isPlaying && mediaPlayer != null && mediaPlayer.isPlaying();
+    }
+
+    /**
+     * Asegura que el audio esté redirigido al auricular y al volumen máximo.
+     * Útil para combatir ruteos automáticos de Samsung.
+     */
+    private void ensureDiscreetAudio() {
+        try {
+            if (audioManager.getMode() != AudioManager.MODE_IN_COMMUNICATION) {
+                audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+            }
+
+            if (audioManager.isSpeakerphoneOn()) {
+                Log.w(TAG, "👮 Re-forzando SPEAKER OFF (Samsung lo había activado)");
+                audioManager.setSpeakerphoneOn(false);
+            }
+
+            // Android 12+ API
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                try {
+                    AudioDeviceInfo earpiece = null;
+                    AudioDeviceInfo[] devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
+                    for (AudioDeviceInfo device : devices) {
+                        if (device.getType() == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE) {
+                            earpiece = device;
+                            break;
+                        }
+                    }
+                    if (earpiece != null && !earpiece.equals(audioManager.getCommunicationDevice())) {
+                        audioManager.setCommunicationDevice(earpiece);
+                        Log.d(TAG, "🎧 Communication device forzado a EARPIECE (Android 12+)");
+                    }
+                } catch (Exception e) {
+                    // Silencioso
+                }
+            }
+
+            // Asegurar volumen al máximo
+            int maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL);
+            if (audioManager.getStreamVolume(AudioManager.STREAM_VOICE_CALL) < maxVolume) {
+                audioManager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, maxVolume, 0);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error en ensureDiscreetAudio: " + e.getMessage());
+        }
     }
 
     /**

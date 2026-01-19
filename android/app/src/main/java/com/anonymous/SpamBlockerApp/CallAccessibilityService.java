@@ -459,6 +459,14 @@ public class CallAccessibilityService extends AccessibilityService {
      * Inicia la reproducción del IVR (Modo 2)
      */
     private void startIVRPlayback() {
+        // ✅ NUEVA LÓGICA: Si somos Default Dialer, SpamCallService se encarga.
+        // No duplicar el audio aquí.
+        if (DefaultDialerModule.isDefaultDialerHelper(this)) {
+            Log.d(TAG, "⏭️ App es Default Dialer. Delegando audio a SpamCallService.");
+            logsHelper.logDebug("Accessibility: Audio delegado a SpamCallService (Default Dialer activo)");
+            return;
+        }
+
         if (ivrPlaying) {
             Log.w(TAG, "⚠️ IVR ya está reproduciéndose");
             return;

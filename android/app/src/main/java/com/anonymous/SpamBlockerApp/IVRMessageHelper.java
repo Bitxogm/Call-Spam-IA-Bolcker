@@ -3,6 +3,7 @@ package com.anonymous.SpamBlockerApp;
 
 import android.content.Context;
 import android.media.AudioAttributes;
+import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -49,6 +50,7 @@ public class IVRMessageHelper {
     // Estado previo del audio
     private int previousAudioMode;
     private boolean previousSpeakerphoneOn;
+    private Runnable audioRoutingEnforcer;
 
     /**
      * Constructor privado para Singleton
@@ -186,14 +188,22 @@ public class IVRMessageHelper {
             previousSpeakerphoneOn = audioManager.isSpeakerphoneOn();
 
             // Configurar audio para llamada
-            audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-            audioManager.setSpeakerphoneOn(false);  // ❌ FALSE: No activar speaker local
+            // Configurar audio inicial
+            ensureDiscreetAudio();
 
-            // IMPORTANTE: Necesitamos que el audio vaya al stream de la llamada,
-            // NO al speaker local del teléfono. MODE_IN_COMMUNICATION + Speaker OFF
-            // debería rutear el audio TTS al stream de voz de la llamada.
+            // Programar reforzador de ruteo (cada 500ms) para evitar que Samsung lo cambie
+            audioRoutingEnforcer = new Runnable() {
+                @Override
+                public void run() {
+                    if (isPlaying) {
+                        ensureDiscreetAudio();
+                        loopHandler.postDelayed(this, 500);
+                    }
+                }
+            };
+            loopHandler.postDelayed(audioRoutingEnforcer, 500);
 
-            Log.d(TAG, "🔊 Audio configurado - Mode: IN_COMMUNICATION, Speaker: OFF (routing to call stream)");
+            Log.d(TAG, "🔊 Audio configurado - Mode: IN_COMMUNICATION, Speaker: OFF (Auricular a volumen máximo)");
 
             // Configurar atributos de audio para TTS
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
@@ -290,18 +300,18 @@ public class IVRMessageHelper {
     }
 
     /**
-     * Detiene el IVR y restaura el audio
+     * Detiene el IVR
      */
     public void stopIVR() {
         try {
             Log.d(TAG, "🛑 Deteniendo IVR...");
-
             isPlaying = false;
 
-            // Cancelar loops pendientes
+            // Detener loops y enforcer
             if (loopHandler != null) {
                 loopHandler.removeCallbacksAndMessages(null);
             }
+            audioRoutingEnforcer = null;
 
             // Detener TTS
             if (tts != null) {
@@ -325,6 +335,51 @@ public class IVRMessageHelper {
      */
     public boolean isPlaying() {
         return isPlaying && tts != null && tts.isSpeaking();
+    }
+
+    /**
+     * Asegura que el audio esté redirigido al auricular y al volumen máximo.
+     * Útil para combatir ruteos automáticos de Samsung.
+     */
+    private void ensureDiscreetAudio() {
+        try {
+            if (audioManager.getMode() != AudioManager.MODE_IN_COMMUNICATION) {
+                audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+            }
+
+            if (audioManager.isSpeakerphoneOn()) {
+                Log.w(TAG, "👮 Re-forzando SPEAKER OFF (Samsung lo había activado)");
+                audioManager.setSpeakerphoneOn(false);
+            }
+
+            // Android 12+ API
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                try {
+                    AudioDeviceInfo earpiece = null;
+                    AudioDeviceInfo[] devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
+                    for (AudioDeviceInfo device : devices) {
+                        if (device.getType() == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE) {
+                            earpiece = device;
+                            break;
+                        }
+                    }
+                    if (earpiece != null && !earpiece.equals(audioManager.getCommunicationDevice())) {
+                        audioManager.setCommunicationDevice(earpiece);
+                        Log.d(TAG, "🎧 Communication device forzado a EARPIECE (Android 12+)");
+                    }
+                } catch (Exception e) {
+                    // Silencioso
+                }
+            }
+
+            // Asegurar volumen al máximo
+            int maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL);
+            if (audioManager.getStreamVolume(AudioManager.STREAM_VOICE_CALL) < maxVolume) {
+                audioManager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, maxVolume, 0);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error en ensureDiscreetAudio: " + e.getMessage());
+        }
     }
 
     /**

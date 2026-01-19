@@ -37,6 +37,8 @@ import java.nio.ByteBuffer;
  * - Requiere permisos: MODIFY_PHONE_STATE, MODIFY_AUDIO_ROUTING (privilegiados)
  */
 public class IVRAudioTrackPlayer {
+    private static final int MAX_VOLUME_RETRY_COUNT = 5;
+    private static final boolean USE_DIGITAL_INJECTION = false; // 🧪 TEST: Deshabilitar para probar "loopback" acústico
     private static final String TAG = "IVRAudioTrackPlayer";
     private static IVRAudioTrackPlayer instance;
     private static final Object lock = new Object();
@@ -59,6 +61,7 @@ public class IVRAudioTrackPlayer {
     // Estado previo del audio
     private int previousAudioMode;
     private boolean previousSpeakerphoneOn;
+    private Runnable audioRoutingEnforcer;
 
     /**
      * Constructor privado (Singleton)
@@ -208,15 +211,25 @@ public class IVRAudioTrackPlayer {
             // ✅ WORKAROUND: Reproducir en SPEAKER para que el micrófono lo capte
             // Android no permite inyectar audio directamente en el uplink de llamadas telefónicas
             // Por lo tanto, reproducimos en speaker → micrófono captura → caller escucha
-            audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-            audioManager.setSpeakerphoneOn(true);  // ✅ SPEAKER ON para que micrófono capte
+            // Configurar audio inicial
+            ensureDiscreetAudio();
 
-            // Ajustar volumen del speaker para transmisión óptima
-            int maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL);
-            int targetVolume = (int)(maxVolume * 0.7);  // 70% del volumen máximo
-            audioManager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, targetVolume, 0);
+            // Asegurar que el micrófono no esté silenciado (para que capte el auricular)
+            audioManager.setMicrophoneMute(false);
 
-            Log.d(TAG, "🔊 Audio configurado - Mode: IN_COMMUNICATION, Speaker: ON (para transmisión vía mic)");
+            // Programar reforzador de ruteo (cada 500ms) para evitar que Samsung lo cambie
+            audioRoutingEnforcer = new Runnable() {
+                @Override
+                public void run() {
+                    if (isPlaying) {
+                        ensureDiscreetAudio();
+                        timeoutHandler.postDelayed(this, 500);
+                    }
+                }
+            };
+            timeoutHandler.postDelayed(audioRoutingEnforcer, 500);
+
+            Log.d(TAG, "🔊 Audio configurado - Mode: IN_COMMUNICATION, Speaker: OFF (Auricular para discreción)");
 
             // Configurar loop
             this.maxLoops = loops;
@@ -282,14 +295,10 @@ public class IVRAudioTrackPlayer {
      * Decodifica MP3 y reproduce con AudioTrack
      */
     private boolean decodeAndPlay(String audioFilePath) {
-        MediaExtractor extractor = null;
-        MediaCodec codec = null;
-        AudioTrack audioTrack = null;
-
         try {
             // 1️⃣ EXTRACTOR: Lee el archivo MP3
-            extractor = new MediaExtractor();
-            extractor.setDataSource(audioFilePath);
+            this.extractor = new MediaExtractor();
+            this.extractor.setDataSource(audioFilePath);
 
             // Buscar track de audio
             MediaFormat format = null;
@@ -319,9 +328,9 @@ public class IVRAudioTrackPlayer {
 
             // 2️⃣ CODEC: Decodifica MP3 → PCM
             String mime = format.getString(MediaFormat.KEY_MIME);
-            codec = MediaCodec.createDecoderByType(mime);
-            codec.configure(format, null, null, 0);
-            codec.start();
+            this.codec = MediaCodec.createDecoderByType(mime);
+            this.codec.configure(format, null, null, 0);
+            this.codec.start();
 
             // 3️⃣ AUDIOTRACK: Reproduce PCM en STREAM_VOICE_CALL
             int channelConfig = channelCount == 2 ?
@@ -347,25 +356,44 @@ public class IVRAudioTrackPlayer {
                 .setChannelMask(channelConfig)
                 .build();
 
-            audioTrack = new AudioTrack.Builder()
-                .setAudioAttributes(audioAttributes)
-                .setAudioFormat(audioFormat)
-                .setBufferSizeInBytes(bufferSize)
-                .setTransferMode(AudioTrack.MODE_STREAM)
-                .build();
+            this.audioTrack = new AudioTrack(
+                audioAttributes,
+                audioFormat,
+                bufferSize,
+                AudioTrack.MODE_STREAM,
+                AudioManager.AUDIO_SESSION_ID_GENERATE
+            );
 
-            // 🔑 CLAVE: Buscar dispositivo TYPE_TELEPHONY e inyectar audio en uplink
-            boolean telephonyDeviceFound = setTelephonyDevice();
+            // Maximizar volumen del objeto AudioTrack
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                this.audioTrack.setVolume(1.0f);
+            }
+
+            // 🔑 CLAVE: Inyectar audio en uplink (Solo si está habilitado)
+            if (USE_DIGITAL_INJECTION) {
+                boolean telephonyDeviceFound = setTelephonyDevice();
+                if (telephonyDeviceFound) {
+                    Log.i(TAG, "🚀 Usando Inyección Digital (TYPE_TELEPHONY)");
+                } else {
+                    Log.w(TAG, "⚠️ TYPE_TELEPHONY no encontrado, usando Earpiece (Acoustic loopback)");
+                }
+            } else {
+                Log.i(TAG, "🧪 TEST: Inyección digital desactivada intencionadamente. Usando Earpiece.");
+            }
+            // Fallback: auricular alto para que el micrófono interno lo capture
+            audioManager.setSpeakerphoneOn(false);
 
             audioTrack.play();
 
-            if (telephonyDeviceFound) {
-                Log.i(TAG, "✅ AudioTrack iniciado con TYPE_TELEPHONY - Audio inyectado en UPLINK");
-            } else {
-                Log.w(TAG, "⚠️ TYPE_TELEPHONY no disponible - Usando fallback (speaker + mic)");
-                // Fallback: speaker alto para que micrófono lo capture
-                audioManager.setSpeakerphoneOn(true);
-            }
+            // The original code had this block:
+            // if (telephonyDeviceFound) {
+            //     Log.i(TAG, "✅ AudioTrack iniciado con TYPE_TELEPHONY - Audio inyectado en UPLINK");
+            // } else {
+            //     Log.w(TAG, "⚠️ TYPE_TELEPHONY no disponible - Usando auricular a volumen máximo");
+            //     // Fallback: auricular alto para que el micrófono interno lo capture
+            //     audioManager.setSpeakerphoneOn(false);
+            // }
+
 
             // 4️⃣ DECODE LOOP: MediaCodec → AudioTrack
             boolean outputDone = false;
@@ -455,10 +483,11 @@ public class IVRAudioTrackPlayer {
 
             isPlaying = false;
 
-            // Cancelar timeout pendiente
+            // Cancelar enforcer y timeout
             if (timeoutHandler != null) {
                 timeoutHandler.removeCallbacksAndMessages(null);
             }
+            audioRoutingEnforcer = null;
 
             // Esperar a que termine el thread
             if (playbackThread != null && playbackThread.isAlive()) {
@@ -487,6 +516,61 @@ public class IVRAudioTrackPlayer {
      */
     public boolean isPlaying() {
         return isPlaying;
+    }
+
+    /**
+     * Asegura que el audio esté redirigido al auricular y al volumen máximo.
+     * Útil para combatir ruteos automáticos de Samsung.
+     */
+    private void ensureDiscreetAudio() {
+        try {
+            // Asegurar modo comunicación para que el sistema permita ruteo a earpiece
+            audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+            
+            // Forzar salida al auricular (EARPIECE)
+            audioManager.setSpeakerphoneOn(false);
+            
+            // Maximizar volumen de la llamada - REPETIDAMENTE para vencer bloqueos
+            int maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL);
+            for (int i = 0; i < MAX_VOLUME_RETRY_COUNT; i++) {
+                audioManager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, maxVol, 0);
+                if (audioManager.getStreamVolume(AudioManager.STREAM_VOICE_CALL) == maxVol) {
+                    break; // Volumen ya está al máximo
+                }
+                try {
+                    Thread.sleep(50); // Pequeña pausa antes de reintentar
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            
+            // Desactivar mute si existe
+            audioManager.setMicrophoneMute(false);
+            
+            Log.d(TAG, "🔊 Audio configurado - Mode: IN_COMMUNICATION, Speaker: OFF, Vol: " + maxVol);
+
+            // Android 12+ API para forzar comunicación por auricular si está disponible
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                try {
+                    AudioDeviceInfo earpiece = null;
+                    AudioDeviceInfo[] devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
+                    for (AudioDeviceInfo device : devices) {
+                        if (device.getType() == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE) {
+                            earpiece = device;
+                            break;
+                        }
+                    }
+                    if (earpiece != null && !earpiece.equals(audioManager.getCommunicationDevice())) {
+                        audioManager.setCommunicationDevice(earpiece);
+                        Log.d(TAG, "🎧 Communication device forzado a EARPIECE (Android 12+)");
+                    }
+                } catch (Exception e) {
+                    // Silencioso
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error en ensureDiscreetAudio", e);
+        }
     }
 
     /**

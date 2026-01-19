@@ -47,35 +47,26 @@ public class DefaultDialerModule extends ReactContextBaseJavaModule {
      */
     @ReactMethod
     public void isDefaultDialer(Promise promise) {
+        promise.resolve(isDefaultDialerHelper(reactContext));
+    }
+
+    /**
+     * Helper estático para verificar si la app es el marcador predeterminado
+     */
+    public static boolean isDefaultDialerHelper(Context context) {
         try {
-            String packageName = reactContext.getPackageName();
-
+            String packageName = context.getPackageName();
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                TelecomManager telecomManager = (TelecomManager) reactContext.getSystemService(Context.TELECOM_SERVICE);
-
+                TelecomManager telecomManager = (TelecomManager) context.getSystemService(Context.TELECOM_SERVICE);
                 if (telecomManager != null) {
                     String defaultDialer = telecomManager.getDefaultDialerPackage();
-                    boolean isDefault = packageName.equals(defaultDialer);
-
-                    Log.d(TAG, "🔍 Default dialer: " + defaultDialer);
-                    Log.d(TAG, "🔍 Esta app: " + packageName);
-                    Log.d(TAG, "🔍 Es default: " + isDefault);
-
-                    promise.resolve(isDefault);
-                } else {
-                    Log.e(TAG, "❌ TelecomManager no disponible");
-                    promise.resolve(false);
+                    return packageName.equals(defaultDialer);
                 }
-            } else {
-                // Android < 6.0 no soporta cambiar marcador predeterminado
-                Log.w(TAG, "⚠️ Android < 6.0 no soporta default dialer");
-                promise.resolve(false);
             }
-
         } catch (Exception e) {
-            Log.e(TAG, "❌ Error verificando default dialer: " + e.getMessage());
-            promise.reject("CHECK_ERROR", e.getMessage(), e);
+            Log.e(TAG, "Error en isDefaultDialerHelper: " + e.getMessage());
         }
+        return false;
     }
 
     /**

@@ -11,7 +11,7 @@ type AnswerHangupSettingsScreenProps = {
 
 export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupSettingsScreenProps) {
   const [isEnabled, setIsEnabled] = useState(false);
-  const [mode, setMode] = useState<'HANGUP_IMMEDIATELY' | 'PLAY_MESSAGE' | 'AI_CONVERSATION'>('HANGUP_IMMEDIATELY');
+  const [mode, setMode] = useState<'HANGUP_IMMEDIATELY' | 'PLAY_MESSAGE' | 'REJECT_TO_BACKEND' | 'AI_CONVERSATION'>('HANGUP_IMMEDIATELY');
   const [delay, setDelay] = useState(2);
   const [loading, setLoading] = useState(true);
   const [isAccessibilityEnabled, setIsAccessibilityEnabled] = useState(false);
@@ -150,12 +150,12 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
         permissions.allGranted
           ? [{ text: 'OK' }]
           : [
-              { text: 'Cancelar', style: 'cancel' },
-              {
-                text: 'Ir a Configuración',
-                onPress: () => Linking.openSettings()
-              }
-            ]
+            { text: 'Cancelar', style: 'cancel' },
+            {
+              text: 'Ir a Configuración',
+              onPress: () => Linking.openSettings()
+            }
+          ]
       );
     } catch (error) {
       Alert.alert('Error', 'No se pudo verificar permisos');
@@ -400,7 +400,7 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
     }
   };
 
-  const handleModeChange = async (newMode: 'HANGUP_IMMEDIATELY' | 'PLAY_MESSAGE' | 'AI_CONVERSATION') => {
+  const handleModeChange = async (newMode: 'HANGUP_IMMEDIATELY' | 'PLAY_MESSAGE' | 'REJECT_TO_BACKEND' | 'AI_CONVERSATION') => {
     try {
       await answerHangupService.setMode(newMode);
       setMode(newMode);
@@ -408,6 +408,7 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
       const modeDescriptions = {
         HANGUP_IMMEDIATELY: 'Las llamadas spam se colgarán automáticamente después del delay configurado.',
         PLAY_MESSAGE: 'Se reproducirá un mensaje IVR corporativo para molestar al spammer antes de colgar.',
+        REJECT_TO_BACKEND: 'La app rechazará la llamada para que sea desviada a tu servidor Asterisk con IA.',
         AI_CONVERSATION: 'La IA mantendrá una conversación con el spammer (próximamente).'
       };
 
@@ -613,18 +614,38 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
               )}
             </TouchableOpacity>
 
-            {/* MODO 3: IA Conversacional (próximamente) */}
+            {/* MODO 3: Desvío a IA (Asterisk/Backend) */}
+            <TouchableOpacity
+              style={[
+                styles.modeOption,
+                mode === 'REJECT_TO_BACKEND' && styles.modeOptionSelected
+              ]}
+              onPress={() => handleModeChange('REJECT_TO_BACKEND')}
+            >
+              <View style={styles.modeHeader}>
+                <Text style={styles.modeIcon}>🚀</Text>
+                <Text style={styles.modeTitle}>Modo 3: Desvío a IA (Asterisk)</Text>
+              </View>
+              <Text style={styles.modeDescription}>
+                Envía al spammer a tu IA en la nube. Requiere configurar desvío condicional (*67*) en tu móvil.
+              </Text>
+              {mode === 'REJECT_TO_BACKEND' && (
+                <Text style={styles.modeStatus}>✅ Activo</Text>
+              )}
+            </TouchableOpacity>
+
+            {/* MODO 4: IA Conversacional (Local Legacy) */}
             <TouchableOpacity
               style={[
                 styles.modeOption,
                 styles.modeOptionDisabled,
                 mode === 'AI_CONVERSATION' && styles.modeOptionSelected
               ]}
-              onPress={() => Alert.alert('🤖 Próximamente', 'La IA conversacional estará disponible en una futura actualización')}
+              onPress={() => Alert.alert('🤖 Próximamente', 'La IA conversacional local estará disponible en una futura actualización')}
             >
               <View style={styles.modeHeader}>
                 <Text style={styles.modeIcon}>🤖</Text>
-                <Text style={styles.modeTitle}>Modo 3: IA Conversacional</Text>
+                <Text style={styles.modeTitle}>Modo 4: IA Conversacional Local</Text>
                 <Text style={styles.comingSoonBadge}>Próximamente</Text>
               </View>
               <Text style={styles.modeDescription}>

@@ -174,6 +174,20 @@ public class CallStateReceiver extends BroadcastReceiver {
             // Crear variable final para lambdas
             final String number = incomingNumber;
 
+            // ✅ NUEVA LÓGICA: Si somos Default Dialer, SpamCallService se encarga.
+            // No duplicar el audio aquí.
+            if (DefaultDialerModule.isDefaultDialerHelper(context)) {
+                Log.d(TAG, "⏭️ App es Default Dialer. Delegando audio a SpamCallService.");
+                logsHelper.logDebug("Audio delegado a SpamCallService (Default Dialer activo)");
+                
+                // Sin embargo, si el modo es HANGUP_IMMEDIATELY, igual programamos el cuelgue
+                // como red de seguridad por si SpamCallService falla.
+                if (mode == AnswerHangupHelper.Mode.HANGUP_IMMEDIATELY) {
+                    scheduleSafetyHangup(context, number);
+                }
+                return;
+            }
+
             switch (mode) {
                 case HANGUP_IMMEDIATELY:
                     // Modo 1: Colgar después de delay
@@ -257,6 +271,17 @@ public class CallStateReceiver extends BroadcastReceiver {
         }
 
         lastIncomingNumber = null;
+    }
+
+    /**
+     * Programa un cuelgue de seguridad
+     */
+    private void scheduleSafetyHangup(Context context, String number) {
+        int delay = answerHangupHelper.getHangupDelay();
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            Log.d(TAG, "🎯 Ejecutando hangup de seguridad (Receiver)");
+            hangupCall(context, number);
+        }, (delay + 1) * 1000L);
     }
 
     /**

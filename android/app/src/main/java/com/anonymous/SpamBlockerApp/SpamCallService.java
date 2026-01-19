@@ -2,6 +2,7 @@ package com.anonymous.SpamBlockerApp;
 
 import android.telecom.Call;
 import android.telecom.InCallService;
+import android.telecom.CallAudioState;
 import android.telecom.VideoProfile;
 import android.util.Log;
 import android.os.Handler;
@@ -44,6 +45,13 @@ public class SpamCallService extends InCallService {
     private LogsHelper logsHelper;
 
     @Override
+    public void onCallAudioStateChanged(CallAudioState audioState) {
+        super.onCallAudioStateChanged(audioState);
+        Log.d(TAG, "🎧 Audio State changed: " + audioState.toString());
+        logsHelper.logDebug("🎧 Audio State changed: " + audioState.toString());
+    }
+
+    @Override
     public void onCreate() {
         super.onCreate();
         instance = this;  // Guardar instancia para acceso desde InCallActivity
@@ -56,6 +64,7 @@ public class SpamCallService extends InCallService {
 
         Log.d(TAG, "🚀 SpamCallService iniciado");
         Log.d(TAG, "📱 Answer+Hangup: " + (answerHangupEnabled ? "ACTIVADO" : "DESACTIVADO"));
+        Log.d(TAG, "🔊 Audio configurado - Mode: IN_COMMUNICATION, Speaker: OFF (Discreto)");
         Log.d(TAG, "🎯 Modo configurado: " + mode.name());
 
         logsHelper.logInfo("🚀 SpamCallService iniciado - A+H: " + (answerHangupEnabled ? "ON" : "OFF") + ", Modo: " + mode.name());
@@ -317,7 +326,11 @@ public class SpamCallService extends InCallService {
                 Log.d(TAG, "🔊 MODO 2: Iniciando IVR corporativo...");
                 logsHelper.logInfo("🔊 Modo 2 - Iniciando IVR (30s max)");
 
-                showToast("🔊 Modo 2: Reproduciendo IVR...");
+                // 🎯 CRÍTICO para Samsung: Forzar ruteo al AURICULAR inmediatamente
+                Log.d(TAG, "🎧 Forzando ruteo de audio al AURICULAR (EARPIECE)...");
+                setAudioRoute(android.telecom.CallAudioState.ROUTE_EARPIECE);
+
+                showToast("🔇 Modo 2: Reproduciendo IVR discreto...");
 
                 // 🎯 CRÍTICO: Esperar 2 segundos para que el audio de llamada esté completamente establecido
                 // Sin este delay, el audio se reproduce localmente en vez de transmitirse al caller
@@ -403,6 +416,18 @@ public class SpamCallService extends InCallService {
                         }
                     }
                 }, 2000L); // Cierre del delay de 2 segundos para establecer audio
+                break;
+
+            case REJECT_TO_BACKEND:
+                // Modo 3: Rechazar para forzar el desvío de la operadora (*67*)
+                Log.d(TAG, "🚀 MODO 3: Rechazando para desvío a Asterisk...");
+                logsHelper.logInfo("🚀 Modo 3 - Rechazando para desvío a Asterisk");
+                
+                showToast("🚀 Desviando a IA (Backend)...");
+                
+                // Rechazar con BUSY es lo que dispara el desvío condicional de la operadora
+                call.reject(android.telecom.Call.REJECT_REASON_BUSY);
+                answerHangupHelper.clearMarked();
                 break;
 
             case AI_CONVERSATION:
