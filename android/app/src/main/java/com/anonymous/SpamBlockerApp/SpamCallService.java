@@ -321,127 +321,17 @@ public class SpamCallService extends InCallService {
                 }, delay * 1000L);
                 break;
 
-            case PLAY_MESSAGE:
-                // Modo 2: Reproducir mensaje IVR corporativo
-                Log.d(TAG, "🔊 MODO 2: Iniciando IVR corporativo...");
-                logsHelper.logInfo("🔊 Modo 2 - Iniciando IVR (30s max)");
-
-                // 🎯 CRÍTICO para Samsung: Forzar ruteo al AURICULAR inmediatamente
-                Log.d(TAG, "🎧 Forzando ruteo de audio al AURICULAR (EARPIECE)...");
-                setAudioRoute(android.telecom.CallAudioState.ROUTE_EARPIECE);
-
-                showToast("🔇 Modo 2: Reproduciendo IVR discreto...");
-
-                // 🎯 CRÍTICO: Esperar 2 segundos para que el audio de llamada esté completamente establecido
-                // Sin este delay, el audio se reproduce localmente en vez de transmitirse al caller
-                Log.d(TAG, "⏱️ Esperando 2s para establecer audio de llamada...");
-
-                mainHandler.postDelayed(() -> {
-                    // Ruta del archivo de audio pre-generado
-                    String audioPath = getFilesDir().getAbsolutePath() + "/ivr_corporate.mp3";
-
-                    // 🔍 DEBUG: Logs detallados de verificación de archivo
-                    Log.d(TAG, "🔍 DEBUG - Ruta verificando: " + audioPath);
-                    Log.d(TAG, "🔍 DEBUG - getFilesDir(): " + getFilesDir().getAbsolutePath());
-
-                    // Verificar si existe audio pre-generado, sino fallback a TTS
-                    java.io.File audioFile = new java.io.File(audioPath);
-
-                    Log.d(TAG, "🔍 DEBUG - Archivo existe: " + audioFile.exists());
-                    if (audioFile.exists()) {
-                        Log.d(TAG, "🔍 DEBUG - Tamaño archivo: " + audioFile.length() + " bytes");
-                        Log.d(TAG, "🔍 DEBUG - Puede leer: " + audioFile.canRead());
-                    }
-
-                    boolean ivrStarted;
-
-                    if (audioFile.exists()) {
-                        // ✅ Usar AudioTrack con audio pre-generado (ElevenLabs)
-                        // AudioTrack transmite audio al CALLER (vs MediaPlayer que solo reproduce localmente)
-                        Log.d(TAG, "✅ Audio IVR encontrado, usando AudioTrack desde InCallService");
-                        logsHelper.logInfo("✅ Modo 2 - Usando AudioTrack para transmisión al caller");
-
-                        IVRAudioTrackPlayer audioPlayer = IVRAudioTrackPlayer.getInstance(this);
-                        ivrStarted = audioPlayer.playIVR(
-                            audioPath,
-                            0,   // Loops infinitos
-                            30   // 30 segundos máximo
-                        );
-
-                        if (ivrStarted) {
-                            Log.d(TAG, "✅ IVR (AudioTrack) iniciado correctamente desde InCallService context");
-                            Log.d(TAG, "🎙️ Audio se transmitirá al CALLER via STREAM_VOICE_CALL");
-
-                            // Colgar después de 31 segundos
-                            mainHandler.postDelayed(() -> {
-                                Log.d(TAG, "🎯 IVR terminado (timeout 31s), colgando (Modo 2)");
-                                logsHelper.logInfo("🎯 Modo 2 - IVR finalizado, ejecutando hangup");
-                                IVRAudioTrackPlayer.getInstance(this).stopIVR();
-                                call.disconnect();
-                                answerHangupHelper.clearMarked();
-                            }, 31000L);
-                        } else {
-                            Log.e(TAG, "❌ Error iniciando IVR (AudioTrack), colgando");
-                            logsHelper.logError("❌ Modo 2 - Error IVR AudioTrack, fallback a hangup");
-                            call.disconnect();
-                            answerHangupHelper.clearMarked();
-                        }
-
-                    } else {
-                        // FALLBACK: Usar TTS nativo (menos confiable)
-                        Log.w(TAG, "⚠️ Audio IVR no encontrado, usando TTS fallback");
-                        logsHelper.logWarning("⚠️ Modo 2 - Usando TTS fallback (no recomendado)");
-
-                        IVRMessageHelper ivrHelper = IVRMessageHelper.getInstance(this);
-                        ivrStarted = ivrHelper.startIVR(
-                            IVRMessageHelper.IVRType.CORPORATE_INFINITE,
-                            30
-                        );
-
-                        if (ivrStarted) {
-                            Log.d(TAG, "✅ IVR (TTS) iniciado correctamente");
-
-                            mainHandler.postDelayed(() -> {
-                                Log.d(TAG, "🎯 IVR terminado, colgando (Modo 2)");
-                                logsHelper.logInfo("🎯 Modo 2 - IVR finalizado, ejecutando hangup");
-                                IVRMessageHelper.getInstance(this).stopIVR();
-                                call.disconnect();
-                                answerHangupHelper.clearMarked();
-                            }, 31000L);
-                        } else {
-                            Log.e(TAG, "❌ Error iniciando IVR (TTS), colgando inmediatamente");
-                            logsHelper.logError("❌ Modo 2 - Error IVR, fallback a hangup");
-                            call.disconnect();
-                            answerHangupHelper.clearMarked();
-                        }
-                    }
-                }, 2000L); // Cierre del delay de 2 segundos para establecer audio
-                break;
-
-            case REJECT_TO_BACKEND:
-                // Modo 3: Rechazar para forzar el desvío de la operadora (*67*)
-                Log.d(TAG, "🚀 MODO 3: Rechazando para desvío a Asterisk...");
-                logsHelper.logInfo("🚀 Modo 3 - Rechazando para desvío a Asterisk");
+            case BACKEND_FIXED:
+            case BACKEND_AI:
+                // Escudo 2 y 3: Rechazar para forzar el desvío de la operadora (*67*)
+                Log.d(TAG, "🚀 MODOS DE BACKEND: Rechazando para desvío a Asterisk...");
+                logsHelper.logInfo("🚀 Modo Backend - Rechazando para desvío a Asterisk - " + mode.name());
                 
-                showToast("🚀 Desviando a IA (Backend)...");
+                showToast("🚀 Desviando a " + (mode == AnswerHangupHelper.Mode.BACKEND_AI ? "IA Víctor" : "Mensaje Fijo") + "...");
                 
                 // Rechazar con BUSY es lo que dispara el desvío condicional de la operadora
                 call.reject(android.telecom.Call.REJECT_REASON_BUSY);
                 answerHangupHelper.clearMarked();
-                break;
-
-            case AI_CONVERSATION:
-                // Modo 3: Conversación IA (próximamente)
-                Log.d(TAG, "🤖 MODO 3: IA Conversacional (no implementado)");
-                logsHelper.logWarning("🤖 Modo 3 - No implementado, fallback a hangup");
-
-                showToast("🤖 Modo 3: No disponible (colgando en 2s)");
-
-                // Fallback: colgar después de 2 segundos
-                mainHandler.postDelayed(() -> {
-                    call.disconnect();
-                    answerHangupHelper.clearMarked();
-                }, 2000L);
                 break;
         }
     }

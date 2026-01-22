@@ -4,6 +4,7 @@ import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, Switch, Pe
 import { answerHangupService } from '../services/AnswerHangupService';
 import ivrGeneratorService from '../services/IVRGeneratorService';
 import defaultDialerService from '../services/DefaultDialerService';
+import backendSyncService from '../services/BackendSyncService';
 
 type AnswerHangupSettingsScreenProps = {
   navigation: any;
@@ -11,7 +12,7 @@ type AnswerHangupSettingsScreenProps = {
 
 export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupSettingsScreenProps) {
   const [isEnabled, setIsEnabled] = useState(false);
-  const [mode, setMode] = useState<'HANGUP_IMMEDIATELY' | 'PLAY_MESSAGE' | 'REJECT_TO_BACKEND' | 'AI_CONVERSATION'>('HANGUP_IMMEDIATELY');
+  const [mode, setMode] = useState<'HANGUP_IMMEDIATELY' | 'BACKEND_FIXED' | 'BACKEND_AI'>('HANGUP_IMMEDIATELY');
   const [delay, setDelay] = useState(2);
   const [loading, setLoading] = useState(true);
   const [isAccessibilityEnabled, setIsAccessibilityEnabled] = useState(false);
@@ -36,14 +37,14 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
 
   // Verificar Accessibility Service cuando cambie el modo o se active
   useEffect(() => {
-    if (isEnabled && (mode === 'PLAY_MESSAGE' || mode === 'AI_CONVERSATION')) {
+    if (isEnabled && (mode === 'BACKEND_FIXED' || mode === 'BACKEND_AI')) {
       checkAccessibilityService();
     }
   }, [mode, isEnabled]);
 
   // Verificar Default Dialer cuando cambie el modo a PLAY_MESSAGE
   useEffect(() => {
-    if (isEnabled && mode === 'PLAY_MESSAGE') {
+    if (isEnabled && mode === 'BACKEND_FIXED') {
       checkDefaultDialerStatus();
     }
   }, [mode, isEnabled]);
@@ -400,16 +401,22 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
     }
   };
 
-  const handleModeChange = async (newMode: 'HANGUP_IMMEDIATELY' | 'PLAY_MESSAGE' | 'REJECT_TO_BACKEND' | 'AI_CONVERSATION') => {
+  const handleModeChange = async (newMode: 'HANGUP_IMMEDIATELY' | 'BACKEND_FIXED' | 'BACKEND_AI') => {
     try {
-      await answerHangupService.setMode(newMode);
+      // Mapear nuevos modos a los estados internos del servicio si es necesario
+      // O simplemente actualizar el servicio para soportar estos nuevos strings
+      await answerHangupService.setMode(newMode as any);
       setMode(newMode);
 
+      // Sincronizar con el backend si es uno de los modos de Zadarma
+      if (newMode === 'BACKEND_FIXED' || newMode === 'BACKEND_AI') {
+        backendSyncService.syncMode(newMode === 'BACKEND_AI' ? 'AI' : 'FIXED');
+      }
+
       const modeDescriptions = {
-        HANGUP_IMMEDIATELY: 'Las llamadas spam se colgarán automáticamente después del delay configurado.',
-        PLAY_MESSAGE: 'Se reproducirá un mensaje IVR corporativo para molestar al spammer antes de colgar.',
-        REJECT_TO_BACKEND: 'La app rechazará la llamada para que sea desviada a tu servidor Asterisk con IA.',
-        AI_CONVERSATION: 'La IA mantendrá una conversación con el spammer (próximamente).'
+        HANGUP_IMMEDIATELY: '🛡️ Escudo 1: Se colgará la llamada inmediatamente. Rápido y efectivo.',
+        BACKEND_FIXED: '🔊 Escudo 2: Se rechazará la llamada y Zadarma reproducirá un mensaje corporativo fijo. 100% Discreto.',
+        BACKEND_AI: '🤖 Escudo 3: Se rechazará la llamada y Víctor (IA) mantendrá una conversación con el spammer. 100% Discreto.'
       };
 
       Alert.alert(
@@ -456,7 +463,7 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
       </TouchableOpacity>
 
       {/* ADVERTENCIA DE ACCESSIBILITY SERVICE */}
-      {isEnabled && (mode === 'PLAY_MESSAGE' || mode === 'AI_CONVERSATION') && !isAccessibilityEnabled && (
+      {isEnabled && (mode === 'BACKEND_FIXED' || mode === 'BACKEND_AI') && !isAccessibilityEnabled && (
         <View style={styles.accessibilityWarning}>
           <View style={styles.warningHeader}>
             <Text style={styles.warningIcon}>⚠️</Text>
@@ -492,15 +499,15 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
       )}
 
       {/* CONFIRMACIÓN DE ACCESSIBILITY SERVICE */}
-      {isEnabled && (mode === 'PLAY_MESSAGE' || mode === 'AI_CONVERSATION') && isAccessibilityEnabled && (
+      {isEnabled && (mode === 'BACKEND_FIXED' || mode === 'BACKEND_AI') && isAccessibilityEnabled && (
         <View style={styles.accessibilitySuccess}>
           <Text style={styles.successIcon}>✅</Text>
           <Text style={styles.successText}>Servicio de Accesibilidad activado correctamente</Text>
         </View>
       )}
 
-      {/* ADVERTENCIA DE MARCADOR PREDETERMINADO (Solo para Modo 2) */}
-      {isEnabled && mode === 'PLAY_MESSAGE' && !isDefaultDialer && (
+      {/* ADVERTENCIA DE MARCADOR PREDETERMINADO (Solo para Modo Local - Desactivado por ahora) */}
+      {isEnabled && (mode as any) === 'PLAY_LOCAL_MESSAGE' && !isDefaultDialer && (
         <View style={styles.defaultDialerWarning}>
           <View style={styles.warningHeader}>
             <Text style={styles.warningIcon}>📱</Text>
@@ -537,8 +544,8 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
         </View>
       )}
 
-      {/* CONFIRMACIÓN DE MARCADOR PREDETERMINADO (Solo para Modo 2) */}
-      {isEnabled && mode === 'PLAY_MESSAGE' && isDefaultDialer && (
+      {/* CONFIRMACIÓN DE MARCADOR PREDETERMINADO */}
+      {isEnabled && (mode as any) === 'PLAY_LOCAL_MESSAGE' && isDefaultDialer && (
         <View style={styles.defaultDialerSuccess}>
           <Text style={styles.successIcon}>✅</Text>
           <Text style={styles.successText}>App establecida como marcador predeterminado - El IVR se enrutará correctamente al spammer</Text>
@@ -593,64 +600,46 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
               )}
             </TouchableOpacity>
 
-            {/* MODO 2: Reproducir mensaje IVR */}
+            {/* MODO 2: Mensaje Fijo (Backend) */}
             <TouchableOpacity
               style={[
                 styles.modeOption,
-                mode === 'PLAY_MESSAGE' && styles.modeOptionSelected
+                mode === 'BACKEND_FIXED' && styles.modeOptionSelected
               ]}
-              onPress={() => handleModeChange('PLAY_MESSAGE')}
+              onPress={() => handleModeChange('BACKEND_FIXED')}
             >
               <View style={styles.modeHeader}>
                 <Text style={styles.modeIcon}>🔊</Text>
-                <Text style={styles.modeTitle}>Modo 2: IVR Corporativo</Text>
+                <Text style={styles.modeTitle}>Escudo 2: Mensaje Fijo (Backend)</Text>
               </View>
               <Text style={styles.modeDescription}>
-                "Bienvenido... pulse 1 para ventas, pulse 2 para soporte..."
-                Mantiene al spammer ocupado 30 segundos.
+                El móvil rechaza y Zadarma contesta con un mensaje profesional fijo.
+                Ideal para discreción total.
               </Text>
-              {mode === 'PLAY_MESSAGE' && (
+              {mode === 'BACKEND_FIXED' && (
                 <Text style={styles.modeStatus}>✅ Activo</Text>
               )}
             </TouchableOpacity>
 
-            {/* MODO 3: Desvío a IA (Asterisk/Backend) */}
+            {/* MODO 3: IA Víctor (Backend) */}
             <TouchableOpacity
               style={[
                 styles.modeOption,
-                mode === 'REJECT_TO_BACKEND' && styles.modeOptionSelected
+                mode === 'BACKEND_AI' && styles.modeOptionSelected
               ]}
-              onPress={() => handleModeChange('REJECT_TO_BACKEND')}
-            >
-              <View style={styles.modeHeader}>
-                <Text style={styles.modeIcon}>🚀</Text>
-                <Text style={styles.modeTitle}>Modo 3: Desvío a IA (Asterisk)</Text>
-              </View>
-              <Text style={styles.modeDescription}>
-                Envía al spammer a tu IA en la nube. Requiere configurar desvío condicional (*67*) en tu móvil.
-              </Text>
-              {mode === 'REJECT_TO_BACKEND' && (
-                <Text style={styles.modeStatus}>✅ Activo</Text>
-              )}
-            </TouchableOpacity>
-
-            {/* MODO 4: IA Conversacional (Local Legacy) */}
-            <TouchableOpacity
-              style={[
-                styles.modeOption,
-                styles.modeOptionDisabled,
-                mode === 'AI_CONVERSATION' && styles.modeOptionSelected
-              ]}
-              onPress={() => Alert.alert('🤖 Próximamente', 'La IA conversacional local estará disponible en una futura actualización')}
+              onPress={() => handleModeChange('BACKEND_AI')}
             >
               <View style={styles.modeHeader}>
                 <Text style={styles.modeIcon}>🤖</Text>
-                <Text style={styles.modeTitle}>Modo 4: IA Conversacional Local</Text>
-                <Text style={styles.comingSoonBadge}>Próximamente</Text>
+                <Text style={styles.modeTitle}>Escudo 3: IA Víctor (Backend)</Text>
               </View>
               <Text style={styles.modeDescription}>
-                La IA mantendrá una conversación con el spammer usando GPT/Claude.
+                El móvil rechaza y Víctor inicia una conversación infinita con el spammer.
+                Puro arte en la nube.
               </Text>
+              {mode === 'BACKEND_AI' && (
+                <Text style={styles.modeStatus}>✅ Activo</Text>
+              )}
             </TouchableOpacity>
           </View>
 
@@ -731,10 +720,9 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
             <Text style={styles.infoText}>
               • Answer+Hangup solo procesa llamadas detectadas como spam{'\n'}
               • Requiere permiso "Registro de llamadas" (READ_CALL_LOG){'\n'}
-              • Modo 2 requiere: Servicio de Accesibilidad + Marcador Predeterminado{'\n'}
-              • Modo 3 requiere: Servicio de Accesibilidad activado{'\n'}
-              • Los logs se guardan en "Logs de Debug"{'\n'}
-              • El historial se guarda en "Historial de Spam"
+              • Modos 2 y 3 requieren configurar el desvío condicional (`*67*919933065#`){'\n'}
+              • El móvil rechazará la llamada y el servidor Zadarma se encargará del resto.{'\n'}
+              • Tu Samsung permanecerá en silencio y discreto.
             </Text>
           </View>
         </>

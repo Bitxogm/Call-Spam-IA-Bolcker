@@ -19,10 +19,9 @@ public class AnswerHangupHelper {
 
     // Modos de Answer+Hangup
     public enum Mode {
-        HANGUP_IMMEDIATELY,    // Modo 1: Colgar inmediatamente
-        PLAY_MESSAGE,          // Modo 2: Reproducir mensaje IVR local
-        REJECT_TO_BACKEND,     // Modo 3: Rechazar para desvío a Asterisk
-        AI_CONVERSATION        // Modo 4: IA conversacional local (legacy)
+        HANGUP_IMMEDIATELY,    // Escudo 1: Rechazo local (Hangup)
+        BACKEND_FIXED,         // Escudo 2: Rechazo con desvío a Mensaje Fijo
+        BACKEND_AI             // Escudo 3: Rechazo con desvío a IA Víctor
     }
 
     // Keys para SharedPreferences
