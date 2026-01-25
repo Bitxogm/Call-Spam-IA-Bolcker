@@ -24,6 +24,7 @@ public class CallInterceptorPackage implements ReactPackage {
         modules.add(new SpeechRecognitionModule(reactContext));  // ✅ Módulo de Speech-to-Text
         modules.add(new IVRGeneratorModule(reactContext));       // ✅ Módulo de generación IVR
         modules.add(new DefaultDialerModule(reactContext));      // ✅ Módulo de marcador predeterminado
+        modules.add(new CallForwardingModule(reactContext));     // ✅ Módulo de desvío automático (*21*)
         return modules;
     }
 

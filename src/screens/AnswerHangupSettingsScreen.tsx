@@ -5,6 +5,7 @@ import { answerHangupService } from '../services/AnswerHangupService';
 import ivrGeneratorService from '../services/IVRGeneratorService';
 import defaultDialerService from '../services/DefaultDialerService';
 import backendSyncService from '../services/BackendSyncService';
+import callForwardingService from '../services/CallForwardingService';
 
 type AnswerHangupSettingsScreenProps = {
   navigation: any;
@@ -418,22 +419,32 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
       await answerHangupService.setMode(newMode as any);
       setMode(newMode);
 
+      // 🔑 CONFIGURAR DESVÍO AUTOMÁTICO SEGÚN MODO
+      console.log('⚙️ Configurando desvío de llamadas para modo:', newMode);
+      const forwardingSuccess = await callForwardingService.configureForMode(newMode);
+
+      if (!forwardingSuccess) {
+        console.warn('⚠️ Desvío automático falló - usuario debe configurar manualmente');
+      }
+
       // Sincronizar con el backend si es uno de los modos de Zadarma
       if (newMode === 'BACKEND_FIXED' || newMode === 'BACKEND_AI') {
         backendSyncService.syncMode(newMode === 'BACKEND_AI' ? 'AI' : 'FIXED');
       }
 
       const modeDescriptions = {
-        HANGUP_IMMEDIATELY: '🛡️ Escudo 1: Se colgará la llamada inmediatamente. Rápido y efectivo.',
-        BACKEND_FIXED: '🔊 Escudo 2: Se rechazará la llamada y Zadarma reproducirá un mensaje corporativo fijo. 100% Discreto.',
-        BACKEND_AI: '🤖 Escudo 3: Se rechazará la llamada y Víctor (IA) mantendrá una conversación con el spammer. 100% Discreto.'
+        HANGUP_IMMEDIATELY: '🛡️ Escudo 1: Se colgará la llamada inmediatamente.\n\n📞 Desvío desactivado (##21#).',
+        BACKEND_FIXED: '🔊 Escudo 2: Llamadas spam se desviarán a Zadarma.\n\n📞 Desvío activado (*21*+34919933065#).\n\nZadarma reproducirá mensaje corporativo fijo.',
+        BACKEND_AI: '🤖 Escudo 3: Llamadas spam se desviarán a Zadarma.\n\n📞 Desvío activado (*21*+34919933065#).\n\nVíctor (IA) conversará con el spammer.'
       };
 
       Alert.alert(
         '✅ Modo Cambiado',
-        modeDescriptions[newMode]
+        modeDescriptions[newMode] +
+        (forwardingSuccess ? '' : '\n\n⚠️ Si el desvío no se activó automáticamente, configúralo manualmente en el teclado.')
       );
     } catch (error) {
+      console.error('Error cambiando modo:', error);
       Alert.alert('Error', 'No se pudo cambiar el modo');
     }
   };
