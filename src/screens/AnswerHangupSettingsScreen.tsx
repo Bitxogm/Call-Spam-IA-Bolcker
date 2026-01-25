@@ -1,6 +1,6 @@
 // src/screens/AnswerHangupSettingsScreen.tsx
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, Switch, PermissionsAndroid, Platform, Linking, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, Switch, PermissionsAndroid, Platform, Linking, ActivityIndicator, TextInput, Permission } from 'react-native';
 import { answerHangupService } from '../services/AnswerHangupService';
 import ivrGeneratorService from '../services/IVRGeneratorService';
 import defaultDialerService from '../services/DefaultDialerService';
@@ -25,6 +25,16 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
   // Estados para Default Dialer
   const [isDefaultDialer, setIsDefaultDialer] = useState(false);
   const [checkingDefaultDialer, setCheckingDefaultDialer] = useState(false);
+
+  // Estados para Mensajes TTS (Escudo 2)
+  const [customMessage, setCustomMessage] = useState('Identificado como spam, no vuelva a llamar.');
+  const [isSyncingMessage, setIsSyncingMessage] = useState(false);
+
+  const PRESET_MESSAGES = [
+    "Identificado como spam. Su llamada ha sido enviada al archivo de 'Cosas que no me importan'.",
+    "Hola, soy Víctor. Mi dueño está ocupado siendo feliz, inténtelo de nuevo en el próximo siglo.",
+    "Error 404: Paciencia no encontrada. Por favor, deje de llamar o enviaré a un terminador a su oficina."
+  ];
 
   // Cargar configuración al iniciar
   useEffect(() => {
@@ -179,7 +189,7 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
       }
 
       // Solicitar permisos faltantes
-      const permissionsToRequest = [];
+      const permissionsToRequest: Permission[] = [];
 
       if (!permissions.hasPhoneState) {
         permissionsToRequest.push(PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE);
@@ -617,7 +627,66 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
                 Ideal para discreción total.
               </Text>
               {mode === 'BACKEND_FIXED' && (
-                <Text style={styles.modeStatus}>✅ Activo</Text>
+                <View style={styles.fixedMessageEditor}>
+                  <Text style={styles.editorLabel}>Selecciona o escribe el mensaje:</Text>
+
+                  {/* Presets */}
+                  <View style={styles.presetsContainer}>
+                    {PRESET_MESSAGES.map((msg, index) => (
+                      <TouchableOpacity
+                        key={index}
+                        style={[
+                          styles.presetItem,
+                          customMessage === msg && styles.presetItemSelected
+                        ]}
+                        onPress={() => setCustomMessage(msg)}
+                      >
+                        <Text style={[
+                          styles.presetText,
+                          customMessage === msg && styles.presetTextSelected
+                        ]}>
+                          {index + 1}. {msg}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  {/* Input Manual */}
+                  <TextInput
+                    style={styles.customTextInput}
+                    value={customMessage}
+                    onChangeText={setCustomMessage}
+                    placeholder="Escribe tu mensaje aquí..."
+                    placeholderTextColor="#666"
+                    multiline
+                  />
+
+                  {/* Botón Sincronizar */}
+                  <TouchableOpacity
+                    style={[
+                      styles.syncMessageButton,
+                      isSyncingMessage && styles.syncMessageButtonDisabled
+                    ]}
+                    onPress={async () => {
+                      setIsSyncingMessage(true);
+                      try {
+                        await backendSyncService.syncMessage(customMessage);
+                        Alert.alert('✅ Sincronizado', 'El servidor ya tiene tu nuevo audio corporativo.');
+                      } catch (err) {
+                        Alert.alert('❌ Error', 'No se pudo enviar el mensaje al servidor.');
+                      } finally {
+                        setIsSyncingMessage(false);
+                      }
+                    }}
+                    disabled={isSyncingMessage}
+                  >
+                    {isSyncingMessage ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.syncMessageButtonText}>🔄 Sincronizar con Víctor</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
               )}
             </TouchableOpacity>
 
@@ -673,46 +742,6 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
             </View>
           )}
 
-          {/* GENERAR AUDIO IVR (solo para Modo 2) */}
-          {mode === 'PLAY_MESSAGE' && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>🔊 Audio IVR Corporativo</Text>
-              <Text style={styles.sectionDescription}>
-                {ivrAudioExists
-                  ? '✅ Audio generado y listo para usar. El spammer escuchará este mensaje.'
-                  : '⚠️ Debes generar el audio IVR antes de usar Modo 2.\n\nSe genera UNA vez con TTS nativo (voz robótica) y se guarda localmente.'}
-              </Text>
-
-              <TouchableOpacity
-                style={[
-                  styles.generateIVRButton,
-                  ivrAudioExists && styles.generateIVRButtonSuccess,
-                  generatingIVR && styles.generateIVRButtonDisabled
-                ]}
-                onPress={handleGenerateIVRAudio}
-                disabled={generatingIVR}
-              >
-                {generatingIVR ? (
-                  <ActivityIndicator color="#ffffff" size="small" />
-                ) : (
-                  <>
-                    <Text style={styles.generateIVRButtonIcon}>
-                      {ivrAudioExists ? '✅' : '🔊'}
-                    </Text>
-                    <Text style={styles.generateIVRButtonText}>
-                      {ivrAudioExists ? 'Re-generar Audio IVR' : 'Generar Audio IVR'}
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-
-              {ivrAudioExists && (
-                <Text style={styles.ivrSuccessNote}>
-                  💡 El audio ya está generado. Puedes probarlo activando Modo 2 y recibiendo una llamada.
-                </Text>
-              )}
-            </View>
-          )}
 
           {/* INFO ADICIONAL */}
           <View style={styles.infoBox}>
@@ -1045,5 +1074,70 @@ const styles = StyleSheet.create({
     borderColor: '#00ff88',
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  // Estilos para Editor de Mensaje Fijo
+  fixedMessageEditor: {
+    marginTop: 15,
+    padding: 15,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#444',
+  },
+  editorLabel: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  presetsContainer: {
+    marginBottom: 15,
+  },
+  presetItem: {
+    padding: 10,
+    backgroundColor: '#333',
+    borderRadius: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  presetItemSelected: {
+    backgroundColor: '#004488',
+    borderColor: '#007bff',
+  },
+  presetText: {
+    color: '#bbb',
+    fontSize: 13,
+  },
+  presetTextSelected: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  customTextInput: {
+    backgroundColor: '#222',
+    color: '#fff',
+    padding: 12,
+    borderRadius: 8,
+    fontSize: 14,
+    minHeight: 60,
+    textAlignVertical: 'top',
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#444',
+  },
+  syncMessageButton: {
+    backgroundColor: '#007bff',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  syncMessageButtonDisabled: {
+    backgroundColor: '#333',
+    opacity: 0.7,
+  },
+  syncMessageButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
   },
 });

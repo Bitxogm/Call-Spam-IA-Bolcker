@@ -45,16 +45,9 @@ public class CallAccessibilityService extends AccessibilityService {
     private boolean ivrPlaying = false;
     private Runnable hangupRunnable;
 
-    // Textos comunes de botón "Contestar" en diferentes idiomas
-    private static final String[] ANSWER_BUTTON_TEXTS = {
-        "answer",           // Inglés
-        "contestar",        // Español
-        "responder",        // Español (alternativo)
-        "accept",           // Inglés (alternativo)
-        "aceptar",          // Español
-        "accept call",      // Inglés completo
-        "answer call",      // Inglés completo
-        "contestar llamada" // Español completo
+    // Textos EXÁCTOS de botón "Contestar" para evitar falsos positivos
+    private static final String[] ANSWER_BUTTON_KEYWORDS = {
+        "contestar", "responder", "aceptar", "answer", "accept"
     };
 
     // Paquetes de apps de llamadas comunes
@@ -136,9 +129,18 @@ public class CallAccessibilityService extends AccessibilityService {
                     logsHelper.logInfo("📞 Llamada entrante detectada");
 
                     // Esperar 1 segundo para dar tiempo a que la UI aparezca
-                    mainHandler.postDelayed(() -> {
-                        answerCallProgrammatically();
-                    }, 1000);
+                        // 🎯 CRÍTICO: Verificar si el número es SPAM antes de contestar
+                        if (answerHangupHelper.shouldHangup(phoneNumber)) {
+                            AnswerHangupHelper.Mode mode = answerHangupHelper.getMode();
+                            if (mode == AnswerHangupHelper.Mode.HANGUP_IMMEDIATELY) {
+                                Log.d(TAG, "✅ SPAM detectado y MODO 1 - Contestando...");
+                                answerCallProgrammatically();
+                            } else {
+                                Log.d(TAG, "⏭️ SPAM detectado pero MODO BACKEND - NO contestar (dejando que SpamCallService rechace)");
+                            }
+                        } else {
+                            Log.d(TAG, "⏭️ No es spam - No contestar por accesibilidad");
+                        }
 
                 } else if (state == TelephonyManager.CALL_STATE_OFFHOOK) {
                     // Llamada ACTIVA - Reproducir IVR si está en Modo 2
@@ -147,7 +149,7 @@ public class CallAccessibilityService extends AccessibilityService {
 
                     AnswerHangupHelper.Mode mode = answerHangupHelper.getMode();
 
-                    if (mode == AnswerHangupHelper.Mode.PLAY_MESSAGE) {
+                    if (mode == AnswerHangupHelper.Mode.BACKEND_FIXED) {
                         Log.d(TAG, "🔊 MODO 2: Iniciando IVR en AccessibilityService...");
                         logsHelper.logInfo("🔊 Modo 2 - Iniciando IVR desde AccessibilityService");
 
@@ -186,6 +188,13 @@ public class CallAccessibilityService extends AccessibilityService {
     public void onAccessibilityEvent(AccessibilityEvent event) {
         // Solo procesar si Answer+Hangup está habilitado
         if (!answerHangupHelper.isEnabled()) {
+            return;
+        }
+
+        // CRÍTICO: El servicio de Accesibilidad SOLO debe auto-contestar
+        // si estamos en Modo 1 (HANGUP_IMMEDIATELY).
+        // Para Escudo 2 y 3, queremos que la llamada se RECHACE para que desvíe.
+        if (answerHangupHelper.getMode() != AnswerHangupHelper.Mode.HANGUP_IMMEDIATELY) {
             return;
         }
 
@@ -353,6 +362,12 @@ public class CallAccessibilityService extends AccessibilityService {
      * Verifica si un nodo es el botón de contestar
      */
     private boolean isAnswerButton(AccessibilityNodeInfo node) {
+        // Ignorar nodos de nuestra propia app
+        CharSequence nodePackage = node.getPackageName();
+        if (nodePackage != null && nodePackage.toString().equals(getPackageName())) {
+            return false;
+        }
+
         // Debe ser clickeable
         if (!node.isClickable()) {
             return false;
@@ -365,10 +380,21 @@ public class CallAccessibilityService extends AccessibilityService {
         String textStr = text != null ? text.toString().toLowerCase() : "";
         String descStr = contentDescription != null ? contentDescription.toString().toLowerCase() : "";
 
-        // Buscar palabras clave
-        for (String keyword : ANSWER_BUTTON_TEXTS) {
-            if (textStr.contains(keyword) || descStr.contains(keyword)) {
-                Log.d(TAG, "🎯 Botón encontrado: text='" + textStr + "', desc='" + descStr + "'");
+        // Buscar coincidencias exactas o casi exactas
+        for (String keyword : ANSWER_BUTTON_KEYWORDS) {
+            // REGLAS ESTRICTAS PARA EVITAR AUTO-CLICKS EN NUESTRA APP:
+            // 1. El texto debe ser IGUAL a la palabra clave (ej: "Contestar")
+            // 2. O la descripción debe ser igual a la palabra clave
+            // 3. La longitud debe ser corta (un botón no tiene un párrafo)
+            if (textStr.equals(keyword) || descStr.equals(keyword)) {
+                Log.d(TAG, "🎯 MATCH EXACTO: " + keyword);
+                return true;
+            }
+            
+            // Si contiene la palabra pero es muy corta (ej: "Contestar llamada")
+            if ((textStr.contains(keyword) && textStr.length() < 15) || 
+                (descStr.contains(keyword) && descStr.length() < 15)) {
+                Log.d(TAG, "🎯 MATCH CERCANO: " + (textStr.isEmpty() ? descStr : textStr));
                 return true;
             }
         }
@@ -439,8 +465,7 @@ public class CallAccessibilityService extends AccessibilityService {
         info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC;
 
         // Paquetes a observar (solo apps de llamadas)
-        // Nota: Si dejamos esto vacío, observa TODAS las apps
-        // info.packageNames = PHONE_PACKAGES; // Descomentar si quieres filtrar
+        info.packageNames = PHONE_PACKAGES;
 
         // Flags
         info.flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS |

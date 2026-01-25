@@ -158,12 +158,18 @@ public class SpamCallService extends InCallService {
             Log.d(TAG, "🎯 DECISIÓN: Answer+Hangup (Modo: " + mode.name() + ")");
             logsHelper.logInfo("🎯 Answer+Hangup - Modo: " + mode.name());
 
-            showToast("🔇 Answer+Hangup: Contestando spam...");
-
-            // Contestar rápidamente (100ms de delay)
-            mainHandler.postDelayed(() -> {
-                autoAnswerCall(call, callerNumber);
-            }, 100);
+            // SOLO auto-contestar si es HANGUP_IMMEDIATELY (Escudo 1)
+            // Para Escudo 2 y 3 no contestamos nosotros, rechazamos para que desvíe la operadora
+            if (mode == AnswerHangupHelper.Mode.HANGUP_IMMEDIATELY) {
+                showToast("🔇 Escudo 1: Contestando spam local...");
+                mainHandler.postDelayed(() -> {
+                    autoAnswerCall(call, callerNumber);
+                }, 100);
+            } else {
+                Log.d(TAG, "⏭️ Saltando auto-respuesta para modo Backend (Escudo 2/3)");
+                // El rechazo se hará en el callback de estado o inmediatamente
+                onAnswerHangupActive(call, callerNumber);
+            }
         } else if (shouldAnswerWithAI(callerNumber)) {
             Log.d(TAG, "🤖 DECISIÓN: Auto-contestar con IA");
             logsHelper.logInfo("🤖 Decisión: IA conversacional");
@@ -313,6 +319,12 @@ public class SpamCallService extends InCallService {
 
                 showToast("📵 Modo 1: Colgando en " + delay + "s");
 
+                // Asegurar que la llamada esté contestada antes de colgar
+                if (call.getState() != Call.STATE_ACTIVE) {
+                    Log.d(TAG, "⏳ Esperando a que la llamada sea ACTIVA para colgar (Modo 1)");
+                    return; // El callback onStateChanged volverá a llamar aquí
+                }
+
                 mainHandler.postDelayed(() -> {
                     Log.d(TAG, "🎯 Ejecutando hangup (Modo 1)");
                     logsHelper.logInfo("🎯 Modo 1 - Hangup ejecutado");
@@ -330,7 +342,18 @@ public class SpamCallService extends InCallService {
                 showToast("🚀 Desviando a " + (mode == AnswerHangupHelper.Mode.BACKEND_AI ? "IA Víctor" : "Mensaje Fijo") + "...");
                 
                 // Rechazar con BUSY es lo que dispara el desvío condicional de la operadora
-                call.reject(android.telecom.Call.REJECT_REASON_BUSY);
+                if (android.os.Build.VERSION.SDK_INT >= 30) {
+                    // REJECT_REASON_BUSY = 7 (API 30+)
+                    try {
+                        call.reject(7); 
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error calling reject(7): " + e.getMessage());
+                        call.reject(false, null);
+                    }
+                } else {
+                    // Fallback para versiones antiguas
+                    call.reject(false, null);
+                }
                 answerHangupHelper.clearMarked();
                 break;
         }

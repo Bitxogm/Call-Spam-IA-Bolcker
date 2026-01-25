@@ -1,0 +1,17 @@
+[Unit]
+Description=Asterisk Control API (Flask)
+After=network.target asterisk.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/ai_bridge
+Environment="PATH=/root/ai_bridge/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/root/ai_bridge/venv/bin/python3 /root/ai_bridge/control_api.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

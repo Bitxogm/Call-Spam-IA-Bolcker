@@ -41,7 +41,9 @@ public class AnswerHangupHelper {
 
     public AnswerHangupHelper(Context context) {
         this.context = context;
-        this.prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        // Usamos MODE_MULTI_PROCESS para forzar la recarga desde disco entre procesos (UI vs Service)
+        // Aunque está deprecated, para SharedPreferences simples ayuda en la mayoría de dispositivos
+        this.prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE | 4); // 4 = MODE_MULTI_PROCESS
     }
 
     /**

@@ -87,25 +87,67 @@ public class CallScreeningServiceImpl extends CallScreeningService {
                 logsHelper.logDebug("Answer+Hangup: null=" + answerHangupHelperIsNull + ", enabled=" + answerHangupIsEnabled);
 
                 if (answerHangupHelper != null && answerHangupHelper.isEnabled()) {
-                    Log.d(TAG, "🔇 Answer+Hangup ACTIVO - Marcar para colgar");
-                    showToast("🔇 Spam: Contestar y colgar automáticamente");
-                    logsHelper.logInfo("Answer+Hangup activado para: " + callerNumber);
-                    callHistoryHelper.addSpamCall(callerNumber, "Spam", "Answer+Hangup");
+                    AnswerHangupHelper.Mode mode = answerHangupHelper.getMode();
+                    Log.d(TAG, "🔇 Answer+Hangup ACTIVO - Modo: " + mode.name());
+                    
+                    if (mode == AnswerHangupHelper.Mode.HANGUP_IMMEDIATELY) {
+                        // MODO 1: Permitir que suene para que AccessibilityService/Receiver lo conteste y cuelgue
+                        Log.d(TAG, "🔓 MODO 1: Permitir llamada para auto-contestación local");
+                        showToast("🔇 Escudo 1: Se contestará pronto...");
+                        
+                        // Marcar número para answer+hangup
+                        answerHangupHelper.markForAnswerHangup(callerNumber);
 
-                    // Marcar número para answer+hangup
-                    answerHangupHelper.markForAnswerHangup(callerNumber);
+                        CallResponse response = new CallResponse.Builder()
+                            .setDisallowCall(false)      // NO bloquear (permitir)
+                            .setRejectCall(false)        // NO rechazar (permitir que suene)
+                            .setSkipCallLog(false)
+                            .setSkipNotification(false)
+                            .build();
 
-                    // PERMITIR la llamada normalmente (CallStateReceiver la contestará y colgará)
-                    // NO intentar silenciar aquí - causa "Invalid response State"
-                    CallResponse response = new CallResponse.Builder()
-                        .setDisallowCall(false)      // NO bloquear (permitir)
-                        .setRejectCall(false)        // NO rechazar (permitir que suene)
-                        // .setSilenceCall(true)     // ❌ REMOVIDO - causa error
-                        .setSkipCallLog(false)       // SÍ registrar en log
-                        .setSkipNotification(false)  // SÍ mostrar notificación del sistema
-                        .build();
-
-                    respondToCall(callDetails, response);
+                        respondToCall(callDetails, response);
+                    } else {
+                        // MODO 2 y 3 (BACKEND): RECHAZAR con señal BUSY usando TelecomManager
+                        // Esto envía señal "Busy" real y activa el desvío condicional (*67*...)
+                        Log.d(TAG, "🔒 MODO BACKEND: Rechazando con TelecomManager.endCall()...");
+                        showToast("🛡️ Desviando a Víctor...");
+                        
+                        // Usar TelecomManager para enviar señal BUSY
+                        try {
+                            android.telecom.TelecomManager telecomManager = 
+                                (android.telecom.TelecomManager) getSystemService(TELECOM_SERVICE);
+                            
+                            if (telecomManager != null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                                boolean success = telecomManager.endCall();
+                                Log.d(TAG, "✅ TelecomManager.endCall() ejecutado: " + success);
+                            } else {
+                                Log.w(TAG, "⚠️ TelecomManager no disponible, usando fallback");
+                                // Fallback: usar CallResponse normal
+                                CallResponse response = new CallResponse.Builder()
+                                    .setDisallowCall(true)
+                                    .setRejectCall(true)
+                                    .setSilenceCall(true)
+                                    .setSkipCallLog(false)
+                                    .setSkipNotification(true)
+                                    .build();
+                                respondToCall(callDetails, response);
+                                return;
+                            }
+                        } catch (Exception e) {
+                            Log.e(TAG, "❌ Error usando TelecomManager.endCall(): " + e.getMessage());
+                        }
+                        
+                        // Después de endCall(), aún necesitamos responder al CallScreeningService
+                        CallResponse response = new CallResponse.Builder()
+                            .setDisallowCall(true)
+                            .setRejectCall(true)
+                            .setSilenceCall(true)
+                            .setSkipCallLog(false)
+                            .setSkipNotification(true)
+                            .build();
+                        
+                        respondToCall(callDetails, response);
+                    }
                 } else {
                 // Modo normal: Mostrar notificación
                 Log.d(TAG, "📲 Mostrando notificación de spam");
@@ -198,37 +240,14 @@ public class CallScreeningServiceImpl extends CallScreeningService {
      * 5. Números premium (900, 902, etc.)
      */
     private boolean shouldShowNotification(String number) {
-        // 🚫 PRIORIDAD 1: BLACKLIST (incluso si es contacto)
+        // 🚫 PRIORIDAD 1: BLACKLIST (incluso si es contacto) - TIEMPO: < 5ms
         if (prefsHelper != null && prefsHelper.isInBlacklist(number)) {
             Log.d(TAG, "🚫 Número en LISTA NEGRA - BLOQUEAR");
-            showToast("🚫 SPAM DETECTADO: " + number);
+            showToast("🚫 SPAM DETECTADO (Blacklist)");
             return true;
         }
 
-        // 👤 PRIORIDAD 2: Verificar si está en CONTACTOS (Whitelist automática)
-        boolean isContact = false;
-        ContactsHelper.ContactInfo contact = null;
-        try {
-            contact = contactsHelper.findContactByNumber(number);
-            if (contact != null) {
-                isContact = true;
-                Log.d(TAG, "👤 ES CONTACTO: " + contact.name + " - PERMITIR");
-                showToast("👤 Contacto: " + contact.name);
-                return false;  // NO mostrar notificación, es contacto conocido
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Error verificando contactos: " + e.getMessage());
-        }
-
-        // 📵 PRIORIDAD 3: MODO RADICAL (solo si NO es contacto)
-        boolean modoRadical = isModoRadicalEnabled();
-        if (modoRadical && !isContact) {
-            Log.d(TAG, "🚫 MODO RADICAL ACTIVO - NO es contacto → BLOQUEAR");
-            showToast("🚫 MODO RADICAL: No es contacto");
-            return true;  // Mostrar notificación de spam
-        }
-
-        // 📱 PRIORIDAD 4: Número desconocido/privado
+        // 📱 PRIORIDAD 2: Número desconocido/privado - TIEMPO: < 1ms
         if (number.equals("Desconocido") ||
             number.equals("Privado") ||
             number.equals("Número oculto")) {
@@ -236,7 +255,7 @@ public class CallScreeningServiceImpl extends CallScreeningService {
             return true;
         }
 
-        // 📞 PRIORIDAD 5: Números premium y comerciales (800, 900, 901, 902, etc.)
+        // 📞 PRIORIDAD 3: Números premium y comerciales - TIEMPO: < 1ms
         String cleaned = number.replaceAll("[^0-9]", "");
         if (cleaned.startsWith("800") ||  // Números gratuitos comerciales
             cleaned.startsWith("900") ||  // Tarificación especial
@@ -248,6 +267,32 @@ public class CallScreeningServiceImpl extends CallScreeningService {
             cleaned.startsWith("905")) {  // Servicios de valor añadido
             Log.d(TAG, "📞 Número de tarificación especial/comercial - BLOQUEAR: " + cleaned.substring(0, 3));
             return true;
+        }
+
+        // 👤 PRIORIDAD 4: Verificar si está en CONTACTOS (Whitelist automática) - TIEMPO: 100ms - 1000ms
+        // Solo llegamos aquí si NO es blacklist, NO es oculto y NO es premium.
+        long startTime = System.currentTimeMillis();
+        boolean isContact = false;
+        ContactsHelper.ContactInfo contact = null;
+        try {
+            contact = contactsHelper.findContactByNumber(number);
+            if (contact != null) {
+                isContact = true;
+                Log.d(TAG, "👤 ES CONTACTO: " + contact.name + " - PERMITIR (Búsqueda: " + (System.currentTimeMillis() - startTime) + "ms)");
+                // showToast("👤 Contacto: " + contact.name); // Quitamos toast para velocidad
+                return false;  // NO mostrar notificación, es contacto conocido
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error verificando contactos: " + e.getMessage());
+        }
+        Log.d(TAG, "🔍 Búsqueda contactos completada en " + (System.currentTimeMillis() - startTime) + "ms");
+
+        // 📵 PRIORIDAD 5: MODO RADICAL (solo si NO es contacto)
+        boolean modoRadical = isModoRadicalEnabled();
+        if (modoRadical && !isContact) {
+            Log.d(TAG, "🚫 MODO RADICAL ACTIVO - NO es contacto → BLOQUEAR");
+            showToast("🚫 MODO RADICAL");
+            return true;  // Mostrar notificación de spam
         }
 
         // ✅ Todo lo demás: Número normal
