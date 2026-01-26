@@ -26,7 +26,12 @@ public class CallForwardingManager {
     private static final String TAG = "CallForwardingManager";
 
     // Número Zadarma para desvío
-    private static final String ZADARMA_NUMBER = "+34919933065";
+    // IMPORTANTE: Algunos operadores NO aceptan "+" en códigos USSD
+    // Formatos alternativos probados:
+    // - "34919933065"   (sin prefijo +, RECOMENDADO para España)
+    // - "0034919933065" (con 00 en lugar de +)
+    // - "919933065"     (solo nacional si estás en España)
+    private static final String ZADARMA_NUMBER = "34919933065";  // SIN el símbolo +
 
     // Códigos USSD para desvíos
     private static final String USSD_ENABLE_UNCONDITIONAL = "*21*" + ZADARMA_NUMBER + Uri.encode("#");
@@ -150,9 +155,11 @@ public class CallForwardingManager {
 
         if (ussdCode.contains("*21*")) {
             message = "⚠️ No se pudo activar desvío automáticamente.\n\n" +
-                     "Por favor, marca manualmente:\n" +
-                     "*21*+34919933065#\n\n" +
-                     "en el teclado de tu teléfono";
+                     "Por favor, marca manualmente uno de estos formatos:\n" +
+                     "1) *21*34919933065#\n" +
+                     "2) *21*0034919933065#\n" +
+                     "3) *21*919933065# (solo en España)\n\n" +
+                     "Prueba cuál funciona con tu operador";
         } else if (ussdCode.contains("##21")) {
             message = "⚠️ No se pudo desactivar desvío automáticamente.\n\n" +
                      "Por favor, marca manualmente:\n" +
@@ -204,9 +211,9 @@ public class CallForwardingManager {
     }
 
     /**
-     * Obtiene el número Zadarma configurado
+     * Obtiene el número Zadarma configurado (formato internacional)
      */
     public static String getZadarmaNumber() {
-        return ZADARMA_NUMBER;
+        return "+" + ZADARMA_NUMBER;  // Retornar con + para mostrar al usuario
     }
 }
