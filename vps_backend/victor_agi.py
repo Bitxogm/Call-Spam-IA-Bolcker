@@ -16,14 +16,15 @@ sys.path.insert(0, '/root/ai_bridge')
 from dotenv import load_dotenv
 load_dotenv('/root/ai_bridge/.env')
 
-import google.generativeai as genai
+import google.genai as genai
+from google.genai import types
 from gtts import gTTS
 import speech_recognition as sr
 from pydub import AudioSegment
 
 # ── Configuración ──────────────────────────────────────────────
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
-genai.configure(api_key=GEMINI_KEY)
+client = genai.Client(api_key=GEMINI_KEY)
 
 PROMPT_MANOLO = """Eres Manolo, un anciano español de 78 años de un pueblo de Galicia.
 Eres muy educado y tradicional, pero hablas muchísimo y te vas por las ramas constantemente.
@@ -40,11 +41,6 @@ CARACTERÍSTICAS:
 
 OBJETIVO: Hacer perder el máximo tiempo posible al spammer siendo encantador pero imposible.
 IMPORTANTE: Responde SOLO como Manolo. Máximo 2-3 frases cortas y naturales. Nada de listas."""
-
-model = genai.GenerativeModel(
-    'gemini-1.5-flash',
-    system_instruction=PROMPT_MANOLO
-)
 
 # ── Helpers AGI ────────────────────────────────────────────────
 def agi_send(cmd):
@@ -119,11 +115,20 @@ def speech_to_text(wav_path):
         return ""
 
 # ── Gemini ─────────────────────────────────────────────────────
-def get_manolo_response(chat, text):
+def get_manolo_response(chat_history, text):
     try:
         if not text:
             text = "[Silencio]"
-        response = chat.send_message(text)
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=chat_history + [text],
+            config=types.GenerateContentConfig(
+                system_instruction=PROMPT_MANOLO,
+                max_output_tokens=150,
+            )
+        )
+        chat_history.append(text)
+        chat_history.append(response.text)
         agi_log(f"Manolo: {response.text}")
         return response.text
     except Exception as e:
@@ -134,7 +139,7 @@ def get_manolo_response(chat, text):
 def main():
     agi_log("=== Manolo AGI arrancado ===")
 
-    chat = model.start_chat()
+    chat_history = []
     turno = 0
     max_turnos = 8  # máximo 8 intercambios (~5 minutos)
     silencio_consecutivo = 0
@@ -172,7 +177,7 @@ def main():
             silencio_consecutivo = 0
 
         # Gemini → respuesta de Manolo
-        respuesta = get_manolo_response(chat, texto)
+        respuesta = get_manolo_response(chat_history, texto)
 
         # TTS y reproducir
         audio_resp = text_to_speech(respuesta, f"resp_{turno}")
