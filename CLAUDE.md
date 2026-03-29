@@ -1,0 +1,427 @@
+# CLAUDE.md — Call-Spam-IA-Blocker
+
+> Archivo de contexto para Claude Code. Léelo completo antes de tocar cualquier archivo.
+> Repositorio: https://github.com/Bitxogm/Call-Spam-IA-Bolcker (branch activo: `dev`)
+>
+> ⚠️ IGNORA toda la documentación en `/docs/`, `README_MODO1_OPTIMIZED.md` y
+> `README_MODO2_BRANCH.md` — están desactualizados y contradicen el código real.
+> La fuente de verdad es siempre el código fuente.
+
+---
+
+## 1. Contexto del desarrollador
+
+- **Nombre:** Víctor (GitHub: Bitxogm)
+- **Nivel:** Junior Full-Stack Developer — recién graduado KeepCoding bootcamp 2025-2026
+- **Stack principal:** Next.js, React, TypeScript, Node.js/Express, Python, PostgreSQL, MongoDB, Docker, Prisma, TailwindCSS
+- **Intereses paralelos:** ciberseguridad y ethical hacking
+- **Infraestructura:** VPS Hetzner Ubuntu 24.04 (IP `157.180.35.161`, SSH puerto 2222)
+- **Estilo de trabajo:** directo, una tarea concreta a la vez con resultado verificable
+
+---
+
+## 2. Descripción del proyecto
+
+Bloqueador de llamadas spam para Android con dos modos de operación:
+
+- **Modo 1 (Answer+Hangup):** la app contesta y cuelga localmente. El spammer no escucha nada.
+- **Modo 2 (Backend Fixed):** la llamada se desvía a nivel de red GSM (USSD) al número Zadarma, que la reenvía al VPS. El servidor reproduce un mensaje de voz al spammer usando TTS del Android nativo. El teléfono del usuario no llega a sonar.
+
+Llegar al Modo 2 funcional costó mucho trabajo. Este documento existe para que ese conocimiento no se pierda.
+
+---
+
+## 3. Sistemas de audio — hay tres, independientes entre sí
+
+Es crítico no confundirlos:
+
+| Sistema | Dónde vive | Tecnología | Para qué |
+|---------|-----------|------------|----------|
+| **IVR on-device** | `IVRGeneratorModule.java` + `IVRMessageHelper.java` | `android.speech.tts.TextToSpeech` (TTS nativo Android, motor Google) | Genera `ivr_corporate.mp3` en el dispositivo para reproducción local |
+| **Webhook TwiML** | `webhook-server.js` | Twilio TTS (voz `alice`, `es-MX`) | Lo que escucha el spammer cuando el VPS recibe la llamada — **Twilio no está activo actualmente** |
+| **AI Test Screen** | `src/services/ElevenLabsService.ts` + `AITestsScreen.tsx` | ElevenLabs primero, fallback a `expo-speech` | Solo para la pantalla de pruebas, no interviene en llamadas reales |
+
+**Estado actual:** Twilio no está activo. El webhook existe pero no recibe llamadas. La generación de audio funcional para el mensaje al spammer es el TTS nativo de Android (`IVRGeneratorModule.java`).
+
+---
+
+## 4. Arquitectura real (verificada en código)
+
+### Modo 1 — Answer+Hangup (on-device)
+
+```
+Llamada entra al teléfono
+  └── CallAccessibilityService detecta spam
+        ├── TelecomManager.acceptRingingCall()
+        ├── espera delay configurable (1-5s)
+        └── TelecomManager.endCall()
+```
+
+### Modo 2 — Backend Fixed (desvío GSM + TTS Android)
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  ACTIVACIÓN (una sola vez desde la UI)                       │
+│                                                              │
+│  Usuario activa Modo 2 en la app                             │
+│    └── RN → CallForwardingModule.configureForMode            │
+│              ("BACKEND_FIXED")                               │
+│          └── CallForwardingManager.enableForwarding()        │
+│              └── ejecuta USSD en el operador:                │
+│                  *21*34919933065#                            │
+│                  (desvío incondicional → Zadarma)            │
+└──────────────────────────────────────────────────────────────┘
+                           ↓
+                  (por cada llamada spam)
+                           ↓
+┌──────────────────────────────────────────────────────────────┐
+│  FLUJO POR LLAMADA                                           │
+│                                                              │
+│  1. Llega llamada spam al número del usuario                 │
+│     └── El operador GSM la redirige a +34919933065           │
+│         El teléfono del usuario NO suena                     │
+│                                                              │
+│  2. Zadarma recibe la llamada                                │
+│     └── Configurado en panel web Zadarma (fuera del repo)   │
+│         para reenviar al VPS                                 │
+│                                                              │
+│  3. VPS recibe la llamada / webhook                          │
+│     └── POST → http://157.180.35.161:3000/webhook/voice      │
+│         webhook-server.js responde con TwiML:                │
+│         "Hola, soy Roberto. ¿En qué puedo ayudarle?"         │
+│         [Twilio no activo actualmente]                       │
+│                                                              │
+│  4. En paralelo en el teléfono (⚠️ sin coordinación):        │
+│     └── CallAccessibilityService detecta OFFHOOK             │
+│         └── busca getFilesDir() + "/ivr_corporate.mp3"       │
+│             ├── si existe → IVRAudioPlayer.playIVR()         │
+│             │   hangupCall() a los 31 segundos               │
+│             └── si NO existe → hangupCall() directo          │
+│             (el MP3 lo genera IVRGeneratorModule con          │
+│              android.speech.tts.TextToSpeech)                │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│  DESACTIVAR Modo 2                                           │
+│                                                              │
+│  CallForwardingManager.disableForwarding()                   │
+│    └── USSD: ##21#  (cancela desvío en el operador)          │
+│  Consultar estado: *#21#                                     │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### ⚠️ Problema de coordinación conocido
+
+El webhook del VPS y la lógica on-device del teléfono actúan en paralelo sin ninguna comunicación entre ellos. El teléfono reacciona al estado OFFHOOK de forma independiente al servidor. Hay que decidir qué capa es la responsable del audio y eliminar o coordinar la otra.
+
+---
+
+## 5. Modos de operación
+
+| | Modo 1 (HANGUP_IMMEDIATELY) | Modo 2 (BACKEND_FIXED) | Modo 3 (BACKEND_AI) |
+|---|---|---|---|
+| USSD | desactiva (`##21#`) | activa (`*21*34919933065#`) | activa (`*21*34919933065#`) |
+| Teléfono suena | sí, app lo cuelga | no | no |
+| Spammer escucha | nada | mensaje "Roberto" | IA conversacional (roadmap) |
+| Requiere VPS | ❌ | ✅ | ✅ |
+| Requiere Zadarma config | ❌ | ✅ | ✅ |
+| Estado actual | ✅ funcional | ✅ implementado | 🗺️ planificado |
+
+---
+
+## 6. Infraestructura del servidor
+
+### webhook-server.js — contenido completo
+
+```javascript
+const express = require('express');
+const app = express();
+app.use(express.urlencoded({ extended: true }));
+
+app.post('/webhook/voice', (req, res) => {
+  console.log('📞 Llamada recibida de Twilio:', req.body);
+  const twiml = `
+    <Response>
+      <Say voice="alice" language="es-MX">
+        Hola, soy Roberto. ¿En qué puedo ayudarle?
+      </Say>
+      <Pause length="2"/>
+      <Say voice="alice" language="es-MX">
+        Me interesa mucho su oferta, pero necesito todos los detalles.
+      </Say>
+    </Response>
+  `;
+  res.type('text/xml');
+  res.send(twiml);
+});
+
+app.listen(3000, () => {
+  console.log('🎯 Servidor webhook corriendo en puerto 3000');
+});
+```
+
+**Estado actual:**
+- 29 líneas, un único endpoint `POST /webhook/voice`
+- Sin autenticación, sin rate limiting
+- Sin PM2 ni systemd — arranca con `node webhook-server.js`
+- Sin Dockerfile ni scripts de despliegue en el repo
+- Twilio no está activo en este momento
+- ⚠️ Puerto `3000` en el código vs `5000` en `.env` — inconsistencia sin resolver
+
+### Servicios auxiliares en src/services/
+
+- **`GeminiServices.ts`** — llama a `generativelanguage.googleapis.com` con `EXPO_PUBLIC_GEMINI_API_KEY`. Generación de texto, no TTS.
+- **`ElevenLabsService.ts`** — TTS premium. Intenta ElevenLabs, fallback a `expo-speech`. Solo usado en `AITestsScreen.tsx`, no en el flujo de llamadas reales.
+- **`TwilioService.ts`** — lee credenciales Twilio del `.env`, tiene `testConnection()` y código para llamadas salientes (parte comentada). Referenciado en `DashboardScreen.tsx` (botón "probar Twilio", L217). **No activo en producción.**
+
+### Configuración externa (fuera del repo — crítica para Modo 2)
+
+Esta configuración no vive en el código. Si se pierde, el Modo 2 deja de funcionar:
+
+| Servicio | Número/URL | Configuración |
+|----------|-----------|---------------|
+| **Zadarma** | `+34919933065` | Reenvío de entrantes → VPS (documentar URL exacta aquí cuando se confirme) |
+| **Twilio** | `+16186346366` | Webhook URL: `http://157.180.35.161:3000/webhook/voice` POST — **no activo actualmente** |
+| **VPS** | `157.180.35.161` | Puerto 3000. `node webhook-server.js` sin gestor de procesos |
+
+---
+
+## 7. Estructura de archivos
+
+```
+Call-Spam-IA-Blocker/
+├── android/app/src/main/
+│   ├── AndroidManifest.xml                 ← tiene residuos (ver sección 11)
+│   └── java/com/anonymous/SpamBlockerApp/
+│       │
+│       │── ACTIVOS
+│       ├── CallAccessibilityService.java   ← CORE: detección de spam
+│       ├── CallInterceptorService.java     ← foreground service
+│       ├── AnswerHangupHelper.java         ← lógica Answer+Hangup + normalización ES (L223)
+│       ├── AnswerHangupModule.java         ← bridge RN↔Java
+│       ├── CallForwardingManager.java      ← gestión USSD, Zadarma hardcodeado (L34)
+│       ├── CallForwardingModule.java       ← bridge RN↔Java para desvío
+│       ├── BlacklistModule.java
+│       ├── CallHistoryHelper.java
+│       ├── CallHistoryModule.java
+│       ├── CallInterceptorModule.java
+│       ├── CallInterceptorPackage.java
+│       ├── CallAnswerReceiver.java
+│       ├── CallStateReceiver.java
+│       ├── CallScreeningServiceImpl.java
+│       ├── ContactsModule.java
+│       ├── ContactsHelper.java
+│       ├── DatabaseHelper.java
+│       ├── SharedPreferencesHelper.java
+│       ├── LogsModule.java
+│       ├── LogsHelper.java
+│       └── SpamNotificationManager.java
+│       │
+│       │── RESIDUOS IVR ON-DEVICE — ⚠️ no borrar sin limpiar referencias
+│       ├── IVRAudioPlayer.java             ← ⚠️ referenciado en CallAccessibilityService L44-45, 513, 516
+│       ├── IVRAudioTrackPlayer.java
+│       ├── IVRGeneratorModule.java         ← genera ivr_corporate.mp3 con Android TTS
+│       ├── IVRMessageHelper.java           ← TTS nativo a STREAM_VOICE_CALL
+│       ├── AudioPlaybackHelper.java
+│       └── SpeechRecognitionModule.java
+│       │
+│       │── RESIDUOS DEFAULT DIALER
+│       ├── InCallActivity.java
+│       ├── DialerActivity.java             ← 4 intent-filters priority=1000
+│       ├── DefaultDialerModule.java
+│       └── SpamCallService.java            ← InCallService residuo
+│
+├── src/
+│   ├── screens/
+│   │   ├── DashboardScreen.tsx             ← botón "probar Twilio" (L217)
+│   │   ├── SpamNumbersScreen.tsx
+│   │   ├── AITestsScreen.tsx               ← usa ElevenLabsService
+│   │   ├── WhitelistScreen.tsx
+│   │   ├── LogsScreen.tsx
+│   │   ├── CallHistoryScreen.tsx
+│   │   └── AnswerHangupSettingsScreen.tsx
+│   └── services/
+│       ├── GeminiServices.ts               ← Gemini text generation
+│       ├── ElevenLabsService.ts            ← TTS ElevenLabs + fallback expo-speech
+│       ├── TwilioService.ts                ← Twilio API (no activo)
+│       ├── BlacklistService.ts
+│       ├── ContactsService.ts
+│       └── AnswerHangupService.ts
+│
+├── App.tsx
+├── index.ts
+├── webhook-server.js                       ← servidor TwiML (puerto 3000, Twilio no activo)
+├── package.json
+├── tsconfig.json
+├── app.json
+├── build-fresh.sh
+├── rebuild-clean.sh
+└── copy-apk.sh
+```
+
+---
+
+## 8. Variables de entorno
+
+```env
+# IA — activo
+EXPO_PUBLIC_GEMINI_API_KEY=...
+EXPO_PUBLIC_GEMINI_MODEL=gemini-1.5-flash
+
+# ElevenLabs — activo (con fallback a expo-speech)
+EXPO_PUBLIC_ELEVENLABS_API_KEY=...
+
+# Twilio — en .env pero no activo actualmente
+EXPO_PUBLIC_TWILIO_ACCOUNT_SID=...
+EXPO_PUBLIC_TWILIO_AUTH_TOKEN=...
+EXPO_PUBLIC_TWILIO_PHONE_NUMBER=+16186346366
+
+# VPS
+EXPO_PUBLIC_VPS_IP=157.180.35.161
+EXPO_PUBLIC_VPS_PORT=5000               # ⚠️ no coincide con puerto real del server (3000)
+```
+
+**Estado del `.env`:** verificado que no está commiteado (`git log --all` no lo muestra). Solo aparece `ios/.xcode.env` que es irrelevante.
+
+⚠️ El prefijo `EXPO_PUBLIC_*` embebe todos estos valores en el APK compilado. Especialmente crítico para Twilio SID/Token — moverlos al servidor en cuanto Twilio se reactive.
+
+---
+
+## 9. Comandos de desarrollo
+
+```bash
+# Instalar dependencias
+npm install
+
+# Build debug Android
+npm run android
+./build-fresh.sh          # alternativa
+./rebuild-clean.sh        # build limpio si hay problemas de caché
+
+# Instalar APK en dispositivo
+adb install android/app/build/outputs/apk/debug/app-debug.apk
+./copy-apk.sh
+
+# Verificar tipos TypeScript — ejecutar tras CADA cambio TS
+npx tsc --noEmit
+
+# Servidor webhook
+node webhook-server.js
+# pm2 start webhook-server.js --name spam-webhook   ← pendiente configurar
+
+# Logs del dispositivo en tiempo real
+adb logcat | grep -E "SpamBlocker|CallAccessibility|AnswerHangup|CallForwarding"
+adb logcat *:E
+
+# Verificar estado del desvío USSD en el operador
+# Marcar desde el teclado del teléfono: *#21#
+```
+
+---
+
+## 10. Forma de trabajar con Claude Code
+
+### Reglas (no negociables)
+
+1. **Una tarea a la vez.** No empezar la siguiente hasta que la anterior esté verificada en el dispositivo.
+
+2. **Leer antes de tocar.** Antes de modificar cualquier archivo, leerlo completo. Los `.java` especialmente — la lógica no es obvia por el nombre.
+
+3. **`npx tsc --noEmit` tras cada cambio TypeScript.** Error de tipo = parar y corregir antes de continuar.
+
+4. **No hacer commit sin instrucción explícita de Víctor.** Claude Code edita archivos. El `git add` + `git commit` + `git push` los ejecuta Víctor cuando él lo decide.
+
+5. **No tocar `/android/` sin avisar primero.** Cualquier cambio en Java requiere rebuild completo (~2-5 min). Confirmar antes de proceder.
+
+6. **Nunca borrar un `.java` sin verificar referencias en todo el proyecto.** Ejemplo crítico: `IVRAudioPlayer` está referenciado en `CallAccessibilityService.java` líneas 44-45, 513 y 516. Borrarlo sin limpiar esas referencias rompe el build.
+
+7. **No confundir los tres sistemas de audio.** Android TTS on-device, TwiML del webhook, y ElevenLabs/expo-speech de la pantalla de pruebas son independientes. Un cambio en uno no afecta a los otros.
+
+8. **Ignorar los READMEs de planificación.** El código manda.
+
+9. **Conventional Commits** cuando Víctor pida commitear:
+   `feat:` / `fix:` / `refactor:` / `docs:` / `chore:` / `test:`
+
+### Flujo de una tarea típica
+
+```
+1. Víctor describe la tarea
+2. Claude lee los archivos afectados sin asumir su contenido
+3. Claude propone: qué archivos toca, qué cambia, en qué orden
+4. Víctor aprueba o ajusta
+5. Claude implementa
+6. npx tsc --noEmit (si hay cambios TS)
+7. Víctor hace build y prueba en dispositivo
+8. Si OK → Víctor hace commit cuando quiera
+```
+
+---
+
+## 11. Valores hardcodeados — localizaciones exactas
+
+| Valor | Archivo | Línea | Notas |
+|-------|---------|-------|-------|
+| `"34919933065"` | CallForwardingManager.java | L34 | Número Zadarma |
+| `*21*34919933065#` | CallForwardingManager.java | L37 | USSD activar desvío |
+| `##21#` | CallForwardingManager.java | L38 | USSD desactivar |
+| `*#21#` | CallForwardingManager.java | L39 | USSD consultar estado |
+| `"/ivr_corporate.mp3"` | CallAccessibilityService.java | L501 | Ruta MP3 on-device |
+| `"es-MX"` / `"alice"` / `"Roberto"` | webhook-server.js | — | TwiML mensaje |
+| `3000` | webhook-server.js | L27 | Puerto servidor |
+| `5000` | .env | — | ⚠️ No coincide con puerto real |
+| últimos 9 dígitos | AnswerHangupHelper.java | L223 | Normalización España |
+
+---
+
+## 12. Deuda técnica real (verificada en código)
+
+### Crítica
+
+- [ ] **Lógica on-device y servidor sin coordinación en Modo 2.** Cuando el operador desvía la llamada, `CallAccessibilityService` también reacciona al estado OFFHOOK de forma independiente. El MP3 que busca (`ivr_corporate.mp3`) puede o no existir según si `IVRGeneratorModule` lo generó previamente. Hay que decidir qué capa gestiona el audio.
+
+- [ ] **Referencias a `IVRAudioPlayer` activas en `CallAccessibilityService`** (L44-45, 513, 516). Prerequisito para cualquier limpieza o refactor del servicio principal.
+
+- [ ] **Puerto inconsistente:** servidor en `3000`, `.env` dice `5000`.
+
+- [ ] **Credenciales Twilio en `.env` con prefijo `EXPO_PUBLIC_*`** → embebidas en el APK. Mover al servidor en cuanto Twilio se reactive.
+
+- [ ] **Permisos residuales en `AndroidManifest.xml`:** `BIND_INCALL_SERVICE`, `BIND_TELECOM_CONNECTION_SERVICE`, `CONTROL_INCALL_EXPERIENCE`, `MODIFY_AUDIO_SETTINGS`, `MODIFY_PHONE_STATE`, `MODIFY_AUDIO_ROUTING`. Services residuales: `SpamCallService`, `DialerActivity` (priority=1000), `InCallActivity`.
+
+### Importante
+
+- [ ] **12 archivos Java residuales** compilados y declarando permisos innecesarios al usuario.
+
+- [ ] **Configuración de Zadarma no documentada en el repo.** Si se pierde, Modo 2 deja de funcionar sin rastro de por qué. Completar la tabla de sección 6 con la URL exacta de reenvío.
+
+- [ ] **`webhook-server.js` sin hardening:** sin auth, sin rate limiting, sin PM2, sin HTTPS.
+
+- [ ] **`express` en `package.json` de la app móvil.** Debería estar en `/server/`.
+
+- [ ] **Sin tests** en ninguna capa.
+
+### Menor
+
+- [ ] Typo en nombre del repo: `Bolcker` → `Blocker`
+- [ ] `expo-sqlite` en `package.json` sin uso real
+- [ ] `test.mp3` en la raíz
+- [ ] READMEs de planificación obsoletos en raíz
+
+---
+
+## 13. Roadmap
+
+En orden de prioridad lógica:
+
+1. **Resolver coordinación Modo 2:** decidir si la lógica IVR on-device se elimina o coordina con el servidor. La opción limpia es que el servidor gestione el audio y el teléfono solo registre el evento.
+
+2. **Unificar puerto:** elegir 3000 o 5000, actualizar `.env` y el servidor.
+
+3. **Hardening del webhook:** token de autenticación compartido app↔servidor, rate limiting, PM2, HTTPS.
+
+4. **Mover credenciales Twilio al servidor** cuando Twilio se reactive.
+
+5. **Documentar configuración Zadarma** en sección 6 de este fichero.
+
+6. **Limpiar residuos:** empezar por las referencias a `IVRAudioPlayer` en `CallAccessibilityService`, luego los 12 archivos Java y el Manifest.
+
+7. **Modo 3 — Agente IA conversacional:** Gemini para respuestas dinámicas en lugar del mensaje hardcodeado. Los planes están en `/docs/PLAN_MODO_3_*.md` pero no hay código implementado.
