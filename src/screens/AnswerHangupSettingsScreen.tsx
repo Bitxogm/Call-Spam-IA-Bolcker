@@ -1,9 +1,11 @@
 // src/screens/AnswerHangupSettingsScreen.tsx
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, Switch, PermissionsAndroid, Platform, Linking, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, Switch, PermissionsAndroid, Platform, Linking, ActivityIndicator, TextInput, Permission } from 'react-native';
 import { answerHangupService } from '../services/AnswerHangupService';
 import ivrGeneratorService from '../services/IVRGeneratorService';
 import defaultDialerService from '../services/DefaultDialerService';
+import backendSyncService from '../services/BackendSyncService';
+import callForwardingService from '../services/CallForwardingService';
 
 type AnswerHangupSettingsScreenProps = {
   navigation: any;
@@ -11,7 +13,7 @@ type AnswerHangupSettingsScreenProps = {
 
 export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupSettingsScreenProps) {
   const [isEnabled, setIsEnabled] = useState(false);
-  const [mode, setMode] = useState<'HANGUP_IMMEDIATELY' | 'PLAY_MESSAGE' | 'AI_CONVERSATION'>('HANGUP_IMMEDIATELY');
+  const [mode, setMode] = useState<'HANGUP_IMMEDIATELY' | 'BACKEND_FIXED' | 'BACKEND_AI'>('HANGUP_IMMEDIATELY');
   const [delay, setDelay] = useState(2);
   const [loading, setLoading] = useState(true);
   const [isAccessibilityEnabled, setIsAccessibilityEnabled] = useState(false);
@@ -25,6 +27,16 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
   const [isDefaultDialer, setIsDefaultDialer] = useState(false);
   const [checkingDefaultDialer, setCheckingDefaultDialer] = useState(false);
 
+  // Estados para Mensajes TTS (Escudo 2)
+  const [customMessage, setCustomMessage] = useState('Identificado como spam, no vuelva a llamar.');
+  const [isSyncingMessage, setIsSyncingMessage] = useState(false);
+
+  const PRESET_MESSAGES = [
+    "Identificado como spam. Su llamada ha sido enviada al archivo de 'Cosas que no me importan'.",
+    "Hola, soy Víctor. Mi dueño está ocupado siendo feliz, inténtelo de nuevo en el próximo siglo.",
+    "Error 404: Paciencia no encontrada. Por favor, deje de llamar o enviaré a un terminador a su oficina."
+  ];
+
   // Cargar configuración al iniciar
   useEffect(() => {
     loadSettings();
@@ -36,14 +48,14 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
 
   // Verificar Accessibility Service cuando cambie el modo o se active
   useEffect(() => {
-    if (isEnabled && (mode === 'PLAY_MESSAGE' || mode === 'AI_CONVERSATION')) {
+    if (isEnabled && (mode === 'BACKEND_FIXED' || mode === 'BACKEND_AI')) {
       checkAccessibilityService();
     }
   }, [mode, isEnabled]);
 
   // Verificar Default Dialer cuando cambie el modo a PLAY_MESSAGE
   useEffect(() => {
-    if (isEnabled && mode === 'PLAY_MESSAGE') {
+    if (isEnabled && mode === 'BACKEND_FIXED') {
       checkDefaultDialerStatus();
     }
   }, [mode, isEnabled]);
@@ -150,12 +162,12 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
         permissions.allGranted
           ? [{ text: 'OK' }]
           : [
-              { text: 'Cancelar', style: 'cancel' },
-              {
-                text: 'Ir a Configuración',
-                onPress: () => Linking.openSettings()
-              }
-            ]
+            { text: 'Cancelar', style: 'cancel' },
+            {
+              text: 'Ir a Configuración',
+              onPress: () => Linking.openSettings()
+            }
+          ]
       );
     } catch (error) {
       Alert.alert('Error', 'No se pudo verificar permisos');
@@ -178,7 +190,7 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
       }
 
       // Solicitar permisos faltantes
-      const permissionsToRequest = [];
+      const permissionsToRequest: Permission[] = [];
 
       if (!permissions.hasPhoneState) {
         permissionsToRequest.push(PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE);
@@ -400,22 +412,39 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
     }
   };
 
-  const handleModeChange = async (newMode: 'HANGUP_IMMEDIATELY' | 'PLAY_MESSAGE' | 'AI_CONVERSATION') => {
+  const handleModeChange = async (newMode: 'HANGUP_IMMEDIATELY' | 'BACKEND_FIXED' | 'BACKEND_AI') => {
     try {
-      await answerHangupService.setMode(newMode);
+      // Mapear nuevos modos a los estados internos del servicio si es necesario
+      // O simplemente actualizar el servicio para soportar estos nuevos strings
+      await answerHangupService.setMode(newMode as any);
       setMode(newMode);
 
+      // 🔑 CONFIGURAR DESVÍO AUTOMÁTICO SEGÚN MODO
+      console.log('⚙️ Configurando desvío de llamadas para modo:', newMode);
+      const forwardingSuccess = await callForwardingService.configureForMode(newMode);
+
+      if (!forwardingSuccess) {
+        console.warn('⚠️ Desvío automático falló - usuario debe configurar manualmente');
+      }
+
+      // Sincronizar con el backend si es uno de los modos de Zadarma
+      if (newMode === 'BACKEND_FIXED' || newMode === 'BACKEND_AI') {
+        backendSyncService.syncMode(newMode === 'BACKEND_AI' ? 'AI' : 'FIXED');
+      }
+
       const modeDescriptions = {
-        HANGUP_IMMEDIATELY: 'Las llamadas spam se colgarán automáticamente después del delay configurado.',
-        PLAY_MESSAGE: 'Se reproducirá un mensaje IVR corporativo para molestar al spammer antes de colgar.',
-        AI_CONVERSATION: 'La IA mantendrá una conversación con el spammer (próximamente).'
+        HANGUP_IMMEDIATELY: '🛡️ Escudo 1: Se colgará la llamada inmediatamente.\n\n📞 Desvío desactivado (##21#).',
+        BACKEND_FIXED: '🔊 Escudo 2: Llamadas spam se desviarán a Zadarma.\n\n📞 Desvío activado (*21*+34919933065#).\n\nZadarma reproducirá mensaje corporativo fijo.',
+        BACKEND_AI: '🤖 Escudo 3: Llamadas spam se desviarán a Zadarma.\n\n📞 Desvío activado (*21*+34919933065#).\n\nVíctor (IA) conversará con el spammer.'
       };
 
       Alert.alert(
         '✅ Modo Cambiado',
-        modeDescriptions[newMode]
+        modeDescriptions[newMode] +
+        (forwardingSuccess ? '' : '\n\n⚠️ Si el desvío no se activó automáticamente, configúralo manualmente en el teclado.')
       );
     } catch (error) {
+      console.error('Error cambiando modo:', error);
       Alert.alert('Error', 'No se pudo cambiar el modo');
     }
   };
@@ -455,7 +484,7 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
       </TouchableOpacity>
 
       {/* ADVERTENCIA DE ACCESSIBILITY SERVICE */}
-      {isEnabled && (mode === 'PLAY_MESSAGE' || mode === 'AI_CONVERSATION') && !isAccessibilityEnabled && (
+      {isEnabled && (mode === 'BACKEND_FIXED' || mode === 'BACKEND_AI') && !isAccessibilityEnabled && (
         <View style={styles.accessibilityWarning}>
           <View style={styles.warningHeader}>
             <Text style={styles.warningIcon}>⚠️</Text>
@@ -491,15 +520,15 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
       )}
 
       {/* CONFIRMACIÓN DE ACCESSIBILITY SERVICE */}
-      {isEnabled && (mode === 'PLAY_MESSAGE' || mode === 'AI_CONVERSATION') && isAccessibilityEnabled && (
+      {isEnabled && (mode === 'BACKEND_FIXED' || mode === 'BACKEND_AI') && isAccessibilityEnabled && (
         <View style={styles.accessibilitySuccess}>
           <Text style={styles.successIcon}>✅</Text>
           <Text style={styles.successText}>Servicio de Accesibilidad activado correctamente</Text>
         </View>
       )}
 
-      {/* ADVERTENCIA DE MARCADOR PREDETERMINADO (Solo para Modo 2) */}
-      {isEnabled && mode === 'PLAY_MESSAGE' && !isDefaultDialer && (
+      {/* ADVERTENCIA DE MARCADOR PREDETERMINADO (Solo para Modo Local - Desactivado por ahora) */}
+      {isEnabled && (mode as any) === 'PLAY_LOCAL_MESSAGE' && !isDefaultDialer && (
         <View style={styles.defaultDialerWarning}>
           <View style={styles.warningHeader}>
             <Text style={styles.warningIcon}>📱</Text>
@@ -536,8 +565,8 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
         </View>
       )}
 
-      {/* CONFIRMACIÓN DE MARCADOR PREDETERMINADO (Solo para Modo 2) */}
-      {isEnabled && mode === 'PLAY_MESSAGE' && isDefaultDialer && (
+      {/* CONFIRMACIÓN DE MARCADOR PREDETERMINADO */}
+      {isEnabled && (mode as any) === 'PLAY_LOCAL_MESSAGE' && isDefaultDialer && (
         <View style={styles.defaultDialerSuccess}>
           <Text style={styles.successIcon}>✅</Text>
           <Text style={styles.successText}>App establecida como marcador predeterminado - El IVR se enrutará correctamente al spammer</Text>
@@ -592,44 +621,105 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
               )}
             </TouchableOpacity>
 
-            {/* MODO 2: Reproducir mensaje IVR */}
+            {/* MODO 2: Mensaje Fijo (Backend) */}
             <TouchableOpacity
               style={[
                 styles.modeOption,
-                mode === 'PLAY_MESSAGE' && styles.modeOptionSelected
+                mode === 'BACKEND_FIXED' && styles.modeOptionSelected
               ]}
-              onPress={() => handleModeChange('PLAY_MESSAGE')}
+              onPress={() => handleModeChange('BACKEND_FIXED')}
             >
               <View style={styles.modeHeader}>
                 <Text style={styles.modeIcon}>🔊</Text>
-                <Text style={styles.modeTitle}>Modo 2: IVR Corporativo</Text>
+                <Text style={styles.modeTitle}>Escudo 2: Mensaje Fijo (Backend)</Text>
               </View>
               <Text style={styles.modeDescription}>
-                "Bienvenido... pulse 1 para ventas, pulse 2 para soporte..."
-                Mantiene al spammer ocupado 30 segundos.
+                El móvil rechaza y Zadarma contesta con un mensaje profesional fijo.
+                Ideal para discreción total.
               </Text>
-              {mode === 'PLAY_MESSAGE' && (
-                <Text style={styles.modeStatus}>✅ Activo</Text>
+              {mode === 'BACKEND_FIXED' && (
+                <View style={styles.fixedMessageEditor}>
+                  <Text style={styles.editorLabel}>Selecciona o escribe el mensaje:</Text>
+
+                  {/* Presets */}
+                  <View style={styles.presetsContainer}>
+                    {PRESET_MESSAGES.map((msg, index) => (
+                      <TouchableOpacity
+                        key={index}
+                        style={[
+                          styles.presetItem,
+                          customMessage === msg && styles.presetItemSelected
+                        ]}
+                        onPress={() => setCustomMessage(msg)}
+                      >
+                        <Text style={[
+                          styles.presetText,
+                          customMessage === msg && styles.presetTextSelected
+                        ]}>
+                          {index + 1}. {msg}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  {/* Input Manual */}
+                  <TextInput
+                    style={styles.customTextInput}
+                    value={customMessage}
+                    onChangeText={setCustomMessage}
+                    placeholder="Escribe tu mensaje aquí..."
+                    placeholderTextColor="#666"
+                    multiline
+                  />
+
+                  {/* Botón Sincronizar */}
+                  <TouchableOpacity
+                    style={[
+                      styles.syncMessageButton,
+                      isSyncingMessage && styles.syncMessageButtonDisabled
+                    ]}
+                    onPress={async () => {
+                      setIsSyncingMessage(true);
+                      try {
+                        await backendSyncService.syncMessage(customMessage);
+                        Alert.alert('✅ Sincronizado', 'El servidor ya tiene tu nuevo audio corporativo.');
+                      } catch (err) {
+                        Alert.alert('❌ Error', 'No se pudo enviar el mensaje al servidor.');
+                      } finally {
+                        setIsSyncingMessage(false);
+                      }
+                    }}
+                    disabled={isSyncingMessage}
+                  >
+                    {isSyncingMessage ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.syncMessageButtonText}>🔄 Sincronizar con Víctor</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
               )}
             </TouchableOpacity>
 
-            {/* MODO 3: IA Conversacional (próximamente) */}
+            {/* MODO 3: IA Víctor (Backend) */}
             <TouchableOpacity
               style={[
                 styles.modeOption,
-                styles.modeOptionDisabled,
-                mode === 'AI_CONVERSATION' && styles.modeOptionSelected
+                mode === 'BACKEND_AI' && styles.modeOptionSelected
               ]}
-              onPress={() => Alert.alert('🤖 Próximamente', 'La IA conversacional estará disponible en una futura actualización')}
+              onPress={() => handleModeChange('BACKEND_AI')}
             >
               <View style={styles.modeHeader}>
                 <Text style={styles.modeIcon}>🤖</Text>
-                <Text style={styles.modeTitle}>Modo 3: IA Conversacional</Text>
-                <Text style={styles.comingSoonBadge}>Próximamente</Text>
+                <Text style={styles.modeTitle}>Escudo 3: IA Víctor (Backend)</Text>
               </View>
               <Text style={styles.modeDescription}>
-                La IA mantendrá una conversación con el spammer usando GPT/Claude.
+                El móvil rechaza y Víctor inicia una conversación infinita con el spammer.
+                Puro arte en la nube.
               </Text>
+              {mode === 'BACKEND_AI' && (
+                <Text style={styles.modeStatus}>✅ Activo</Text>
+              )}
             </TouchableOpacity>
           </View>
 
@@ -663,46 +753,6 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
             </View>
           )}
 
-          {/* GENERAR AUDIO IVR (solo para Modo 2) */}
-          {mode === 'PLAY_MESSAGE' && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>🔊 Audio IVR Corporativo</Text>
-              <Text style={styles.sectionDescription}>
-                {ivrAudioExists
-                  ? '✅ Audio generado y listo para usar. El spammer escuchará este mensaje.'
-                  : '⚠️ Debes generar el audio IVR antes de usar Modo 2.\n\nSe genera UNA vez con TTS nativo (voz robótica) y se guarda localmente.'}
-              </Text>
-
-              <TouchableOpacity
-                style={[
-                  styles.generateIVRButton,
-                  ivrAudioExists && styles.generateIVRButtonSuccess,
-                  generatingIVR && styles.generateIVRButtonDisabled
-                ]}
-                onPress={handleGenerateIVRAudio}
-                disabled={generatingIVR}
-              >
-                {generatingIVR ? (
-                  <ActivityIndicator color="#ffffff" size="small" />
-                ) : (
-                  <>
-                    <Text style={styles.generateIVRButtonIcon}>
-                      {ivrAudioExists ? '✅' : '🔊'}
-                    </Text>
-                    <Text style={styles.generateIVRButtonText}>
-                      {ivrAudioExists ? 'Re-generar Audio IVR' : 'Generar Audio IVR'}
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-
-              {ivrAudioExists && (
-                <Text style={styles.ivrSuccessNote}>
-                  💡 El audio ya está generado. Puedes probarlo activando Modo 2 y recibiendo una llamada.
-                </Text>
-              )}
-            </View>
-          )}
 
           {/* INFO ADICIONAL */}
           <View style={styles.infoBox}>
@@ -710,10 +760,9 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
             <Text style={styles.infoText}>
               • Answer+Hangup solo procesa llamadas detectadas como spam{'\n'}
               • Requiere permiso "Registro de llamadas" (READ_CALL_LOG){'\n'}
-              • Modo 2 requiere: Servicio de Accesibilidad + Marcador Predeterminado{'\n'}
-              • Modo 3 requiere: Servicio de Accesibilidad activado{'\n'}
-              • Los logs se guardan en "Logs de Debug"{'\n'}
-              • El historial se guarda en "Historial de Spam"
+              • Modos 2 y 3 requieren configurar el desvío condicional (`*67*919933065#`){'\n'}
+              • El móvil rechazará la llamada y el servidor Zadarma se encargará del resto.{'\n'}
+              • Tu Samsung permanecerá en silencio y discreto.
             </Text>
           </View>
         </>
@@ -1036,5 +1085,70 @@ const styles = StyleSheet.create({
     borderColor: '#00ff88',
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  // Estilos para Editor de Mensaje Fijo
+  fixedMessageEditor: {
+    marginTop: 15,
+    padding: 15,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#444',
+  },
+  editorLabel: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  presetsContainer: {
+    marginBottom: 15,
+  },
+  presetItem: {
+    padding: 10,
+    backgroundColor: '#333',
+    borderRadius: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  presetItemSelected: {
+    backgroundColor: '#004488',
+    borderColor: '#007bff',
+  },
+  presetText: {
+    color: '#bbb',
+    fontSize: 13,
+  },
+  presetTextSelected: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  customTextInput: {
+    backgroundColor: '#222',
+    color: '#fff',
+    padding: 12,
+    borderRadius: 8,
+    fontSize: 14,
+    minHeight: 60,
+    textAlignVertical: 'top',
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#444',
+  },
+  syncMessageButton: {
+    backgroundColor: '#007bff',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  syncMessageButtonDisabled: {
+    backgroundColor: '#333',
+    opacity: 0.7,
+  },
+  syncMessageButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
   },
 });

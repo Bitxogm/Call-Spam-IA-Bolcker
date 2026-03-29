@@ -57,10 +57,10 @@ public class AudioPlaybackHelper {
             // MODE_IN_COMMUNICATION: Usado para VoIP, permite reproducir audio durante llamada
             audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
 
-            // Activar altavoz para que el spam caller escuche mejor
-            audioManager.setSpeakerphoneOn(true);
+            // Usar auricular para que el usuario no oiga el ruido y sea más discreto
+            audioManager.setSpeakerphoneOn(false);
 
-            Log.d(TAG, "🔊 Audio configurado - Mode: IN_COMMUNICATION, Speaker: ON");
+            Log.d(TAG, "🔊 Audio configurado - Mode: IN_COMMUNICATION, Speaker: OFF (Discreto)");
 
             // Crear MediaPlayer
             mediaPlayer = MediaPlayer.create(context, resourceId);

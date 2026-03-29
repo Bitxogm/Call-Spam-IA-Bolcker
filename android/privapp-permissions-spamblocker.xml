@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Configuración de permisos privilegiados para SpamBlocker
+
+  Este archivo debe copiarse a:
+  /system/etc/permissions/privapp-permissions-spamblocker.xml
+
+  Permite que SpamBlocker acceda a permisos privilegiados necesarios
+  para el método BCP (inyección de audio en uplink telefónico)
+
+  Instalación:
+  1. Montar /system como lectura-escritura
+  2. Copiar este archivo a /system/etc/permissions/
+  3. Establecer permisos: chmod 644 privapp-permissions-spamblocker.xml
+  4. Reboot
+-->
+
+<permissions>
+    <privapp-permissions package="com.anonymous.SpamBlockerApp">
+        <!-- Permiso para modificar estado del teléfono (requerido para BCP) -->
+        <permission name="android.permission.MODIFY_PHONE_STATE"/>
+
+        <!-- Permiso para modificar routing de audio (requerido para setPreferredDevice) -->
+        <permission name="android.permission.MODIFY_AUDIO_ROUTING"/>
+
+        <!-- Permisos adicionales que ya usa la app -->
+        <permission name="android.permission.CONTROL_INCALL_EXPERIENCE"/>
+        <permission name="android.permission.READ_CALL_LOG"/>
+        <permission name="android.permission.WRITE_CALL_LOG"/>
+    </privapp-permissions>
+</permissions>

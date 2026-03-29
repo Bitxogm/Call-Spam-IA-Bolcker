@@ -19,9 +19,9 @@ public class AnswerHangupHelper {
 
     // Modos de Answer+Hangup
     public enum Mode {
-        HANGUP_IMMEDIATELY,    // Modo 1: Colgar inmediatamente
-        PLAY_MESSAGE,          // Modo 2: Reproducir mensaje IVR
-        AI_CONVERSATION        // Modo 3: IA conversacional (futuro)
+        HANGUP_IMMEDIATELY,    // Escudo 1: Rechazo local (Hangup)
+        BACKEND_FIXED,         // Escudo 2: Rechazo con desvío a Mensaje Fijo
+        BACKEND_AI             // Escudo 3: Rechazo con desvío a IA Víctor
     }
 
     // Keys para SharedPreferences
@@ -41,7 +41,9 @@ public class AnswerHangupHelper {
 
     public AnswerHangupHelper(Context context) {
         this.context = context;
-        this.prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        // Usamos MODE_MULTI_PROCESS para forzar la recarga desde disco entre procesos (UI vs Service)
+        // Aunque está deprecated, para SharedPreferences simples ayuda en la mayoría de dispositivos
+        this.prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE | 4); // 4 = MODE_MULTI_PROCESS
     }
 
     /**

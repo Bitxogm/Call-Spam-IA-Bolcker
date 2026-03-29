@@ -77,7 +77,7 @@ class AnswerHangupService {
   /**
    * Obtiene el modo actual
    */
-  getMode = async (): Promise<'HANGUP_IMMEDIATELY' | 'PLAY_MESSAGE' | 'AI_CONVERSATION'> => {
+  getMode = async (): Promise<'HANGUP_IMMEDIATELY' | 'BACKEND_FIXED' | 'BACKEND_AI'> => {
     try {
       const mode = await AnswerHangupModule.getMode();
       return mode;
@@ -90,7 +90,7 @@ class AnswerHangupService {
   /**
    * Configura el modo de Answer+Hangup
    */
-  setMode = async (mode: 'HANGUP_IMMEDIATELY' | 'PLAY_MESSAGE' | 'AI_CONVERSATION'): Promise<boolean> => {
+  setMode = async (mode: 'HANGUP_IMMEDIATELY' | 'BACKEND_FIXED' | 'BACKEND_AI'): Promise<boolean> => {
     try {
       await AnswerHangupModule.setMode(mode);
       console.log(`🎯 Modo configurado: ${mode}`);
@@ -106,7 +106,7 @@ class AnswerHangupService {
    */
   getConfiguration = async (): Promise<{
     enabled: boolean;
-    mode: 'HANGUP_IMMEDIATELY' | 'PLAY_MESSAGE' | 'AI_CONVERSATION';
+    mode: 'HANGUP_IMMEDIATELY' | 'BACKEND_FIXED' | 'BACKEND_AI';
     hangupDelay: number;
   }> => {
     try {

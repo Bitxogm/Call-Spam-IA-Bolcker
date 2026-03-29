@@ -94,9 +94,14 @@ public class CallStateReceiver extends BroadcastReceiver {
 
             // Si este número está marcado para Answer+Hangup, contestar automáticamente
             if (answerHangupHelper.shouldHangup(lastIncomingNumber)) {
-                Log.d(TAG, "🔇 Spam detectado - Contestando automáticamente...");
-                logsHelper.logInfo("Contestando automáticamente spam: " + lastIncomingNumber);
-                answerCall(context, lastIncomingNumber);
+                AnswerHangupHelper.Mode mode = answerHangupHelper.getMode();
+                if (mode == AnswerHangupHelper.Mode.HANGUP_IMMEDIATELY) {
+                    Log.d(TAG, "🔇 Spam detectado MODO 1 - Contestando automáticamente...");
+                    logsHelper.logInfo("Contestando automáticamente spam: " + lastIncomingNumber);
+                    answerCall(context, lastIncomingNumber);
+                } else {
+                    Log.d(TAG, "⏭️ Spam detectado MODO BACKEND - NO contestar vía Receiver (dejando desvío)");
+                }
             }
         }
     }
@@ -174,70 +179,34 @@ public class CallStateReceiver extends BroadcastReceiver {
             // Crear variable final para lambdas
             final String number = incomingNumber;
 
-            switch (mode) {
-                case HANGUP_IMMEDIATELY:
-                    // Modo 1: Colgar después de delay
-                    int delay = answerHangupHelper.getHangupDelay();
-                    Log.d(TAG, "⏱️ MODO 1: Esperando " + delay + " segundos antes de colgar...");
-                    logsHelper.logInfo("⏱️ Modo 1 - Programando hangup en " + delay + "s");
-
-                    showToast(context, "🔇 Modo 1: Colgando automáticamente");
-
-                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                        Log.d(TAG, "🎯 Ejecutando hangup (Modo 1)");
-                        logsHelper.logInfo("🎯 Modo 1 - Hangup ejecutado");
-                        hangupCall(context, number);
-                    }, delay * 1000L);
-                    break;
-
-                case PLAY_MESSAGE:
-                    // Modo 2: Reproducir IVR corporativo
-                    Log.d(TAG, "🔊 MODO 2: Iniciando IVR corporativo...");
-                    logsHelper.logInfo("🔊 Modo 2 - Iniciando IVR");
-
-                    showToast(context, "🔊 Modo 2: Reproduciendo IVR");
-
-                    // Obtener instancia única de IVRMessageHelper
-                    IVRMessageHelper ivrHelper = IVRMessageHelper.getInstance(context);
-
-                    // Iniciar IVR (30 segundos máximo)
-                    boolean ivrStarted = ivrHelper.startIVR(
-                        IVRMessageHelper.IVRType.CORPORATE_INFINITE,
-                        30  // 30 segundos máximo
-                    );
-
-                    if (ivrStarted) {
-                        Log.d(TAG, "✅ IVR iniciado correctamente");
-                        logsHelper.logInfo("✅ Modo 2 - IVR iniciado (30s max)");
-
-                        // Colgar después de 30 segundos
-                        new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                            Log.d(TAG, "🎯 IVR terminado, colgando (Modo 2)");
-                            logsHelper.logInfo("🎯 Modo 2 - IVR finalizado, ejecutando hangup");
-                            IVRMessageHelper.getInstance(context).stopIVR();
-                            hangupCall(context, number);
-                        }, 31000L);  // 31s para asegurar que el IVR termine
-                    } else {
-                        Log.e(TAG, "❌ Error iniciando IVR, colgando directamente");
-                        logsHelper.logError("❌ Modo 2 - Error IVR, fallback a hangup");
-                        hangupCall(context, number);
-                    }
-                    break;
-
-                case AI_CONVERSATION:
-                    // Modo 3: IA conversacional (futuro)
-                    Log.d(TAG, "🤖 MODO 3: IA Conversacional (no implementado aún)");
-                    logsHelper.logWarning("🤖 Modo 3 - No implementado, fallback a hangup");
-
-                    showToast(context, "🤖 Modo 3: No disponible (colgando)");
-
-                    // Fallback: colgar después de 2 segundos
-                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                        hangupCall(context, number);
-                    }, 2000L);
-                    break;
+            // ✅ NUEVA LÓGICA: Si somos Default Dialer, SpamCallService se encarga.
+            if (DefaultDialerModule.isDefaultDialerHelper(context)) {
+                Log.d(TAG, "⏭️ App es Default Dialer. Delegando a SpamCallService.");
+                if (mode == AnswerHangupHelper.Mode.HANGUP_IMMEDIATELY) {
+                    scheduleSafetyHangup(context, number);
+                }
+                return;
             }
-        } else {
+
+            if (mode == AnswerHangupHelper.Mode.HANGUP_IMMEDIATELY) {
+                // Modo 1: Colgar después de delay
+                int delay = answerHangupHelper.getHangupDelay();
+                Log.d(TAG, "⏱️ MODO 1: Esperando " + delay + " segundos antes de colgar...");
+                logsHelper.logInfo("⏱️ Modo 1 - Programando hangup en " + delay + "s");
+
+                showToast(context, "🔇 Modo 1: Colgando automáticamente");
+
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    Log.d(TAG, "🎯 Ejecutando hangup (Modo 1)");
+                    logsHelper.logInfo("🎯 Modo 1 - Hangup ejecutado");
+                    hangupCall(context, number);
+                }, delay * 1000L);
+            } else {
+                Log.d(TAG, "⏭️ Modo Backend activo - El rechazo lo gestiona SpamCallService (InCallService)");
+                logsHelper.logInfo("⏭️ Modo Backend - Sin acción en OFFHOOK local");
+            }
+        }
+ else {
             Log.d(TAG, "⚠️ shouldProcess = false, NO se procesará");
             logsHelper.logWarning("shouldProcess = false - número NO marcado: " + incomingNumber);
         }
@@ -257,6 +226,17 @@ public class CallStateReceiver extends BroadcastReceiver {
         }
 
         lastIncomingNumber = null;
+    }
+
+    /**
+     * Programa un cuelgue de seguridad
+     */
+    private void scheduleSafetyHangup(Context context, String number) {
+        int delay = answerHangupHelper.getHangupDelay();
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            Log.d(TAG, "🎯 Ejecutando hangup de seguridad (Receiver)");
+            hangupCall(context, number);
+        }, (delay + 1) * 1000L);
     }
 
     /**

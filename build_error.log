@@ -1,0 +1,104 @@
+🧹 LIMPIEZA TOTAL Y RECOMPILACIÓN DESDE CERO
+==============================================
+
+1️⃣ Matando procesos existentes...
+✅ Procesos terminados
+
+2️⃣ Limpiando cachés de Metro bundler y node...
+✅ Cachés de Metro limpios
+
+3️⃣ Limpiando builds y cachés de Android...
+✅ Builds de Android limpios
+
+4️⃣ Generando bundle JavaScript FRESCO...
+env: load .env
+env: export EXPO_PUBLIC_GEMINI_API_KEY EXPO_PUBLIC_GEMINI_MODEL EXPO_PUBLIC_ELEVENLABS_API_KEY EXPO_PUBLIC_TWILIO_ACCOUNT_SID EXPO_PUBLIC_TWILIO_AUTH_TOKEN EXPO_PUBLIC_TWILIO_PHONE_NUMBER EXPO_PUBLIC_VPS_IP EXPO_PUBLIC_VPS_PORT
+Starting Metro Bundler
+warning: Bundler cache is empty, rebuilding (this may take a minute)
+Android ./index.ts ▓░░░░░░░░░░░░░░░ 12.3% ( 62/217)
+Android ./index.ts ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.3% (931/947)
+Android Bundled 7612ms index.ts (952 modules)
+
+› Assets (17):
+node_modules/@react-navigation/elements/lib/module/assets/back-icon-mask.png (653 B)
+node_modules/@react-navigation/elements/lib/module/assets/back-icon.png (4 variations | 152 B)
+node_modules/@react-navigation/elements/lib/module/assets/clear-icon.png (4 variations | 425 B)
+node_modules/@react-navigation/elements/lib/module/assets/close-icon.png (4 variations | 235 B)
+node_modules/@react-navigation/elements/lib/module/assets/search-icon.png (4 variations | 599 B)
+
+› android bundles (1):
+_expo/static/js/android/index-4a57253cf28ccf5fdf82ab9fac6a6806.hbc (2.86 MB)
+
+› Files (1):
+metadata.json (1.35 kB)
+
+Exported: dist
+✅ Bundle JavaScript generado
+
+5️⃣ Copiando bundle a assets de Android...
+✅ Bundle copiado (2.8M)
+
+6️⃣ Compilando Android desde cero (sin cachés)...
+Starting a Gradle Daemon (subsequent builds will be faster)
+> Task :gradle-plugin:settings-plugin:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :gradle-plugin:shared:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :expo-gradle-plugin:expo-autolinking-plugin-shared:checkKotlinGradlePluginConfigurationErrors
+> Task :expo-gradle-plugin:expo-autolinking-plugin-shared:compileKotlin UP-TO-DATE
+> Task :gradle-plugin:shared:compileKotlin UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-plugin-shared:compileJava NO-SOURCE
+> Task :gradle-plugin:shared:compileJava NO-SOURCE
+> Task :gradle-plugin:shared:processResources NO-SOURCE
+> Task :expo-gradle-plugin:expo-autolinking-plugin-shared:processResources NO-SOURCE
+> Task :gradle-plugin:shared:classes UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-plugin-shared:classes UP-TO-DATE
+> Task :gradle-plugin:shared:jar UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-plugin-shared:jar UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-settings-plugin:checkKotlinGradlePluginConfigurationErrors
+> Task :gradle-plugin:settings-plugin:compileKotlin UP-TO-DATE
+> Task :gradle-plugin:settings-plugin:compileJava NO-SOURCE
+> Task :gradle-plugin:settings-plugin:pluginDescriptors UP-TO-DATE
+> Task :gradle-plugin:settings-plugin:processResources UP-TO-DATE
+> Task :gradle-plugin:settings-plugin:classes UP-TO-DATE
+> Task :gradle-plugin:settings-plugin:jar UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-settings-plugin:compileKotlin UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-settings-plugin:compileJava NO-SOURCE
+> Task :expo-gradle-plugin:expo-autolinking-settings-plugin:pluginDescriptors UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-settings-plugin:processResources UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-settings-plugin:classes UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-settings-plugin:jar UP-TO-DATE
+> Task :gradle-plugin:react-native-gradle-plugin:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :expo-gradle-plugin:expo-autolinking-plugin:checkKotlinGradlePluginConfigurationErrors
+> Task :expo-module-gradle-plugin:checkKotlinGradlePluginConfigurationErrors
+> Task :expo-module-gradle-plugin:pluginDescriptors UP-TO-DATE
+> Task :expo-module-gradle-plugin:processResources UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-plugin:compileKotlin UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-plugin:compileJava NO-SOURCE
+> Task :expo-gradle-plugin:expo-autolinking-plugin:pluginDescriptors UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-plugin:processResources UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-plugin:classes UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-plugin:jar UP-TO-DATE
+> Task :gradle-plugin:react-native-gradle-plugin:compileKotlin UP-TO-DATE
+> Task :gradle-plugin:react-native-gradle-plugin:compileJava NO-SOURCE
+> Task :gradle-plugin:react-native-gradle-plugin:pluginDescriptors UP-TO-DATE
+> Task :gradle-plugin:react-native-gradle-plugin:processResources UP-TO-DATE
+> Task :gradle-plugin:react-native-gradle-plugin:classes UP-TO-DATE
+> Task :gradle-plugin:react-native-gradle-plugin:jar UP-TO-DATE
+> Task :expo-module-gradle-plugin:compileKotlin UP-TO-DATE
+> Task :expo-module-gradle-plugin:compileJava NO-SOURCE
+> Task :expo-module-gradle-plugin:classes UP-TO-DATE
+> Task :expo-module-gradle-plugin:jar UP-TO-DATE
+
+> Configure project :
+[32m[ExpoRootProject][0m Using the following versions:
+  - buildTools:  [32m35.0.0[0m
+  - minSdk:      [32m24[0m
+  - compileSdk:  [32m35[0m
+  - targetSdk:   [32m35[0m
+  - ndk:         [32m27.1.12297006[0m
+  - kotlin:      [32m2.0.21[0m
+  - ksp:         [32m2.0.21-1.0.28[0m
+
+> Configure project :expo
+
+Using expo modules
+  - [32mexpo-constants[0m (17.1.7)

@@ -41,9 +41,33 @@ Una aplicación Android moderna desarrollada en React Native que detecta y bloqu
   1. 🚫 Lista Negra (máxima prioridad)
   2. 👤 Contactos (whitelist)
   3. 📵 Modo Radical
-  4. 💰 Números premium (905...)
-  5. ❓ Números desconocidos/privados
+  - ❓ Números desconocidos/privados
 
+---
+
+## 🛡️ Estrategias de Detección (Los 3 Modos)
+
+La aplicación utiliza un sistema de tres niveles para reaccionar ante el spam:
+
+### **Modo 1: Answer+Hangup (Estándar)**
+- **Estado**: ✅ **Funcional** (Recomendado para todos)
+- **Funcionamiento**: Contesta y cuelga en <1s.
+- **Efecto**: Libera tu línea rápidamente y marca tu número como "activo" pero no rentable para spammers.
+
+### **Modo 2: IVR Local (Experimental)**
+- **Estado**: ⚠️ **No Funcional / Solo Root**
+- **Funcionamiento**: Intenta reproducir un audio localmente durante la llamada.
+- **Limitación**: Android bloquea la inyección de audio en llamadas por seguridad. Solo funciona con root o en versiones antiguas.
+- **Referencia**: Ver [README_MODO2_BRANCH.md](README_MODO2_BRANCH.md)
+
+### **Modo 3: Desvío a VoIP/Asterisk (Avanzado)**
+- **Estado**: 🚀 **En Desarrollo / Beta**
+- **Funcionamiento**: La app detecta el spam y desvía la llamada a un servidor VPS (Hetzner) con Asterisk.
+- **Efecto**: Un IVR profesional contesta al spammer, permitiendo grabaciones o interacciones complejas.
+- **Infraestructura**: Requiere cuenta en Zadarma/VoIP.ms y un VPS.
+- **Referencia**: Ver [vps_backend/README_VPS.md](vps_backend/README_VPS.md)
+
+---
 ### 🚀 Roadmap (Próximas Features)
 
 - **📡 API Racing de Bases de Datos de Spam**
@@ -105,8 +129,13 @@ EXPO_PUBLIC_GEMINI_MODEL=gemini-pro
 ```
 
 4. **Compilar APK**:
+Se recomienda usar el script de limpieza total para asegurar una compilación fresca:
 ```bash
 ./build-fresh.sh
+```
+O para una reconstrucción rápida:
+```bash
+./rebuild-clean.sh
 ```
 
 5. **Instalar en dispositivo**:
@@ -165,7 +194,7 @@ adb install android/app/build/outputs/apk/debug/app-debug.apk
 
 ### Stack Tecnológico
 
-- **Frontend**: React Native + Expo
+- **Frontend**: React Native 0.79.5 + Expo 53.0.20
 - **Backend/Nativo**: Java (Android)
 - **Storage**: SharedPreferences
 - **APIs Android**:
@@ -174,6 +203,16 @@ adb install android/app/build/outputs/apk/debug/app-debug.apk
   - PhoneLookup API
   - BroadcastReceiver (PHONE_STATE)
 
+### Infraestructura Backend (Modo 3)
+
+Si decides implementar el **Modo 3**, el stack incluye:
+- **VPS**: Hetzner / DigitalOcean (Debian/Ubuntu)
+- **PBX**: Asterisk 20+
+- **SIP Trunk**: Zadarma / VoIP.ms
+- **API de Control**: Python (Flask) para coordinar la App con Asterisk.
+- **AGI Scripts**: Lógica personalizada en el servidor para filtrar llamadas.
+
+---
 ### Estructura del Proyecto
 
 ```
@@ -307,7 +346,7 @@ Este proyecto está bajo la licencia **MIT**.
 ```
 MIT License
 
-Copyright (c) 2024 Bitxogm
+Copyright (c) 2026 Bitxogm
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -345,6 +384,16 @@ SOFTWARE.
 
 ---
 
+## 🔧 Solución de Problemas (Troubleshooting)
+
+### Advertencias de Gradle (Deprecation Warnings)
+Al compilar con versiones recientes de Android SDK y React Native (0.79+), es normal ver un reporte con múltiples "problemas" (ej. 18 o más).
+- **Causa**: Son advertencias de depreciación en librerías de terceros (`react-native-screens`, `expo-modules-core`).
+- **Estado**: **Benigno**. Si el build finaliza con `BUILD SUCCESSFUL`, la aplicación funcionará correctamente.
+- **Acción**: No es necesario realizar cambios, se resolverán en futuras actualizaciones de las dependencias.
+
+---
+
 ## ⚠️ Descargo de Responsabilidad
 
 Esta aplicación está diseñada para uso personal y educativo. El autor no se hace responsable de:
@@ -363,7 +412,7 @@ Esta aplicación está diseñada para uso personal y educativo. El autor no se h
 ![Android](https://img.shields.io/badge/Android-9.0%2B-green)
 ![React Native](https://img.shields.io/badge/React%20Native-Expo-blue)
 
-**Última actualización**: Diciembre 2024
+**Última actualización**: Enero 2026
 
 ---
 
