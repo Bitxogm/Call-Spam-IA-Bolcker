@@ -31,12 +31,12 @@ public class CallForwardingManager {
     // - "34919933065"   (sin prefijo +, RECOMENDADO para España)
     // - "0034919933065" (con 00 en lugar de +)
     // - "919933065"     (solo nacional si estás en España)
-    private static final String ZADARMA_NUMBER = "34919933065";  // SIN el símbolo +
+    private static final String ZADARMA_NUMBER = "919933065";
 
     // Códigos USSD para desvíos
-    private static final String USSD_ENABLE_UNCONDITIONAL = "*21*" + ZADARMA_NUMBER + Uri.encode("#");
-    private static final String USSD_DISABLE_UNCONDITIONAL = "##21" + Uri.encode("#");
-    private static final String USSD_CHECK_STATUS = "*#21" + Uri.encode("#");
+    private static final String USSD_ENABLE_UNCONDITIONAL = "*67*" + ZADARMA_NUMBER + Uri.encode("#");
+    private static final String USSD_DISABLE_UNCONDITIONAL = "##67" + Uri.encode("#");
+    private static final String USSD_CHECK_STATUS = "*#67" + Uri.encode("#");
 
     private final Context context;
     private final Handler mainHandler;
@@ -49,7 +49,7 @@ public class CallForwardingManager {
     /**
      * Activa desvío incondicional a Zadarma (para Modo 2/3)
      *
-     * Ejecuta: *21*+34919933065#
+     * Ejecuta: *67*919933065#
      *
      * @return true si se ejecutó el código, false si hubo error
      */
@@ -153,17 +153,15 @@ public class CallForwardingManager {
     private void showManualInstructions(String ussdCode) {
         String message;
 
-        if (ussdCode.contains("*21*")) {
+        if (ussdCode.contains("*67*")) {
             message = "⚠️ No se pudo activar desvío automáticamente.\n\n" +
-                     "Por favor, marca manualmente uno de estos formatos:\n" +
-                     "1) *21*34919933065#\n" +
-                     "2) *21*0034919933065#\n" +
-                     "3) *21*919933065# (solo en España)\n\n" +
-                     "Prueba cuál funciona con tu operador";
-        } else if (ussdCode.contains("##21")) {
+                     "Por favor, marca manualmente:\n" +
+                     "*67*919933065#\n\n" +
+                     "en el teclado de tu teléfono";
+        } else if (ussdCode.contains("##67")) {
             message = "⚠️ No se pudo desactivar desvío automáticamente.\n\n" +
                      "Por favor, marca manualmente:\n" +
-                     "##21#\n\n" +
+                     "##67#\n\n" +
                      "en el teclado de tu teléfono";
         } else {
             message = "⚠️ No se pudo ejecutar código USSD.\n\n" +

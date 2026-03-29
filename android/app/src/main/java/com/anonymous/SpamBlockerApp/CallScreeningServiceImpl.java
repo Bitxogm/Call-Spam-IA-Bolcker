@@ -248,24 +248,45 @@ public class CallScreeningServiceImpl extends CallScreeningService {
         }
 
         // 📱 PRIORIDAD 2: Número desconocido/privado - TIEMPO: < 1ms
-        if (number.equals("Desconocido") ||
-            number.equals("Privado") ||
-            number.equals("Número oculto")) {
+        if (number.equals("Desconocido") || number.equals("Privado") ||
+            number.equals("Número oculto") || number.equals("Unknown") ||
+            number.equals("Oculto") || number.equals("Privada") ||
+            number.isEmpty() || number.equals("")) {
             Log.d(TAG, "📱 Número desconocido - BLOQUEAR");
             return true;
         }
 
         // 📞 PRIORIDAD 3: Números premium y comerciales - TIEMPO: < 1ms
         String cleaned = number.replaceAll("[^0-9]", "");
-        if (cleaned.startsWith("800") ||  // Números gratuitos comerciales
-            cleaned.startsWith("900") ||  // Tarificación especial
-            cleaned.startsWith("901") ||  // Tarificación especial
-            cleaned.startsWith("902") ||  // Tarificación especial
-            cleaned.startsWith("803") ||  // Servicios de participación
-            cleaned.startsWith("806") ||  // Servicios de entretenimiento
-            cleaned.startsWith("807") ||  // Servicios de entretenimiento
-            cleaned.startsWith("905")) {  // Servicios de valor añadido
-            Log.d(TAG, "📞 Número de tarificación especial/comercial - BLOQUEAR: " + cleaned.substring(0, 3));
+        if (cleaned.startsWith("0034")) cleaned = cleaned.substring(4);
+        else if (cleaned.startsWith("34") && cleaned.length() > 10) cleaned = cleaned.substring(2);
+
+        // Prefijos bloqueados por ley española (servicios premium/tarificación especial)
+        if (cleaned.startsWith("800") || cleaned.startsWith("801") ||
+            cleaned.startsWith("802") || cleaned.startsWith("803") ||
+            cleaned.startsWith("804") || cleaned.startsWith("805") ||
+            cleaned.startsWith("806") || cleaned.startsWith("807") ||
+            cleaned.startsWith("808") || cleaned.startsWith("809") ||
+            cleaned.startsWith("900") || cleaned.startsWith("901") ||
+            cleaned.startsWith("902") || cleaned.startsWith("903") ||
+            cleaned.startsWith("904") || cleaned.startsWith("905") ||
+            cleaned.startsWith("906") || cleaned.startsWith("907") ||
+            cleaned.startsWith("908") || cleaned.startsWith("909") ||
+            cleaned.startsWith("118")) {
+            Log.d(TAG, "📞 Prefijo bloqueado por ley: " + cleaned.substring(0, 3));
+            return true;
+        }
+
+        // Prefijos de call centers frecuentes en España
+        if (cleaned.startsWith("510") || cleaned.startsWith("511") ||
+            cleaned.startsWith("512") || cleaned.startsWith("513") ||
+            cleaned.startsWith("514") || cleaned.startsWith("515") ||
+            cleaned.startsWith("860") || cleaned.startsWith("861") ||
+            cleaned.startsWith("862") || cleaned.startsWith("863") ||
+            cleaned.startsWith("864") || cleaned.startsWith("865") ||
+            cleaned.startsWith("866") || cleaned.startsWith("867") ||
+            cleaned.startsWith("868") || cleaned.startsWith("869")) {
+            Log.d(TAG, "📞 Prefijo call center detectado: " + cleaned.substring(0, 3));
             return true;
         }
 

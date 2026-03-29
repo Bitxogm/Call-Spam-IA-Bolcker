@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   RefreshControl,
   Alert,
+  Linking,
 } from 'react-native';
 import CallHistoryService, { SpamCallRecord } from '../services/CallHistoryService';
 
@@ -158,6 +159,13 @@ const CallHistoryScreen: React.FC = () => {
                   {getActionIcon(record.action)} {record.action}
                 </Text>
               </View>
+
+              <TouchableOpacity
+                style={styles.tellowsButton}
+                onPress={() => Linking.openURL('https://www.tellows.es/num/' + record.number)}
+              >
+                <Text style={styles.tellowsButtonText}>🔍 Consultar</Text>
+              </TouchableOpacity>
             </View>
           ))
         )}
@@ -278,6 +286,20 @@ const styles = StyleSheet.create({
   callAction: {
     fontSize: 12,
     color: '#007bff',
+    fontWeight: '600',
+  },
+  tellowsButton: {
+    marginTop: 10,
+    backgroundColor: '#f0f4ff',
+    padding: 8,
+    borderRadius: 6,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ccd6f6',
+  },
+  tellowsButtonText: {
+    fontSize: 12,
+    color: '#3a5bc7',
     fontWeight: '600',
   },
 });
