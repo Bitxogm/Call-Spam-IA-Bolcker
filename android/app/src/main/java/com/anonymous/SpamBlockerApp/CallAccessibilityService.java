@@ -44,6 +44,7 @@ public class CallAccessibilityService extends AccessibilityService {
     private IVRAudioPlayer ivrAudioPlayer;
     private boolean ivrPlaying = false;
     private Runnable hangupRunnable;
+    private boolean wasRingingBeforeOffhook = false;
 
     // Textos EXÁCTOS de botón "Contestar" para evitar falsos positivos
     private static final String[] ANSWER_BUTTON_KEYWORDS = {
@@ -125,6 +126,7 @@ public class CallAccessibilityService extends AccessibilityService {
                 }
 
                 if (state == TelephonyManager.CALL_STATE_RINGING) {
+                    wasRingingBeforeOffhook = true;
                     Log.d(TAG, "📞 Llamada entrante detectada via PhoneStateListener");
                     logsHelper.logInfo("📞 Llamada entrante detectada");
 
@@ -143,6 +145,11 @@ public class CallAccessibilityService extends AccessibilityService {
                         }
 
                 } else if (state == TelephonyManager.CALL_STATE_OFFHOOK) {
+                    if (!wasRingingBeforeOffhook) {
+                        Log.d(TAG, "📞 Llamada SALIENTE detectada - ignorando");
+                        return;
+                    }
+                    wasRingingBeforeOffhook = false;
                     // Llamada ACTIVA - Reproducir IVR si está en Modo 2
                     Log.d(TAG, "📞 Llamada ACTIVA detectada");
                     logsHelper.logInfo("📞 Llamada activa");
@@ -174,6 +181,7 @@ public class CallAccessibilityService extends AccessibilityService {
                     Log.d(TAG, "💀 Llamada terminada");
                     logsHelper.logInfo("💀 Llamada terminada");
                     stopIVRPlayback();
+                    wasRingingBeforeOffhook = false;
                 }
             }
         };
@@ -484,14 +492,6 @@ public class CallAccessibilityService extends AccessibilityService {
      * Inicia la reproducción del IVR (Modo 2)
      */
     private void startIVRPlayback() {
-        // ✅ NUEVA LÓGICA: Si somos Default Dialer, SpamCallService se encarga.
-        // No duplicar el audio aquí.
-        if (DefaultDialerModule.isDefaultDialerHelper(this)) {
-            Log.d(TAG, "⏭️ App es Default Dialer. Delegando audio a SpamCallService.");
-            logsHelper.logDebug("Accessibility: Audio delegado a SpamCallService (Default Dialer activo)");
-            return;
-        }
-
         if (ivrPlaying) {
             Log.w(TAG, "⚠️ IVR ya está reproduciéndose");
             return;

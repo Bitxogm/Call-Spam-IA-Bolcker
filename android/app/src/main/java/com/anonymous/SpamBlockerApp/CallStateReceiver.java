@@ -179,15 +179,6 @@ public class CallStateReceiver extends BroadcastReceiver {
             // Crear variable final para lambdas
             final String number = incomingNumber;
 
-            // ✅ NUEVA LÓGICA: Si somos Default Dialer, SpamCallService se encarga.
-            if (DefaultDialerModule.isDefaultDialerHelper(context)) {
-                Log.d(TAG, "⏭️ App es Default Dialer. Delegando a SpamCallService.");
-                if (mode == AnswerHangupHelper.Mode.HANGUP_IMMEDIATELY) {
-                    scheduleSafetyHangup(context, number);
-                }
-                return;
-            }
-
             if (mode == AnswerHangupHelper.Mode.HANGUP_IMMEDIATELY) {
                 // Modo 1: Colgar después de delay
                 int delay = answerHangupHelper.getHangupDelay();
