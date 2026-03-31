@@ -17,6 +17,7 @@
 - **Intereses paralelos:** ciberseguridad y ethical hacking
 - **Infraestructura:** VPS Hetzner Ubuntu 24.04 (IP `157.180.35.161`, SSH puerto 2222)
 - **Estilo de trabajo:** directo, una tarea concreta a la vez con resultado verificable
+- **Dispositivos de desarrollo/testing:** Pixel 8 (GrapheneOS) — dispositivo principal; Samsung Galaxy Note 20 — dispositivo secundario/simulador de spammer
 
 ---
 
@@ -318,6 +319,9 @@ adb logcat *:E
 
 # Verificar estado del desvío USSD en el operador
 # Marcar desde el teclado del teléfono: *#21#
+
+# Recargar dialplan Asterisk sin reiniciar el servicio
+asterisk -rx "dialplan reload"
 ```
 
 ---
@@ -430,3 +434,110 @@ En orden de prioridad lógica:
 6. **Limpiar residuos:** empezar por las referencias a `IVRAudioPlayer` en `CallAccessibilityService`, luego los 12 archivos Java y el Manifest.
 
 7. ~~**Modo 3 — Agente IA conversacional**~~ ✅ **Completado.** `manolo_agi.py` unifica la lógica de decisión y la conversación de Manolo en un único script AGI. Funcional en producción.
+
+---
+
+## 14. Infraestructura VPS — detalle técnico
+
+### Configuración Zadarma → Asterisk
+
+**Panel Zadarma:**
+```
+Número: +34 919 93 30 65
+SIP Login: #719926
+External Server: 34919933065@157.180.35.161:5060
+```
+⚠️ Puerto crítico: debe ser `5060` (SIP), no `5000` (Flask).
+
+**pjsip.conf en el VPS (`/etc/asterisk/pjsip.conf`):**
+```ini
+[zadarma-endpoint]
+type=endpoint
+context=from-zadarma
+disallow=all
+allow=ulaw,alaw
+aors=zadarma-aor
+allow_subscribe=yes
+
+[zadarma-aor]
+type=aor
+contact=sip:sips.zadarma.com
+
+[zadarma-identify]
+type=identify
+endpoint=zadarma-endpoint
+match=185.45.152.0/24
+match=185.45.154.0/24
+match=185.45.155.0/24
+match=195.122.19.0/27
+match=31.31.222.192/27
+match=15.235.128.64/28
+```
+
+**Firewall UFW — las 6 subnets de Zadarma (todas necesarias):**
+```bash
+ufw allow from 185.45.152.0/24 to any port 5060 proto udp
+ufw allow from 185.45.154.0/24 to any port 5060 proto udp
+ufw allow from 185.45.155.0/24 to any port 5060 proto udp
+ufw allow from 195.122.19.0/27 to any port 5060 proto udp
+ufw allow from 31.31.222.192/27 to any port 5060 proto udp
+ufw allow from 15.235.128.64/28 to any port 5060 proto udp
+```
+Con solo 3 subnets las llamadas llegan intermitentemente. Deben estar las 6.
+
+---
+
+### Bugs de configuración resueltos (VPS)
+
+Estos bugs costaron horas — documentados para no repetirlos:
+
+| # | Síntoma | Causa | Solución |
+|---|---------|-------|----------|
+| 1 | Llamadas no llegan al VPS | External Server con puerto `5000` en panel Zadarma | Cambiar a `34919933065@157.180.35.161:5060` |
+| 2 | Llamadas llegan solo a veces | Solo 3 subnets de Zadarma en UFW | Añadir las 6 subnets completas |
+| 3 | AGI no encontrado por Asterisk | Script en `/root/ai_bridge/`, Asterisk busca en `/usr/share/asterisk/agi-bin/` | Copiar con `chmod +x` al directorio correcto |
+| 4 | Audio no encontrado por Asterisk | Audio en `/root/ai_bridge/`, Asterisk busca en `/var/lib/asterisk/sounds/` | Copiar como `fixed_spam_message.wav` al directorio correcto |
+| 5 | Sub-AGI falla (Modo 3) | `decision_agi.py` no leía el header AGI de Asterisk antes de enviar comandos | Unificar en `manolo_agi.py` con `agi_read_headers()` al inicio |
+
+---
+
+### Costes mensuales
+
+```
+Zadarma número virtual Madrid: €1.70/mes
+Hetzner VPS (2GB RAM, 40GB):   €4.51/mes
+Llamadas entrantes Zadarma:    €0.00 (gratis)
+─────────────────────────────────────────
+TOTAL con VPS (Modos 2+3):     €6.21/mes
+Solo Modo 1 (sin VPS):         €0.00/mes
+```
+
+---
+
+### Comandos de mantenimiento VPS
+
+```bash
+# Logs Asterisk en tiempo real
+tail -f /var/log/asterisk/full
+
+# Estado de la conexión SIP con Zadarma
+asterisk -rx "pjsip show endpoints"
+
+# Canales activos (llamadas en curso)
+asterisk -rx "core show channels"
+
+# Cambiar modo desde terminal (sin la app)
+curl -X POST http://157.180.35.161:5000/set_mode \
+     -H "Content-Type: application/json" \
+     -d '{"mode":"FIXED"}'
+
+# Consultar modo actual
+curl http://157.180.35.161:5000/get_mode
+
+# Estado del servicio control_api
+systemctl status asterisk-control-api
+
+# Reiniciar servicios
+systemctl restart asterisk
+systemctl restart asterisk-control-api
+```
