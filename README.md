@@ -1,422 +1,184 @@
-# 📞 Call Spam IA Blocker
+# Call Spam IA Blocker
 
-**Bloqueador inteligente de llamadas spam para Android con IA integrada**
+Bloqueador de llamadas spam para Android con tres modos de operación, incluyendo un agente IA conversacional que entretiene al spammer.
 
-Una aplicación Android moderna desarrollada en React Native que detecta y bloquea automáticamente llamadas spam utilizando múltiples estrategias de verificación, incluyendo listas negras personalizables, verificación de contactos, modo radical y la innovadora técnica **Answer+Hangup**.
-
----
-
-## 🌟 Características Principales
-
-### ✅ Implementadas
-
-- **🚫 Lista Negra Personalizable**
-  - Añade números manualmente a la lista negra
-  - Bloqueo instantáneo de números marcados como spam
-  - Prioridad máxima en la verificación
-
-- **👥 Whitelist Automática de Contactos**
-  - Integración con PhoneLookup API de Android
-  - Normalización automática de formatos de número
-  - Consultas en tiempo real sin overhead de base de datos
-
-- **📵 Modo Radical**
-  - Bloquea TODAS las llamadas excepto tus contactos
-  - Ideal para situaciones de alto spam
-  - Configurable con un solo toggle
-
-- **🔇 Answer+Hangup (Innovador)**
-  - Contesta automáticamente llamadas spam de forma silenciosa
-  - Espera un delay configurable (1-5 segundos)
-  - Cuelga automáticamente la llamada
-  - **Efecto**: Los spammers te quitan de sus listas (reducción ~80% spam)
-  - Basado en la técnica exitosa de [SpamBlocker](https://github.com/aj3423/SpamBlocker)
-
-- **🔔 Sistema de Notificaciones**
-  - Notificaciones en tiempo real de spam detectado
-  - Toast informativos con nombre de contacto (si aplica)
-  - Feedback visual del estado de bloqueo
-
-- **🎯 Verificación por Prioridad**
-  1. 🚫 Lista Negra (máxima prioridad)
-  2. 👤 Contactos (whitelist)
-  3. 📵 Modo Radical
-  - ❓ Números desconocidos/privados
+**Repo:** https://github.com/Bitxogm/Call-Spam-IA-Bolcker &nbsp;|&nbsp; **Branch activo:** `dev`
 
 ---
 
-## 🛡️ Estrategias de Detección (Los 3 Modos)
+## Modos de operación
 
-La aplicación utiliza un sistema de tres niveles para reaccionar ante el spam:
-
-### **Modo 1: Answer+Hangup (Estándar)**
-- **Estado**: ✅ **Funcional** (Recomendado para todos)
-- **Funcionamiento**: Contesta y cuelga en <1s.
-- **Efecto**: Libera tu línea rápidamente y marca tu número como "activo" pero no rentable para spammers.
-
-### **Modo 2: IVR Local (Experimental)**
-- **Estado**: ⚠️ **No Funcional / Solo Root**
-- **Funcionamiento**: Intenta reproducir un audio localmente durante la llamada.
-- **Limitación**: Android bloquea la inyección de audio en llamadas por seguridad. Solo funciona con root o en versiones antiguas.
-- **Referencia**: Ver [README_MODO2_BRANCH.md](README_MODO2_BRANCH.md)
-
-### **Modo 3: Desvío a VoIP/Asterisk (Avanzado)**
-- **Estado**: 🚀 **En Desarrollo / Beta**
-- **Funcionamiento**: La app detecta el spam y desvía la llamada a un servidor VPS (Hetzner) con Asterisk.
-- **Efecto**: Un IVR profesional contesta al spammer, permitiendo grabaciones o interacciones complejas.
-- **Infraestructura**: Requiere cuenta en Zadarma/VoIP.ms y un VPS.
-- **Referencia**: Ver [vps_backend/README_VPS.md](vps_backend/README_VPS.md)
-
----
-### 🚀 Roadmap (Próximas Features)
-
-- **📡 API Racing de Bases de Datos de Spam**
-  - Integración con PhoneBlock
-  - Integración con Tellows
-  - Integración con Should I Answer
-  - Consultas paralelas para máxima velocidad
-
-- **🤖 Análisis IA con Gemini**
-  - Detección inteligente de patrones de spam
-  - Análisis de comportamiento de llamadas
-  - Mejora continua del modelo
-
-- **📜 STIR/SHAKEN Attestation**
-  - Verificación de autenticidad de llamadas
-  - Detección de spoofing
-
-- **🔍 Sistema de Reglas Regex**
-  - Patrones personalizables para detección
-  - Reglas por prefijos, sufijos, longitud
+| Modo | Descripción | Estado |
+|------|-------------|--------|
+| **Modo 1 — Answer+Hangup** | La app detecta spam, contesta y cuelga en menos de 1 segundo. El spammer no escucha nada. El teléfono sí suena brevemente. | ✅ Funcional |
+| **Modo 2 — Mensaje fijo** | Desvío GSM al VPS vía USSD. El teléfono no suena. El spammer escucha un mensaje de voz personalizado reproducido por Asterisk. | ✅ Funcional |
+| **Modo 3 — Agente IA Manolo** | Igual que Modo 2, pero en vez de un mensaje fijo contesta Manolo: un abuelo gallego de 78 años (Gemini 2.5-flash) que mantiene al spammer ocupado el mayor tiempo posible. | ✅ Funcional |
 
 ---
 
-## 📋 Requisitos
+## Arquitectura
 
-- **Android**: 9.0 (API 28) o superior
-- **Permisos requeridos**:
-  - `READ_PHONE_STATE` - Monitorear estado de llamadas
-  - `READ_CALL_LOG` - Acceso a registro de llamadas
-  - `ANSWER_PHONE_CALLS` - Contestar llamadas automáticamente (Answer+Hangup)
-  - `READ_CONTACTS` - Verificación de whitelist
-  - `POST_NOTIFICATIONS` - Notificaciones de spam detectado
+```
+MODO 1
+  Llamada entrante
+    └── CallAccessibilityService detecta spam
+          └── TelecomManager.acceptRingingCall() → endCall()
 
-- **Configuración necesaria**:
-  - Establecer la app como **Call Screening Service predeterminado**
+MODOS 2 y 3
+  Llamada entrante
+    └── Operador GSM aplica desvío USSD (*21*34919933065#)
+          └── Zadarma (+34 919 93 30 65)
+                └── SIP INVITE → VPS Asterisk (157.180.35.161:5060)
+                      └── extensions.conf [from-zadarma]
+                            └── manolo_agi.py
+                                  ├── Lee /root/ai_bridge/current_mode.json
+                                  ├── FIXED → Playback fixed_spam_message → Hangup
+                                  └── AI    → Manolo
+                                              bucle: graba spammer
+                                                     → Google STT
+                                                     → Gemini 2.5-flash
+                                                     → gTTS → WAV 8kHz
+                                                     → reproduce en llamada
+```
+
+La app controla el modo activo vía `BackendSyncService.ts` → `POST http://157.180.35.161:5000/set_mode`.
 
 ---
 
-## 🔧 Instalación
+## Stack tecnológico
 
-### Desde Código Fuente
+| Capa | Tecnología |
+|------|-----------|
+| App Android | React Native (Expo) + Java |
+| Detección de spam | `CallAccessibilityService.java` — AccessibilityService + PhoneStateListener |
+| Desvío de llamadas | USSD vía `TelecomManager` → Zadarma SIP trunk |
+| PBX en VPS | Asterisk + pjsip |
+| AGI unificado | Python — `manolo_agi.py` |
+| IA conversacional | Google Gemini 2.5-flash (`thinking_budget=0`) |
+| TTS en VPS | gTTS español (es-ES) → WAV 8kHz mono pcm_s16le |
+| STT en VPS | SpeechRecognition + Google Speech API |
+| API de control | Flask — `control_api.py` (puerto 5000) |
+| Infraestructura | VPS Hetzner Ubuntu 24.04 — `157.180.35.161` |
 
-1. **Clonar el repositorio**:
+---
+
+## Requisitos
+
+### Todos los modos
+
+- Android 9.0+ (API 28)
+- Permisos: `READ_PHONE_STATE`, `ANSWER_PHONE_CALLS`, `READ_CONTACTS`, `READ_CALL_LOG`, `POST_NOTIFICATIONS`
+- App configurada como **Call Screening Service predeterminado** en ajustes del sistema
+
+### Modos 2 y 3 (además)
+
+- Número Zadarma activo con reenvío configurado al VPS vía SIP
+- VPS con Asterisk, Python 3.12 y venv con dependencias instaladas
+- Fichero `/root/ai_bridge/.env` con `GEMINI_API_KEY`
+
+---
+
+## Instalación
+
+### App
+
 ```bash
 git clone https://github.com/Bitxogm/Call-Spam-IA-Bolcker.git
 cd Call-Spam-IA-Bolcker
-```
-
-2. **Instalar dependencias**:
-```bash
 npm install
 ```
 
-3. **Configurar variables de entorno**:
-Crea un archivo `.env` en la raíz del proyecto:
+Crear `.env` en la raíz del proyecto:
+
 ```env
-EXPO_PUBLIC_GEMINI_API_KEY=tu_api_key_aqui
-EXPO_PUBLIC_GEMINI_MODEL=gemini-pro
+EXPO_PUBLIC_GEMINI_API_KEY=tu_api_key
+EXPO_PUBLIC_GEMINI_MODEL=gemini-2.5-flash
+EXPO_PUBLIC_ELEVENLABS_API_KEY=tu_api_key
+EXPO_PUBLIC_VPS_IP=157.180.35.161
+EXPO_PUBLIC_VPS_PORT=5000
 ```
 
-4. **Compilar APK**:
-Se recomienda usar el script de limpieza total para asegurar una compilación fresca:
+Compilar e instalar:
+
 ```bash
 ./build-fresh.sh
-```
-O para una reconstrucción rápida:
-```bash
-./rebuild-clean.sh
-```
-
-5. **Instalar en dispositivo**:
-```bash
 adb install android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-### Desde APK Pre-compilado
+### VPS — Modos 2 y 3
 
-1. Descarga el último APK desde [Releases](https://github.com/Bitxogm/Call-Spam-IA-Bolcker/releases)
-2. Habilita "Instalar apps de origen desconocido" en tu Android
-3. Instala el APK
+Ejecutar desde la raíz del repo en el VPS:
+
+```bash
+bash vps_backend/deploy.sh           # instala Asterisk, Python, dependencias
+bash vps_backend/install_service.sh  # registra control_api como servicio systemd
+bash vps_backend/deploy_modo3.sh     # copia manolo_agi.py y extensions.conf
+```
+
+Para la configuración completa de pjsip y las subnets de Zadarma, ver sección 14 de [CLAUDE.md](CLAUDE.md).
 
 ---
 
-## 🎮 Uso
-
-### Primera Configuración
-
-1. **Conceder Permisos**:
-   - Abre la app
-   - Presiona "Solicitar Permisos"
-   - Acepta todos los permisos solicitados
-
-2. **Establecer como Screening Service**:
-   - Ve a Configuración → Apps → Apps predeterminadas → ID de llamadas y spam
-   - Selecciona "Call Spam IA Blocker"
-
-3. **Configurar Preferencias**:
-   - **Modo Radical**: Activa para bloquear todo excepto contactos
-   - **Answer+Hangup**: Activa para el bloqueo silencioso
-   - **Delay de Hangup**: Ajusta 1-5 segundos según preferencia
-
-### Añadir Números a Lista Negra
+## Costes
 
 ```
-1. Ve a la pantalla "Lista Negra"
-2. Escribe el número (formato: +34123456789 o 123456789)
-3. Presiona "Añadir a Lista Negra"
-```
-
-### Probar el Sistema
-
-```
-1. Añade tu propio número a la lista negra
-2. Llama desde otro teléfono
-3. Observa:
-   ✅ Notificación de spam detectado
-   ✅ (Si Answer+Hangup activo) Llamada contestada y colgada automáticamente
-   ✅ Toast informativo
+Zadarma número virtual Madrid:  €1.70/mes
+Hetzner VPS (2GB RAM, 40GB):    €4.51/mes
+Llamadas entrantes Zadarma:     €0.00 (gratis)
+──────────────────────────────────────────────
+Total con VPS (Modos 2 y 3):    €6.21/mes
+Solo Modo 1 (sin VPS):          €0.00/mes
 ```
 
 ---
 
-## 🏗️ Arquitectura Técnica
-
-### Stack Tecnológico
-
-- **Frontend**: React Native 0.79.5 + Expo 53.0.20
-- **Backend/Nativo**: Java (Android)
-- **Storage**: SharedPreferences
-- **APIs Android**:
-  - CallScreeningService (Android 10+)
-  - TelecomManager
-  - PhoneLookup API
-  - BroadcastReceiver (PHONE_STATE)
-
-### Infraestructura Backend (Modo 3)
-
-Si decides implementar el **Modo 3**, el stack incluye:
-- **VPS**: Hetzner / DigitalOcean (Debian/Ubuntu)
-- **PBX**: Asterisk 20+
-- **SIP Trunk**: Zadarma / VoIP.ms
-- **API de Control**: Python (Flask) para coordinar la App con Asterisk.
-- **AGI Scripts**: Lógica personalizada en el servidor para filtrar llamadas.
-
----
-### Estructura del Proyecto
+## Estructura del proyecto
 
 ```
 Call-Spam-IA-Bolcker/
-├── android/
-│   └── app/src/main/java/com/anonymous/SpamBlockerApp/
-│       ├── CallScreeningServiceImpl.java    # Servicio principal de screening
-│       ├── CallStateReceiver.java           # Monitor de estados de llamada
-│       ├── BlacklistModule.java             # Bridge RN para lista negra
-│       ├── ContactsModule.java              # Bridge RN para contactos
-│       ├── AnswerHangupModule.java          # Bridge RN para Answer+Hangup
-│       ├── SharedPreferencesHelper.java     # Gestión de persistencia
-│       ├── ContactsHelper.java              # PhoneLookup wrapper
-│       └── AnswerHangupHelper.java          # Lógica Answer+Hangup
+├── android/app/src/main/java/…/SpamBlockerApp/
+│   ├── CallAccessibilityService.java   ← núcleo: detección de spam + Modo 1
+│   ├── CallForwardingManager.java      ← activación/desactivación USSD (Modos 2/3)
+│   ├── AnswerHangupHelper.java         ← lógica Answer+Hangup
+│   └── … (bridges React Native ↔ Java)
+│
 ├── src/
-│   ├── screens/
-│   │   ├── HomeScreen.tsx                   # Pantalla principal
-│   │   ├── BlacklistScreen.tsx              # Gestión de lista negra
-│   │   └── WhitelistScreen.tsx              # Configuración whitelist/Answer+Hangup
+│   ├── screens/                        ← UI React Native (7 pantallas)
 │   └── services/
-│       ├── CallInterceptorService.ts        # Servicio principal TS
-│       ├── BlacklistService.ts              # Wrapper lista negra
-│       ├── ContactsService.ts               # Wrapper contactos
-│       └── AnswerHangupService.ts           # Wrapper Answer+Hangup
-└── App.tsx                                   # Punto de entrada React Native
-```
-
-### Flujo de Verificación de Llamadas
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  1. Llamada entrante                                        │
-│     CallScreeningService.onScreenCall()                     │
-└─────────────────────────────────────────────────────────────┘
-                            ↓
-┌─────────────────────────────────────────────────────────────┐
-│  2. Verificación por PRIORIDAD                              │
-│     ┌─────────────────────────────────────────────────┐    │
-│     │ ¿En Lista Negra? → SÍ → BLOQUEAR (prioridad 1) │    │
-│     └─────────────────────────────────────────────────┘    │
-│     ┌─────────────────────────────────────────────────┐    │
-│     │ ¿Es Contacto? → SÍ → PERMITIR (prioridad 2)    │    │
-│     └─────────────────────────────────────────────────┘    │
-│     ┌─────────────────────────────────────────────────┐    │
-│     │ ¿Modo Radical? → SÍ → BLOQUEAR (prioridad 3)   │    │
-│     └─────────────────────────────────────────────────┘    │
-│     ┌─────────────────────────────────────────────────┐    │
-│     │ ¿Premium (905...)? → SÍ → BLOQUEAR (prior. 4)  │    │
-│     └─────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
-                            ↓
-┌─────────────────────────────────────────────────────────────┐
-│  3. Si es SPAM y Answer+Hangup ACTIVO:                     │
-│     a) setSilenceCall(true) - Silenciar llamada            │
-│     b) Marcar número en SharedPreferences                   │
-└─────────────────────────────────────────────────────────────┘
-                            ↓
-┌─────────────────────────────────────────────────────────────┐
-│  4. CallStateReceiver detecta OFFHOOK (contestada)         │
-│     a) Verifica si número está marcado                      │
-│     b) Espera delay configurado (1-5s)                      │
-│     c) TelecomManager.endCall() - Colgar                    │
-└─────────────────────────────────────────────────────────────┘
+│       ├── BackendSyncService.ts       ← sincroniza modo y mensaje con VPS
+│       └── …
+│
+├── vps_backend/
+│   ├── manolo_agi.py                   ← AGI unificado: decisión + agente Manolo IA
+│   ├── control_api.py                  ← Flask API de control (puerto 5000)
+│   ├── extensions.conf                 ← dialplan Asterisk [from-zadarma]
+│   ├── deploy.sh                       ← instala dependencias en VPS
+│   ├── deploy_modo3.sh                 ← despliega manolo_agi.py en Asterisk
+│   ├── install_service.sh              ← registra systemd service
+│   └── asterisk-control-api.service   ← systemd unit para control_api
+│
+├── webhook-server.js                   ← stub TwiML puerto 3000 (Twilio no activo)
+├── CLAUDE.md                           ← contexto técnico completo del proyecto
+└── App.tsx
 ```
 
 ---
 
-## 🤝 Colaboradores
+## Documentación técnica
 
-### Autor Principal
-- **[@Bitxogm](https://github.com/Bitxogm)** - Ideación, desarrollo, testing y mantenimiento
-
-### Colaboradores Técnicos
-- **Claude (Anthropic)** - Asistencia en arquitectura, implementación de features y debugging
+El fichero [CLAUDE.md](CLAUDE.md) contiene la documentación técnica completa:
+arquitectura detallada, deuda técnica conocida, valores hardcodeados, comandos de desarrollo y mantenimiento, configuración VPS y bugs históricos resueltos.
 
 ---
 
-## 🌐 Cómo Colaborar
+## Autor
 
-¡Las contribuciones son bienvenidas! Si quieres colaborar:
+**[@Bitxogm](https://github.com/Bitxogm)** — con asistencia técnica de Claude (Anthropic)
 
-### 🐛 Reportar Bugs
-
-1. Abre un [Issue](https://github.com/Bitxogm/Call-Spam-IA-Bolcker/issues)
-2. Describe el problema detalladamente
-3. Incluye:
-   - Versión de Android
-   - Logs (si es posible)
-   - Pasos para reproducir
-
-### ✨ Proponer Features
-
-1. Abre un [Issue](https://github.com/Bitxogm/Call-Spam-IA-Bolcker/issues) con etiqueta `enhancement`
-2. Describe la funcionalidad propuesta
-3. Explica el caso de uso
-
-### 🔧 Contribuir Código
-
-1. **Fork** el repositorio
-2. Crea una rama para tu feature:
-   ```bash
-   git checkout -b feature/mi-nueva-feature
-   ```
-3. Realiza tus cambios y commits:
-   ```bash
-   git commit -m "feat: Descripción de la feature"
-   ```
-4. Push a tu fork:
-   ```bash
-   git push origin feature/mi-nueva-feature
-   ```
-5. Abre un **Pull Request**
-
-#### Convención de Commits
-
-Utilizamos [Conventional Commits](https://www.conventionalcommits.org/):
-
-- `feat:` Nueva funcionalidad
-- `fix:` Corrección de bug
-- `docs:` Cambios en documentación
-- `refactor:` Refactorización de código
-- `test:` Añadir o modificar tests
-- `chore:` Tareas de mantenimiento
+Issues y contribuciones bienvenidas en [GitHub Issues](https://github.com/Bitxogm/Call-Spam-IA-Bolcker/issues).
 
 ---
 
-## 📄 Licencia
+## Licencia
 
-Este proyecto está bajo la licencia **MIT**.
-
-```
-MIT License
-
-Copyright (c) 2026 Bitxogm
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
----
-
-## 🙏 Agradecimientos
-
-- **[aj3423/SpamBlocker](https://github.com/aj3423/SpamBlocker)** - Inspiración para la técnica Answer+Hangup
-- **Comunidad React Native** - Por el excelente framework
-- **Expo Team** - Por las herramientas de desarrollo
-
----
-
-## 📞 Contacto y Soporte
-
-- **Issues**: [GitHub Issues](https://github.com/Bitxogm/Call-Spam-IA-Bolcker/issues)
-- **Email**: [Crear issue para contacto]
-
----
-
-## 🔧 Solución de Problemas (Troubleshooting)
-
-### Advertencias de Gradle (Deprecation Warnings)
-Al compilar con versiones recientes de Android SDK y React Native (0.79+), es normal ver un reporte con múltiples "problemas" (ej. 18 o más).
-- **Causa**: Son advertencias de depreciación en librerías de terceros (`react-native-screens`, `expo-modules-core`).
-- **Estado**: **Benigno**. Si el build finaliza con `BUILD SUCCESSFUL`, la aplicación funcionará correctamente.
-- **Acción**: No es necesario realizar cambios, se resolverán en futuras actualizaciones de las dependencias.
-
----
-
-## ⚠️ Descargo de Responsabilidad
-
-Esta aplicación está diseñada para uso personal y educativo. El autor no se hace responsable de:
-- Llamadas legítimas bloqueadas incorrectamente
-- Llamadas spam no detectadas
-- Cualquier daño o pérdida derivada del uso de la aplicación
-
-**Recomendación**: Revisa periódicamente tu lista negra y configuración para asegurar que solo se bloquean números no deseados.
-
----
-
-## 📊 Estado del Proyecto
-
-![Estado](https://img.shields.io/badge/Estado-En%20Desarrollo%20Activo-brightgreen)
-![Licencia](https://img.shields.io/badge/Licencia-MIT-blue)
-![Android](https://img.shields.io/badge/Android-9.0%2B-green)
-![React Native](https://img.shields.io/badge/React%20Native-Expo-blue)
-
-**Última actualización**: Enero 2026
-
----
-
-<div align="center">
-  <p>Desarrollado con ❤️ para combatir el spam telefónico</p>
-  <p>⭐ Si este proyecto te resulta útil, considera darle una estrella en GitHub</p>
-</div>
+MIT — Copyright (c) 2026 Bitxogm
