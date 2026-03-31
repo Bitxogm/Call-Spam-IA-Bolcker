@@ -57,7 +57,7 @@ Llamada entra al teléfono
         └── TelecomManager.endCall()
 ```
 
-### Modo 2 — Backend Fixed (desvío GSM + TTS Android)
+### Modo 2 — Backend Fixed (desvío GSM + Asterisk)
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -83,22 +83,20 @@ Llamada entra al teléfono
 │                                                              │
 │  2. Zadarma recibe la llamada                                │
 │     └── Configurado en panel web Zadarma (fuera del repo)   │
-│         para reenviar al VPS                                 │
+│         para reenviar al VPS vía SIP/trunk                   │
 │                                                              │
-│  3. VPS recibe la llamada / webhook                          │
-│     └── POST → http://157.180.35.161:3000/webhook/voice      │
-│         webhook-server.js responde con TwiML:                │
-│         "Hola, soy Roberto. ¿En qué puedo ayudarle?"         │
-│         [Twilio no activo actualmente]                       │
+│  3. VPS — Asterisk recibe la llamada                         │
+│     └── extensions.conf [from-zadarma]:                     │
+│         Answer → Wait(1) → AGI(decision_agi.py) → Hangup    │
 │                                                              │
-│  4. En paralelo en el teléfono (⚠️ sin coordinación):        │
-│     └── CallAccessibilityService detecta OFFHOOK             │
-│         └── busca getFilesDir() + "/ivr_corporate.mp3"       │
-│             ├── si existe → IVRAudioPlayer.playIVR()         │
-│             │   hangupCall() a los 31 segundos               │
-│             └── si NO existe → hangupCall() directo          │
-│             (el MP3 lo genera IVRGeneratorModule con          │
-│              android.speech.tts.TextToSpeech)                │
+│  4. decision_agi.py lee current_mode.json                    │
+│     ├── FIXED → Playback fixed_spam_message + Hangup        │
+│     └── AI    → AGI(victor_agi.py) [Modo 3]                 │
+│                                                              │
+│  5. El modo lo controla control_api.py (Flask, puerto 5000) │
+│     └── BackendSyncService.ts → POST /set_mode              │
+│         (llamado desde AnswerHangupSettingsScreen al         │
+│          cambiar de Modo 2 a Modo 3)                         │
 └──────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────────┐
@@ -110,9 +108,9 @@ Llamada entra al teléfono
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### ⚠️ Problema de coordinación conocido
+### ⚠️ Problema de coordinación conocido (on-device)
 
-El webhook del VPS y la lógica on-device del teléfono actúan en paralelo sin ninguna comunicación entre ellos. El teléfono reacciona al estado OFFHOOK de forma independiente al servidor. Hay que decidir qué capa es la responsable del audio y eliminar o coordinar la otra.
+En Modo 2, `CallAccessibilityService` también reacciona al estado OFFHOOK de forma independiente al servidor. Busca `ivr_corporate.mp3` y lo reproduce si existe. El servidor Asterisk ya gestiona el audio — el teléfono no debería hacer nada adicional.
 
 ---
 
@@ -131,42 +129,36 @@ El webhook del VPS y la lógica on-device del teléfono actúan en paralelo sin 
 
 ## 6. Infraestructura del servidor
 
-### webhook-server.js — contenido completo
+### Stack real del VPS (verificado en código)
 
-```javascript
-const express = require('express');
-const app = express();
-app.use(express.urlencoded({ extended: true }));
+El VPS gestiona las llamadas con **Asterisk** (no Twilio). `webhook-server.js` existe pero Twilio no está activo.
 
-app.post('/webhook/voice', (req, res) => {
-  console.log('📞 Llamada recibida de Twilio:', req.body);
-  const twiml = `
-    <Response>
-      <Say voice="alice" language="es-MX">
-        Hola, soy Roberto. ¿En qué puedo ayudarle?
-      </Say>
-      <Pause length="2"/>
-      <Say voice="alice" language="es-MX">
-        Me interesa mucho su oferta, pero necesito todos los detalles.
-      </Say>
-    </Response>
-  `;
-  res.type('text/xml');
-  res.send(twiml);
-});
+| Componente | Archivo | Puerto/Ruta | Estado |
+|-----------|---------|-------------|--------|
+| **Asterisk dialplan** | `vps_backend/extensions.conf` | contexto `[from-zadarma]` | ✅ funcional |
+| **AGI de decisión** | `vps_backend/agi-bin/decision_agi.py` | `/var/lib/asterisk/agi-bin/` | ✅ funcional |
+| **AGI conversacional** | `vps_backend/victor_agi.py` | `/var/lib/asterisk/agi-bin/` | 🔨 falla como sub-AGI |
+| **API de control** | `vps_backend/control_api.py` | puerto 5000 | ✅ funcional |
+| **Systemd service** | `vps_backend/asterisk-control-api.service` | — | instalado |
+| **TwiML stub** | `webhook-server.js` (raíz) | puerto 3000 | ⚠️ Twilio no activo |
 
-app.listen(3000, () => {
-  console.log('🎯 Servidor webhook corriendo en puerto 3000');
-});
+**Flujo de decisión en el VPS:**
+```
+Asterisk [from-zadarma]
+  └── decision_agi.py lee /root/ai_bridge/current_mode.json
+        ├── FIXED → Playback fixed_spam_message → Hangup
+        └── AI    → AGI(victor_agi.py) → Manolo (Gemini 2.5-flash)
 ```
 
-**Estado actual:**
-- 29 líneas, un único endpoint `POST /webhook/voice`
-- Sin autenticación, sin rate limiting
-- Sin PM2 ni systemd — arranca con `node webhook-server.js`
-- Sin Dockerfile ni scripts de despliegue en el repo
-- Twilio no está activo en este momento
-- ⚠️ Puerto `3000` en el código vs `5000` en `.env` — inconsistencia sin resolver
+**control_api.py endpoints (Flask, puerto 5000):**
+- `POST /set_mode` — body `{"mode": "FIXED"|"AI"}` → escribe `current_mode.json`
+- `GET /get_mode` — devuelve modo actual
+- `POST /set_message` — body `{"message": "..."}` → genera WAV con gTTS + ffmpeg (8kHz mono pcm_s16le) como `fixed_spam_message.wav`
+
+**Estado del webhook-server.js:**
+- 29 líneas, un único endpoint `POST /webhook/voice`, responde TwiML
+- Sin auth, sin rate limiting, sin PM2
+- Twilio no está activo — este fichero no recibe llamadas reales
 
 ### Servicios auxiliares en src/services/
 
@@ -248,9 +240,21 @@ Call-Spam-IA-Blocker/
 │       ├── ContactsService.ts
 │       └── AnswerHangupService.ts
 │
+├── vps_backend/                            ← infraestructura del servidor
+│   ├── extensions.conf                     ← dialplan Asterisk [from-zadarma] ✅
+│   ├── agi-bin/
+│   │   └── decision_agi.py                 ← AGI decisión FIXED vs AI ✅
+│   ├── victor_agi.py                       ← AGI Manolo conversacional (Gemini) 🔨
+│   ├── control_api.py                      ← Flask API puerto 5000 ✅
+│   ├── asterisk-control-api.service        ← systemd unit para control_api
+│   ├── deploy.sh                           ← instala dependencias en VPS
+│   ├── deploy_modo3.sh                     ← instala dependencias Modo 3
+│   ├── install_service.sh                  ← registra systemd service
+│   └── README_VPS.md
+│
 ├── App.tsx
 ├── index.ts
-├── webhook-server.js                       ← servidor TwiML (puerto 3000, Twilio no activo)
+├── webhook-server.js                       ← stub TwiML (puerto 3000, Twilio no activo)
 ├── package.json
 ├── tsconfig.json
 ├── app.json
@@ -426,4 +430,4 @@ En orden de prioridad lógica:
 
 6. **Limpiar residuos:** empezar por las referencias a `IVRAudioPlayer` en `CallAccessibilityService`, luego los 12 archivos Java y el Manifest.
 
-7. **Modo 3 — Agente IA conversacional:** Gemini para respuestas dinámicas en lugar del mensaje hardcodeado. Los planes están en `/docs/PLAN_MODO_3_*.md` pero no hay código implementado.
+7. **Modo 3 — Agente IA conversacional:** `victor_agi.py` implementado (Manolo, Gemini 2.5-flash + gTTS). Gemini y TTS funcionan en pruebas directas. Pendiente: resolver fallo al ejecutarse como sub-AGI desde `decision_agi.py` vía `EXEC AGI`.
