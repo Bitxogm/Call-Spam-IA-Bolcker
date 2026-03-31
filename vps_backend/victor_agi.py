@@ -124,7 +124,8 @@ def get_manolo_response(chat_history, text):
             contents=chat_history + [text],
             config=types.GenerateContentConfig(
                 system_instruction=PROMPT_MANOLO,
-                max_output_tokens=150,
+                max_output_tokens=1500,
+                thinking_config=types.ThinkingConfig(thinking_budget=0)
             )
         )
         chat_history.append(text)
