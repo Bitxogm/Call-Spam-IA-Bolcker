@@ -125,7 +125,7 @@ El webhook del VPS y la lógica on-device del teléfono actúan en paralelo sin 
 | Spammer escucha | nada | mensaje "Roberto" | IA conversacional (roadmap) |
 | Requiere VPS | ❌ | ✅ | ✅ |
 | Requiere Zadarma config | ❌ | ✅ | ✅ |
-| Estado actual | ✅ funcional | ✅ implementado | 🗺️ planificado |
+| Estado actual | ✅ funcional | ✅ funcional | 🔨 En desarrollo — Gemini OK, integración Asterisk pendiente |
 
 ---
 
@@ -398,6 +398,8 @@ adb logcat *:E
 - [ ] **`express` en `package.json` de la app móvil.** Debería estar en `/server/`.
 
 - [ ] **Sin tests** en ninguna capa.
+
+- [ ] **Modo 3 — integración Asterisk:** `victor_agi.py` arranca correctamente pero falla al ejecutarse como sub-AGI desde `decision_agi.py`. Gemini (`gemini-2.5-flash` con `thinking_budget=0`) y gTTS funcionan correctamente en pruebas directas. El dialplan funcional está en `vps_backend/extensions.conf`.
 
 ### Menor
 
