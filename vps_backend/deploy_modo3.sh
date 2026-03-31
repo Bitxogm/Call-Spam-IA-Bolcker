@@ -4,15 +4,12 @@ echo "=== Instalando dependencias ==="
 /root/ai_bridge/venv/bin/pip install gtts SpeechRecognition
 
 echo "=== Copiando scripts ==="
-sudo cp vps_backend/victor_agi.py /var/lib/asterisk/agi-bin/victor_agi.py
-sudo cp vps_backend/decision_agi.py /root/ai_bridge/decision_agi.py
-sudo cp /root/ai_bridge/decision_agi.py /var/lib/asterisk/agi-bin/decision_agi.py
+sudo cp vps_backend/manolo_agi.py /usr/share/asterisk/agi-bin/manolo_agi.py
+sudo cp vps_backend/extensions.conf /etc/asterisk/extensions.conf
 
 echo "=== Permisos ==="
-sudo chown asterisk:asterisk /var/lib/asterisk/agi-bin/victor_agi.py
-sudo chown asterisk:asterisk /var/lib/asterisk/agi-bin/decision_agi.py
-sudo chmod +x /var/lib/asterisk/agi-bin/victor_agi.py
-sudo chmod +x /var/lib/asterisk/agi-bin/decision_agi.py
+sudo chown asterisk:asterisk /usr/share/asterisk/agi-bin/manolo_agi.py
+sudo chmod +x /usr/share/asterisk/agi-bin/manolo_agi.py
 
 echo "=== Reiniciando Asterisk ==="
 sudo systemctl restart asterisk

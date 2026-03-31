@@ -120,10 +120,10 @@ En Modo 2, `CallAccessibilityService` también reacciona al estado OFFHOOK de fo
 |---|---|---|---|
 | USSD | desactiva (`##21#`) | activa (`*21*34919933065#`) | activa (`*21*34919933065#`) |
 | Teléfono suena | sí, app lo cuelga | no | no |
-| Spammer escucha | nada | mensaje "Roberto" | IA conversacional (roadmap) |
+| Spammer escucha | nada | mensaje "Roberto" | Manolo (Gemini 2.5-flash) |
 | Requiere VPS | ❌ | ✅ | ✅ |
 | Requiere Zadarma config | ❌ | ✅ | ✅ |
-| Estado actual | ✅ funcional | ✅ funcional | 🔨 En desarrollo — Gemini OK, integración Asterisk pendiente |
+| Estado actual | ✅ funcional | ✅ funcional | ✅ funcional |
 
 ---
 
@@ -136,8 +136,7 @@ El VPS gestiona las llamadas con **Asterisk** (no Twilio). `webhook-server.js` e
 | Componente | Archivo | Puerto/Ruta | Estado |
 |-----------|---------|-------------|--------|
 | **Asterisk dialplan** | `vps_backend/extensions.conf` | contexto `[from-zadarma]` | ✅ funcional |
-| **AGI de decisión** | `vps_backend/agi-bin/decision_agi.py` | `/var/lib/asterisk/agi-bin/` | ✅ funcional |
-| **AGI conversacional** | `vps_backend/victor_agi.py` | `/var/lib/asterisk/agi-bin/` | 🔨 falla como sub-AGI |
+| **AGI unificado** | `vps_backend/manolo_agi.py` | `/usr/share/asterisk/agi-bin/` | ✅ funcional |
 | **API de control** | `vps_backend/control_api.py` | puerto 5000 | ✅ funcional |
 | **Systemd service** | `vps_backend/asterisk-control-api.service` | — | instalado |
 | **TwiML stub** | `webhook-server.js` (raíz) | puerto 3000 | ⚠️ Twilio no activo |
@@ -403,7 +402,7 @@ adb logcat *:E
 
 - [ ] **Sin tests** en ninguna capa.
 
-- [ ] **Modo 3 — integración Asterisk:** `victor_agi.py` arranca correctamente pero falla al ejecutarse como sub-AGI desde `decision_agi.py`. Gemini (`gemini-2.5-flash` con `thinking_budget=0`) y gTTS funcionan correctamente en pruebas directas. El dialplan funcional está en `vps_backend/extensions.conf`.
+- [x] **Modo 3 — integración Asterisk:** resuelto con `manolo_agi.py` (AGI único que reemplaza `decision_agi.py` + `victor_agi.py`). La clave fue consumir el header AGI de Asterisk antes de enviar cualquier comando (`agi_read_headers()`). Path correcto: `/usr/share/asterisk/agi-bin/`.
 
 ### Menor
 
@@ -430,4 +429,4 @@ En orden de prioridad lógica:
 
 6. **Limpiar residuos:** empezar por las referencias a `IVRAudioPlayer` en `CallAccessibilityService`, luego los 12 archivos Java y el Manifest.
 
-7. **Modo 3 — Agente IA conversacional:** `victor_agi.py` implementado (Manolo, Gemini 2.5-flash + gTTS). Gemini y TTS funcionan en pruebas directas. Pendiente: resolver fallo al ejecutarse como sub-AGI desde `decision_agi.py` vía `EXEC AGI`.
+7. ~~**Modo 3 — Agente IA conversacional**~~ ✅ **Completado.** `manolo_agi.py` unifica la lógica de decisión y la conversación de Manolo en un único script AGI. Funcional en producción.
