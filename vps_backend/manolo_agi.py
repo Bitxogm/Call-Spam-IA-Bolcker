@@ -11,6 +11,7 @@ import sys
 import os
 import json
 import time
+import requests
 
 sys.path.insert(0, '/root/ai_bridge/venv/lib/python3.12/site-packages')
 sys.path.insert(0, '/root/ai_bridge')
@@ -22,12 +23,16 @@ import google.genai as genai
 from google.genai import types
 from gtts import gTTS
 import speech_recognition as sr
+import whisper
 from pydub import AudioSegment
 
 # ── Configuración ──────────────────────────────────────────────
 STATE_FILE = '/root/ai_bridge/current_mode.json'
 AUDIO_DIR  = '/tmp/manolo_agi'
 GEMINI_KEY = os.getenv('GEMINI_API_KEY')
+ELEVENLABS_KEY      = os.getenv('ELEVENLABS_API_KEY')
+ELEVENLABS_VOICE_ID = 'onwK4e9ZLuTAKqWW03F9'
+ELEVENLABS_URL      = f'https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}'
 
 os.makedirs(AUDIO_DIR, exist_ok=True)
 client = genai.Client(api_key=GEMINI_KEY)
@@ -68,6 +73,14 @@ def agi_log(msg):
 def agi_hangup():
     return agi_send('HANGUP')
 
+# Cargar Whisper una sola vez (después de agi_log)
+try:
+    whisper_model = whisper.load_model('small')
+    agi_log('Whisper small cargado')
+except Exception as _e:
+    whisper_model = None
+    agi_log(f'Whisper no disponible: {_e}')
+
 def agi_stream_file(filename):
     return agi_send(f'STREAM FILE {filename} ""')
 
@@ -87,11 +100,43 @@ def get_current_mode():
 # ── Audio ──────────────────────────────────────────────────────
 def text_to_speech(text, filename):
     """Genera WAV 8kHz mono para Asterisk. Devuelve path sin extensión."""
+    wav_path = f'{AUDIO_DIR}/{filename}'
     try:
         mp3_path = f'{AUDIO_DIR}/{filename}.mp3'
-        wav_path = f'{AUDIO_DIR}/{filename}'
-        tts = gTTS(text=text, lang='es', tld='es')
-        tts.save(mp3_path)
+
+        # Intentar ElevenLabs primero
+        el_ok = False
+        if ELEVENLABS_KEY:
+            try:
+                resp = requests.post(
+                    ELEVENLABS_URL,
+                    headers={
+                        'xi-api-key': ELEVENLABS_KEY,
+                        'Content-Type': 'application/json',
+                        'Accept': 'audio/mpeg',
+                    },
+                    json={
+                        'text': text,
+                        'model_id': 'eleven_multilingual_v2',
+                        'voice_settings': {
+                            'stability': 0.3,
+                            'similarity_boost': 0.8,
+                        },
+                    },
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                with open(mp3_path, 'wb') as f:
+                    f.write(resp.content)
+                el_ok = True
+                agi_log('TTS: ElevenLabs OK')
+            except Exception as el_err:
+                agi_log(f'TTS: ElevenLabs falló ({el_err}), usando gTTS')
+
+        if not el_ok:
+            tts = gTTS(text=text, lang='es', tld='es')
+            tts.save(mp3_path)
+
         audio = AudioSegment.from_mp3(mp3_path)
         audio = audio.set_frame_rate(8000).set_channels(1).set_sample_width(2)
         audio.export(wav_path + '.wav', format='wav')
@@ -103,21 +148,29 @@ def text_to_speech(text, filename):
 
 def speech_to_text(wav_path):
     """Convierte WAV grabado por Asterisk a texto."""
-    recognizer = sr.Recognizer()
     try:
         audio = AudioSegment.from_file(wav_path + '.wav')
         audio = audio.set_frame_rate(16000).set_channels(1)
         converted = wav_path + '_converted.wav'
         audio.export(converted, format='wav')
+
+        if whisper_model is not None:
+            try:
+                result = whisper_model.transcribe(converted, language='es')
+                text = result['text'].strip()
+                agi_log(f"STT Whisper: '{text}'")
+                return text
+            except Exception as w_err:
+                agi_log(f'STT: Whisper falló ({w_err}), usando Google SR')
+
+        # Fallback: Google Speech Recognition
+        recognizer = sr.Recognizer()
         with sr.AudioFile(converted) as source:
             recognizer.adjust_for_ambient_noise(source, duration=0.5)
             audio_data = recognizer.record(source)
             text = recognizer.recognize_google(audio_data, language='es-ES')
-            agi_log(f"STT: '{text}'")
+            agi_log(f"STT Google: '{text}'")
             return text
-    except sr.UnknownValueError:
-        agi_log('STT: silencio o no entendido')
-        return ''
     except Exception as e:
         agi_log(f'STT error: {e}')
         return ''
