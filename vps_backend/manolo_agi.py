@@ -75,7 +75,7 @@ def agi_hangup():
 
 # Cargar Whisper una sola vez (después de agi_log)
 try:
-    whisper_model = whisper.load_model('small')
+    whisper_model = whisper.load_model('tiny')
     agi_log('Whisper small cargado')
 except Exception as _e:
     whisper_model = None
