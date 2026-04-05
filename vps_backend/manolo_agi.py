@@ -32,7 +32,9 @@ AUDIO_DIR  = '/tmp/manolo_agi'
 GEMINI_KEY = os.getenv('GEMINI_API_KEY')
 ELEVENLABS_KEY      = os.getenv('ELEVENLABS_API_KEY')
 ELEVENLABS_VOICE_ID = 'onwK4e9ZLuTAKqWW03F9'
-ELEVENLABS_URL      = f'https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}'
+ELEVENLABS_URL      = f'https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}/stream'
+DEEPGRAM_KEY  = os.getenv('DEEPGRAM_API_KEY')
+DEEPGRAM_URL  = 'https://api.deepgram.com/v1/listen'
 
 os.makedirs(AUDIO_DIR, exist_ok=True)
 client = genai.Client(api_key=GEMINI_KEY)
@@ -123,13 +125,16 @@ def text_to_speech(text, filename):
                             'similarity_boost': 0.8,
                         },
                     },
-                    timeout=15,
+                    stream=True,
+                    timeout=30,
                 )
                 resp.raise_for_status()
                 with open(mp3_path, 'wb') as f:
-                    f.write(resp.content)
+                    for chunk in resp.iter_content(chunk_size=4096):
+                        if chunk:
+                            f.write(chunk)
                 el_ok = True
-                agi_log('TTS: ElevenLabs OK')
+                agi_log('TTS: ElevenLabs streaming OK')
             except Exception as el_err:
                 agi_log(f'TTS: ElevenLabs falló ({el_err}), usando gTTS')
 
@@ -153,6 +158,27 @@ def speech_to_text(wav_path):
         audio = audio.set_frame_rate(16000).set_channels(1)
         converted = wav_path + '_converted.wav'
         audio.export(converted, format='wav')
+
+        # Deepgram (primario)
+        if DEEPGRAM_KEY:
+            try:
+                with open(converted, 'rb') as f:
+                    dg_resp = requests.post(
+                        DEEPGRAM_URL,
+                        params={'language': 'es', 'model': 'nova-2'},
+                        headers={
+                            'Authorization': f'Token {DEEPGRAM_KEY}',
+                            'Content-Type': 'audio/wav',
+                        },
+                        data=f,
+                        timeout=15,
+                    )
+                dg_resp.raise_for_status()
+                text = dg_resp.json()['results']['channels'][0]['alternatives'][0]['transcript'].strip()
+                agi_log(f"STT Deepgram: '{text}'")
+                return text
+            except Exception as dg_err:
+                agi_log(f'STT: Deepgram falló ({dg_err}), usando Whisper')
 
         if whisper_model is not None:
             try:
