@@ -12,6 +12,8 @@ import os
 import json
 import time
 import requests
+import asyncio
+import edge_tts
 
 sys.path.insert(0, '/root/ai_bridge/venv/lib/python3.12/site-packages')
 sys.path.insert(0, '/root/ai_bridge')
@@ -21,18 +23,13 @@ load_dotenv('/root/ai_bridge/.env')
 
 import google.genai as genai
 from google.genai import types
-from gtts import gTTS
 import speech_recognition as sr
-import whisper
 from pydub import AudioSegment
 
 # ── Configuración ──────────────────────────────────────────────
 STATE_FILE = '/root/ai_bridge/current_mode.json'
 AUDIO_DIR  = '/tmp/manolo_agi'
 GEMINI_KEY = os.getenv('GEMINI_API_KEY')
-ELEVENLABS_KEY      = os.getenv('ELEVENLABS_API_KEY')
-ELEVENLABS_VOICE_ID = 'onwK4e9ZLuTAKqWW03F9'
-ELEVENLABS_URL      = f'https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}/stream'
 DEEPGRAM_KEY  = os.getenv('DEEPGRAM_API_KEY')
 DEEPGRAM_URL  = 'https://api.deepgram.com/v1/listen'
 
@@ -75,14 +72,6 @@ def agi_log(msg):
 def agi_hangup():
     return agi_send('HANGUP')
 
-# Cargar Whisper una sola vez (después de agi_log)
-try:
-    whisper_model = whisper.load_model('tiny')
-    agi_log('Whisper small cargado')
-except Exception as _e:
-    whisper_model = None
-    agi_log(f'Whisper no disponible: {_e}')
-
 def agi_stream_file(filename):
     return agi_send(f'STREAM FILE {filename} ""')
 
@@ -106,46 +95,17 @@ def text_to_speech(text, filename):
     try:
         mp3_path = f'{AUDIO_DIR}/{filename}.mp3'
 
-        # Intentar ElevenLabs primero
-        el_ok = False
-        if ELEVENLABS_KEY:
-            try:
-                resp = requests.post(
-                    ELEVENLABS_URL,
-                    headers={
-                        'xi-api-key': ELEVENLABS_KEY,
-                        'Content-Type': 'application/json',
-                        'Accept': 'audio/mpeg',
-                    },
-                    json={
-                        'text': text,
-                        'model_id': 'eleven_multilingual_v2',
-                        'voice_settings': {
-                            'stability': 0.3,
-                            'similarity_boost': 0.8,
-                        },
-                    },
-                    stream=True,
-                    timeout=30,
-                )
-                resp.raise_for_status()
-                with open(mp3_path, 'wb') as f:
-                    for chunk in resp.iter_content(chunk_size=4096):
-                        if chunk:
-                            f.write(chunk)
-                el_ok = True
-                agi_log('TTS: ElevenLabs streaming OK')
-            except Exception as el_err:
-                agi_log(f'TTS: ElevenLabs falló ({el_err}), usando gTTS')
+        async def _generate():
+            tts = edge_tts.Communicate(text, voice='es-ES-AlvaroNeural')
+            await tts.save(mp3_path)
 
-        if not el_ok:
-            tts = gTTS(text=text, lang='es', tld='es')
-            tts.save(mp3_path)
+        asyncio.run(_generate())
 
         audio = AudioSegment.from_mp3(mp3_path)
         audio = audio.set_frame_rate(8000).set_channels(1).set_sample_width(2)
         audio.export(wav_path + '.wav', format='wav')
         os.remove(mp3_path)
+        agi_log('TTS: Edge TTS OK')
         return wav_path
     except Exception as e:
         agi_log(f'TTS error: {e}')
@@ -178,16 +138,7 @@ def speech_to_text(wav_path):
                 agi_log(f"STT Deepgram: '{text}'")
                 return text
             except Exception as dg_err:
-                agi_log(f'STT: Deepgram falló ({dg_err}), usando Whisper')
-
-        if whisper_model is not None:
-            try:
-                result = whisper_model.transcribe(converted, language='es')
-                text = result['text'].strip()
-                agi_log(f"STT Whisper: '{text}'")
-                return text
-            except Exception as w_err:
-                agi_log(f'STT: Whisper falló ({w_err}), usando Google SR')
+                agi_log(f'STT: Deepgram falló ({dg_err}), usando Google SR')
 
         # Fallback: Google Speech Recognition
         recognizer = sr.Recognizer()
