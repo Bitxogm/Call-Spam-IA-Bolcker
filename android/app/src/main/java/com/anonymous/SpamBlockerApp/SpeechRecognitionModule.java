@@ -62,46 +62,51 @@ public class SpeechRecognitionModule extends ReactContextBaseJavaModule {
      */
     @ReactMethod
     public void startListening(String language, Promise promise) {
-        try {
-            if (isListening) {
-                Log.w(TAG, "⚠️ Ya está escuchando");
-                promise.reject("ALREADY_LISTENING", "Ya está escuchando");
-                return;
+        reactContext.runOnUiQueueThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (isListening) {
+                        Log.w(TAG, "⚠️ Ya está escuchando");
+                        promise.reject("ALREADY_LISTENING", "Ya está escuchando");
+                        return;
+                    }
+
+                    Log.d(TAG, "🎤 Iniciando reconocimiento de voz...");
+
+                    // Crear SpeechRecognizer si no existe
+                    if (speechRecognizer == null) {
+                        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(reactContext);
+                        speechRecognizer.setRecognitionListener(new SpeechRecognitionListener());
+                    }
+
+                    // Configurar Intent
+                    Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+                    intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+
+                    // Configurar idioma (español por defecto)
+                    String locale = language != null ? language : "es-ES";
+                    intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale);
+                    intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, locale);
+
+                    // Configuración adicional
+                    intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
+                    intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);
+                    intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000);
+
+                    // Iniciar reconocimiento
+                    speechRecognizer.startListening(intent);
+                    isListening = true;
+
+                    Log.i(TAG, "✅ Reconocimiento iniciado");
+                    promise.resolve(true);
+
+                } catch (Exception e) {
+                    Log.e(TAG, "❌ Error iniciando reconocimiento: " + e.getMessage());
+                    promise.reject("START_LISTENING_ERROR", e.getMessage(), e);
+                }
             }
-
-            Log.d(TAG, "🎤 Iniciando reconocimiento de voz...");
-
-            // Crear SpeechRecognizer si no existe
-            if (speechRecognizer == null) {
-                speechRecognizer = SpeechRecognizer.createSpeechRecognizer(reactContext);
-                speechRecognizer.setRecognitionListener(new SpeechRecognitionListener());
-            }
-
-            // Configurar Intent
-            Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-
-            // Configurar idioma (español por defecto)
-            String locale = language != null ? language : "es-ES";
-            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale);
-            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, locale);
-
-            // Configuración adicional
-            intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
-            intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);
-            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000);
-
-            // Iniciar reconocimiento
-            speechRecognizer.startListening(intent);
-            isListening = true;
-
-            Log.i(TAG, "✅ Reconocimiento iniciado");
-            promise.resolve(true);
-
-        } catch (Exception e) {
-            Log.e(TAG, "❌ Error iniciando reconocimiento: " + e.getMessage());
-            promise.reject("START_LISTENING_ERROR", e.getMessage(), e);
-        }
+        });
     }
 
     /**

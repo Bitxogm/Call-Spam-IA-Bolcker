@@ -373,7 +373,9 @@ export default function AITestScreen({ navigation }: AITestScreenProps) {
 
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={{ flex: 1 }}>
       <View style={styles.header}>
         <Text style={styles.title}>🤖 Testing IA Anti-Spam</Text>
 
@@ -465,10 +467,7 @@ export default function AITestScreen({ navigation }: AITestScreenProps) {
             </ScrollView>
 
 
-            <KeyboardAvoidingView
-              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-              keyboardVerticalOffset={100}
-            >
+            <View>
               {/* 🎤 BOTÓN PUSH-TO-TALK (Micrófono) */}
               {isSpeechAvailable && (
                 <View style={styles.micContainer}>
@@ -534,7 +533,7 @@ export default function AITestScreen({ navigation }: AITestScreenProps) {
                   </Text>
                 </TouchableOpacity>
               </View>
-            </KeyboardAvoidingView>
+            </View>
 
           </>
         ) : (
@@ -548,7 +547,7 @@ export default function AITestScreen({ navigation }: AITestScreenProps) {
           </View>
         )}
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
