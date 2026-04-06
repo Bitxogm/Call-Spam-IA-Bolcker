@@ -11,6 +11,7 @@ import sys
 import os
 import json
 import time
+import socket
 import requests
 
 sys.path.insert(0, '/root/ai_bridge/venv/lib/python3.12/site-packages')
@@ -23,12 +24,17 @@ import google.genai as genai
 from google.genai import types
 from gtts import gTTS
 import speech_recognition as sr
-import whisper
 from pydub import AudioSegment
+
+try:
+    import whisper
+except Exception:
+    whisper = None
 
 # ── Configuración ──────────────────────────────────────────────
 STATE_FILE = '/root/ai_bridge/current_mode.json'
 AUDIO_DIR  = '/tmp/manolo_agi'
+WHISPER_SOCKET = '/tmp/whisper.sock'
 GEMINI_KEY = os.getenv('GEMINI_API_KEY')
 ELEVENLABS_KEY      = os.getenv('ELEVENLABS_API_KEY')
 ELEVENLABS_VOICE_ID = 'onwK4e9ZLuTAKqWW03F9'
@@ -73,13 +79,34 @@ def agi_log(msg):
 def agi_hangup():
     return agi_send('HANGUP')
 
-# Cargar Whisper una sola vez (después de agi_log)
-try:
-    whisper_model = whisper.load_model('small')
-    agi_log('Whisper small cargado')
-except Exception as _e:
-    whisper_model = None
-    agi_log(f'Whisper no disponible: {_e}')
+# Fallback local: se carga solo bajo demanda si falla el socket
+whisper_model = None
+whisper_load_attempted = False
+
+
+def ensure_local_whisper_model():
+    global whisper_model
+    global whisper_load_attempted
+
+    if whisper_model is not None:
+        return whisper_model
+
+    if whisper_load_attempted:
+        return None
+
+    whisper_load_attempted = True
+
+    if whisper is None:
+        agi_log('Whisper local fallback no disponible: módulo whisper no instalado')
+        return None
+
+    try:
+        whisper_model = whisper.load_model('small')
+        agi_log('Whisper local fallback cargado bajo demanda')
+        return whisper_model
+    except Exception as _e:
+        agi_log(f'Whisper local fallback no disponible: {_e}')
+        return None
 
 def agi_stream_file(filename):
     return agi_send(f'STREAM FILE {filename} ""')
@@ -146,6 +173,28 @@ def text_to_speech(text, filename):
         agi_log(f'TTS error: {e}')
         return None
 
+def speech_to_text_via_socket(converted_wav_path):
+    """Pide STT al servicio Whisper por socket Unix local."""
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client_sock:
+            client_sock.settimeout(8)
+            client_sock.connect(WHISPER_SOCKET)
+            client_sock.sendall((converted_wav_path + '\n').encode('utf-8'))
+            data = b''
+            while True:
+                chunk = client_sock.recv(4096)
+                if not chunk:
+                    break
+                data += chunk
+                if b'\n' in data:
+                    break
+        text = data.decode('utf-8', errors='replace').strip()
+        agi_log(f"STT socket: '{text}'")
+        return text
+    except Exception as e:
+        agi_log(f'STT socket falló ({e}), fallback local')
+        return None
+
 def speech_to_text(wav_path):
     """Convierte WAV grabado por Asterisk a texto."""
     try:
@@ -154,16 +203,23 @@ def speech_to_text(wav_path):
         converted = wav_path + '_converted.wav'
         audio.export(converted, format='wav')
 
-        if whisper_model is not None:
+        # 1) Intento principal: servicio Whisper por socket Unix
+        socket_text = speech_to_text_via_socket(converted)
+        if socket_text is not None:
+            return socket_text
+
+        # 2) Fallback local: Whisper en este proceso (carga bajo demanda)
+        local_model = ensure_local_whisper_model()
+        if local_model is not None:
             try:
-                result = whisper_model.transcribe(converted, language='es')
+                result = local_model.transcribe(converted, language='es')
                 text = result['text'].strip()
-                agi_log(f"STT Whisper: '{text}'")
+                agi_log(f"STT Whisper local: '{text}'")
                 return text
             except Exception as w_err:
-                agi_log(f'STT: Whisper falló ({w_err}), usando Google SR')
+                agi_log(f'STT Whisper local falló ({w_err}), usando Google SR')
 
-        # Fallback: Google Speech Recognition
+        # 3) Fallback final: Google Speech Recognition
         recognizer = sr.Recognizer()
         with sr.AudioFile(converted) as source:
             recognizer.adjust_for_ambient_noise(source, duration=0.5)
