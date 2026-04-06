@@ -412,12 +412,12 @@ asterisk -rx "dialplan reload"
 - [ ] **Sin tests** en ninguna capa.
 
 - [x] **Modo 3 ✅ Funcional — conversación real con Manolo**
-  - TTS: ElevenLabs (voz Daniel, español)
-  - STT: Whisper small (local, lento)
-  - LLM: Gemini 2.5-flash (20 req/día free tier)
-  - Latencia: ~15s saludo, ~10s entre turnos
+  - LLM: Groq + llama-3.3-70b-versatile (gratis, ~0.2s)
+  - TTS: Edge TTS voz es-ES-AlvaroNeural (gratis, ~1s)
+  - STT: Whisper small via socket permanente (gratis, ~0.5s)
+  - Latencia por turno: ~8-14s (RECORD timeout el mayor problema)
 
-- [ ] **Whisper carga en cada llamada AGI (~4-5s overhead):** El proceso AGI se lanza nuevo por cada llamada. Whisper small tarda 4-5s en cargar. Solución: servicio Python permanente con Whisper precargado escuchando en socket local. Impacto: reduce delay inicial de 15s a ~8s y entre turnos de 10s a ~5s.
+- [ ] **RECORD FILE devuelve timeout en vez de silence:** El canal SIP tiene comfort noise que impide la detección de silencio. Posible solución: reducir `maxdur` o usar VAD externo.
 
 - [ ] **Quota Gemini agotada (resetea diariamente):** `gemini-2.5-flash` tiene límite de 20 req/día en free tier. Solución: activar billing en Google AI Studio o esperar reset diario. El Modo 3 no funciona cuando se agota la quota — Manolo responde siempre con el fallback `"Ay hijo no te he oído bien"`.
 
