@@ -311,7 +311,7 @@ def main():
 
     # MEJORA 2 — audio de pensamiento pregenerado
     if not os.path.exists(f'{AUDIO_DIR}/pensando.wav'):
-        text_to_speech('Mmm... un momento hijo, que no oigo bien...', 'pensando')
+        text_to_speech('Ay... espera un momento hijo...', 'pensando')
         agi_log('Pensando pregenerado')
 
     if mode == 'FIXED':
