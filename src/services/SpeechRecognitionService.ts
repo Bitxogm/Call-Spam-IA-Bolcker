@@ -1,16 +1,21 @@
 // src/services/SpeechRecognitionService.ts
-import { NativeModules, NativeEventEmitter, EmitterSubscription, Platform } from 'react-native';
+import {
+  NativeModules,
+  NativeEventEmitter,
+  EmitterSubscription,
+  Platform,
+} from "react-native";
 
 const { SpeechRecognitionModule } = NativeModules;
 
 export type SpeechRecognitionEvent =
-  | 'onSpeechStart'
-  | 'onSpeechRecognized'
-  | 'onSpeechEnd'
-  | 'onSpeechError'
-  | 'onSpeechResults'
-  | 'onSpeechPartialResults'
-  | 'onSpeechVolumeChanged';
+  | "onSpeechStart"
+  | "onSpeechRecognized"
+  | "onSpeechEnd"
+  | "onSpeechError"
+  | "onSpeechResults"
+  | "onSpeechPartialResults"
+  | "onSpeechVolumeChanged";
 
 export interface SpeechRecognitionResult {
   value: string;
@@ -30,11 +35,27 @@ class SpeechRecognitionService {
   private eventEmitter: NativeEventEmitter | null = null;
   private subscriptions: Map<string, EmitterSubscription> = new Map();
   private isInitialized = false;
+  public onSpeechResults: ((text: string) => void) | null = null;
 
   constructor() {
-    if (Platform.OS === 'android' && SpeechRecognitionModule) {
+    if (Platform.OS === "android" && SpeechRecognitionModule) {
       this.eventEmitter = new NativeEventEmitter(SpeechRecognitionModule);
       this.isInitialized = true;
+
+      this.eventEmitter.addListener(
+        "onSpeechResults",
+        (data: SpeechRecognitionResult) => {
+          if (this.onSpeechResults) {
+            this.onSpeechResults(data?.value || "");
+          }
+        },
+      );
+
+      this.eventEmitter.addListener("onSpeechError", () => {
+        if (this.onSpeechResults) {
+          this.onSpeechResults("");
+        }
+      });
     }
   }
 
@@ -43,7 +64,9 @@ class SpeechRecognitionService {
    */
   async isAvailable(): Promise<boolean> {
     if (!this.isInitialized) {
-      console.warn('⚠️ SpeechRecognition no está disponible en esta plataforma');
+      console.warn(
+        "⚠️ SpeechRecognition no está disponible en esta plataforma",
+      );
       return false;
     }
 
@@ -51,7 +74,7 @@ class SpeechRecognitionService {
       const available = await SpeechRecognitionModule.isAvailable();
       return available;
     } catch (error) {
-      console.error('❌ Error verificando disponibilidad:', error);
+      console.error("❌ Error verificando disponibilidad:", error);
       return false;
     }
   }
@@ -60,17 +83,17 @@ class SpeechRecognitionService {
    * Inicia el reconocimiento de voz
    * @param language Código de idioma (por defecto: 'es-ES')
    */
-  async startListening(language: string = 'es-ES'): Promise<boolean> {
+  async startListening(language: string = "es-ES"): Promise<boolean> {
     if (!this.isInitialized) {
-      throw new Error('SpeechRecognition no está disponible');
+      throw new Error("SpeechRecognition no está disponible");
     }
 
     try {
       await SpeechRecognitionModule.startListening(language);
-      console.log('🎤 Reconocimiento de voz iniciado');
+      console.log("🎤 Reconocimiento de voz iniciado");
       return true;
     } catch (error) {
-      console.error('❌ Error iniciando reconocimiento:', error);
+      console.error("❌ Error iniciando reconocimiento:", error);
       throw error;
     }
   }
@@ -85,10 +108,10 @@ class SpeechRecognitionService {
 
     try {
       await SpeechRecognitionModule.stopListening();
-      console.log('🛑 Reconocimiento de voz detenido');
+      console.log("🛑 Reconocimiento de voz detenido");
       return true;
     } catch (error) {
-      console.error('❌ Error deteniendo reconocimiento:', error);
+      console.error("❌ Error deteniendo reconocimiento:", error);
       return false;
     }
   }
@@ -103,10 +126,10 @@ class SpeechRecognitionService {
 
     try {
       await SpeechRecognitionModule.cancel();
-      console.log('❌ Reconocimiento cancelado');
+      console.log("❌ Reconocimiento cancelado");
       return true;
     } catch (error) {
-      console.error('❌ Error cancelando reconocimiento:', error);
+      console.error("❌ Error cancelando reconocimiento:", error);
       return false;
     }
   }
@@ -125,9 +148,9 @@ class SpeechRecognitionService {
 
       // Destruir el reconocedor nativo
       await SpeechRecognitionModule.destroy();
-      console.log('♻️ SpeechRecognition destruido');
+      console.log("♻️ SpeechRecognition destruido");
     } catch (error) {
-      console.error('❌ Error destruyendo reconocedor:', error);
+      console.error("❌ Error destruyendo reconocedor:", error);
     }
   }
 
@@ -136,10 +159,10 @@ class SpeechRecognitionService {
    */
   addEventListener(
     event: SpeechRecognitionEvent,
-    callback: (data?: any) => void
+    callback: (data?: any) => void,
   ): EmitterSubscription | null {
     if (!this.eventEmitter) {
-      console.warn('⚠️ EventEmitter no disponible');
+      console.warn("⚠️ EventEmitter no disponible");
       return null;
     }
 
@@ -171,40 +194,47 @@ class SpeechRecognitionService {
    * Helper: Reconocer voz con Promise (más fácil de usar)
    * Devuelve el texto reconocido o lanza error
    */
-  async recognize(language: string = 'es-ES'): Promise<string> {
+  async recognize(language: string = "es-ES"): Promise<string> {
     return new Promise(async (resolve, reject) => {
       if (!this.isInitialized) {
-        reject(new Error('SpeechRecognition no disponible'));
+        reject(new Error("SpeechRecognition no disponible"));
         return;
       }
 
       let timeoutId: NodeJS.Timeout | null = null;
 
       // Listener para resultados
-      const resultsListener = this.addEventListener('onSpeechResults', (data: SpeechRecognitionResult) => {
-        if (timeoutId) clearTimeout(timeoutId);
-        this.cleanup();
-        resolve(data.value);
-      });
+      const resultsListener = this.addEventListener(
+        "onSpeechResults",
+        (data: SpeechRecognitionResult) => {
+          if (timeoutId) clearTimeout(timeoutId);
+          this.cleanup();
+          resolve(data.value);
+        },
+      );
 
       // Listener para errores
-      const errorListener = this.addEventListener('onSpeechError', (data: SpeechRecognitionError) => {
-        if (timeoutId) clearTimeout(timeoutId);
-        this.cleanup();
+      const errorListener = this.addEventListener(
+        "onSpeechError",
+        (data: SpeechRecognitionError) => {
+          if (timeoutId) clearTimeout(timeoutId);
+          this.cleanup();
 
-        // Si el error es "no se reconoció voz", devolver string vacío en lugar de error
-        if (data.code === 7) {  // ERROR_NO_MATCH
-          resolve('');
-        } else {
-          reject(new Error(data.message));
-        }
-      });
+          // Si el error es "no se reconoció voz", devolver string vacío en lugar de error
+          if (data.code === 7) {
+            // ERROR_NO_MATCH
+            resolve("");
+          } else {
+            reject(new Error(data.message));
+          }
+        },
+      );
 
       // Timeout de seguridad (10 segundos)
       timeoutId = setTimeout(() => {
         this.cancel();
         this.cleanup();
-        reject(new Error('Timeout: No se detectó voz en 10 segundos'));
+        reject(new Error("Timeout: No se detectó voz en 10 segundos"));
       }, 10000);
 
       // Función para limpiar listeners

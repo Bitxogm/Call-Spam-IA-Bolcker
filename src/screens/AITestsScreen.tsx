@@ -1,5 +1,5 @@
 // src/screens/AITestScreen.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { geminiService, SPAM_PERSONALITIES } from '../services/GeminiServices';
 import { elevenLabsService } from '../services/ElevenLabService';
 import speechRecognitionService from '../services/SpeechRecognitionService';
@@ -34,14 +34,25 @@ export default function AITestScreen({ navigation }: AITestScreenProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeechAvailable, setIsSpeechAvailable] = useState(false);
   const [micScale] = useState(new Animated.Value(1));
+  const sendTranscribedMessageRef = useRef<(text: string) => Promise<void>>(async () => { });
 
   const isGeminiConfigured = geminiService.isConfigured();
 
   // Verificar disponibilidad de Speech Recognition
   useEffect(() => {
     checkSpeechAvailability();
+    speechRecognitionService.onSpeechResults = (text: string) => {
+      if (text && text.trim() !== '') {
+        setIsLoading(false);
+        sendTranscribedMessageRef.current(text);
+      } else {
+        setIsLoading(false);
+        Alert.alert('⚠️ Sin voz', 'No se detectó ninguna voz. Intenta de nuevo.');
+      }
+    };
 
     return () => {
+      speechRecognitionService.onSpeechResults = null;
       // Cleanup al desmontar
       speechRecognitionService.removeAllListeners();
     };
@@ -255,9 +266,8 @@ export default function AITestScreen({ navigation }: AITestScreenProps) {
         useNativeDriver: true,
       }).start();
 
-      // Iniciar reconocimiento
-      await speechRecognitionService.startListening('es-ES');
-      console.log('🎤 Grabación iniciada - HABLA AHORA');
+      // Solo estado visual
+      console.log('🎤 UI listening activado (esperando soltar para startListening)');
 
     } catch (error) {
       console.error('❌ Error iniciando grabación:', error);
@@ -286,22 +296,11 @@ export default function AITestScreen({ navigation }: AITestScreenProps) {
       console.log('🛑 Grabación detenida - Procesando...');
       setIsLoading(true);
 
-      // Detener reconocimiento y obtener resultado
-      const transcription = await speechRecognitionService.recognize('es-ES');
+      // Al soltar: iniciar reconocimiento, resultado por onSpeechResults
+      await speechRecognitionService.startListening('es-ES');
 
       setIsRecording(false);
-
-      if (!transcription || transcription.trim() === '') {
-        console.log('⚠️ No se detectó voz');
-        setIsLoading(false);
-        Alert.alert('⚠️ Sin voz', 'No se detectó ninguna voz. Intenta de nuevo.');
-        return;
-      }
-
-      console.log('📝 Transcripción:', transcription);
-
-      // Enviar mensaje transcrito a la IA (reusar lógica existente)
-      await sendTranscribedMessage(transcription);
+      console.log('🎧 SpeechRecognition iniciado, esperando onSpeechResults...');
 
     } catch (error) {
       console.error('❌ Error procesando voz:', error);
@@ -366,6 +365,10 @@ export default function AITestScreen({ navigation }: AITestScreenProps) {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    sendTranscribedMessageRef.current = sendTranscribedMessage;
+  }, [sendTranscribedMessage]);
 
 
 
@@ -498,10 +501,10 @@ export default function AITestScreen({ navigation }: AITestScreenProps) {
                     {isRecording
                       ? '🗣️ Hablando... (Suelta para enviar)'
                       : isLoading
-                      ? '⏳ Procesando...'
-                      : isPlayingTTS
-                      ? '🔊 IA respondiendo...'
-                      : '🎤 Mantén presionado para hablar'}
+                        ? '⏳ Procesando...'
+                        : isPlayingTTS
+                          ? '🔊 IA respondiendo...'
+                          : '🎤 Mantén presionado para hablar'}
                   </Text>
                 </View>
               )}
