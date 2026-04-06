@@ -10,9 +10,10 @@ Modos:
 import sys
 import os
 import json
+import asyncio
 import time
 import socket
-import requests
+import edge_tts
 
 sys.path.insert(0, '/root/ai_bridge/venv/lib/python3.12/site-packages')
 sys.path.insert(0, '/root/ai_bridge')
@@ -22,8 +23,8 @@ load_dotenv('/root/ai_bridge/.env')
 
 import google.genai as genai
 from google.genai import types
-from gtts import gTTS
 import speech_recognition as sr
+from groq import Groq
 from pydub import AudioSegment
 
 try:
@@ -35,12 +36,11 @@ except Exception:
 STATE_FILE = '/root/ai_bridge/current_mode.json'
 AUDIO_DIR  = '/tmp/manolo_agi'
 WHISPER_SOCKET = '/tmp/whisper.sock'
+GROQ_KEY = os.getenv('GROQ_API_KEY')
 GEMINI_KEY = os.getenv('GEMINI_API_KEY')
-ELEVENLABS_KEY      = os.getenv('ELEVENLABS_API_KEY')
-ELEVENLABS_VOICE_ID = 'onwK4e9ZLuTAKqWW03F9'
-ELEVENLABS_URL      = f'https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}'
 
 os.makedirs(AUDIO_DIR, exist_ok=True)
+groq_client = Groq(api_key=GROQ_KEY)
 client = genai.Client(api_key=GEMINI_KEY)
 
 PROMPT_MANOLO = """Eres Manolo, un anciano español de 78 años de un pueblo de Galicia.
@@ -126,43 +126,17 @@ def get_current_mode():
 
 # ── Audio ──────────────────────────────────────────────────────
 def text_to_speech(text, filename):
-    """Genera WAV 8kHz mono para Asterisk. Devuelve path sin extensión."""
+    """Genera WAV 8kHz mono para Asterisk usando Edge TTS. Devuelve path sin extensión."""
     wav_path = f'{AUDIO_DIR}/{filename}'
     try:
         mp3_path = f'{AUDIO_DIR}/{filename}.mp3'
 
-        # Intentar ElevenLabs primero
-        el_ok = False
-        if ELEVENLABS_KEY:
-            try:
-                resp = requests.post(
-                    ELEVENLABS_URL,
-                    headers={
-                        'xi-api-key': ELEVENLABS_KEY,
-                        'Content-Type': 'application/json',
-                        'Accept': 'audio/mpeg',
-                    },
-                    json={
-                        'text': text,
-                        'model_id': 'eleven_multilingual_v2',
-                        'voice_settings': {
-                            'stability': 0.3,
-                            'similarity_boost': 0.8,
-                        },
-                    },
-                    timeout=15,
-                )
-                resp.raise_for_status()
-                with open(mp3_path, 'wb') as f:
-                    f.write(resp.content)
-                el_ok = True
-                agi_log('TTS: ElevenLabs OK')
-            except Exception as el_err:
-                agi_log(f'TTS: ElevenLabs falló ({el_err}), usando gTTS')
-
-        if not el_ok:
-            tts = gTTS(text=text, lang='es', tld='es')
-            tts.save(mp3_path)
+        communicate = edge_tts.Communicate(
+            text=text,
+            voice='es-ES-AlvaroNeural'
+        )
+        asyncio.run(communicate.save(mp3_path))
+        agi_log('TTS: Edge TTS OK')
 
         audio = AudioSegment.from_mp3(mp3_path)
         audio = audio.set_frame_rate(8000).set_channels(1).set_sample_width(2)
@@ -236,6 +210,27 @@ def get_manolo_response(chat_history, text):
     try:
         if not text:
             text = '[Silencio]'
+
+        # 1) Intento principal: Groq
+        try:
+            groq_response = groq_client.chat.completions.create(
+                model='llama-3.3-70b-versatile',
+                messages=[
+                    {'role': 'system', 'content': PROMPT_MANOLO},
+                    {'role': 'user', 'content': text}
+                ],
+                max_tokens=100,
+                temperature=0.8
+            )
+            respuesta = (groq_response.choices[0].message.content or '').strip()
+            chat_history.append(text)
+            chat_history.append(respuesta)
+            agi_log(f'Manolo (Groq): {respuesta}')
+            return respuesta
+        except Exception as groq_err:
+            agi_log(f'Groq error: {groq_err}, fallback a Gemini')
+
+        # 2) Fallback: Gemini
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=chat_history + [text],
@@ -245,12 +240,13 @@ def get_manolo_response(chat_history, text):
                 thinking_config=types.ThinkingConfig(thinking_budget=0)
             )
         )
+        respuesta = response.text or ''
         chat_history.append(text)
-        chat_history.append(response.text)
-        agi_log(f'Manolo: {response.text}')
-        return response.text
+        chat_history.append(respuesta)
+        agi_log(f'Manolo (Gemini fallback): {respuesta}')
+        return respuesta
     except Exception as e:
-        agi_log(f'Gemini error: {e}')
+        agi_log(f'LLM error: {e}')
         return 'Ay, hijo, no te he oído bien. ¿Puedes repetirlo?'
 
 # ── Flujos ─────────────────────────────────────────────────────
