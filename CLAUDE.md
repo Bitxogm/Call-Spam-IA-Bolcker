@@ -36,11 +36,11 @@ Llegar al Modo 2 funcional costó mucho trabajo. Este documento existe para que 
 
 Es crítico no confundirlos:
 
-| Sistema | Dónde vive | Tecnología | Para qué |
-|---------|-----------|------------|----------|
-| **IVR on-device** | `IVRGeneratorModule.java` + `IVRMessageHelper.java` | `android.speech.tts.TextToSpeech` (TTS nativo Android, motor Google) | Genera `ivr_corporate.mp3` en el dispositivo para reproducción local |
-| **Webhook TwiML** | `webhook-server.js` | Twilio TTS (voz `alice`, `es-MX`) | Lo que escucha el spammer cuando el VPS recibe la llamada — **Twilio no está activo actualmente** |
-| **AI Test Screen** | `src/services/ElevenLabsService.ts` + `AITestsScreen.tsx` | ElevenLabs primero, fallback a `expo-speech` | Solo para la pantalla de pruebas, no interviene en llamadas reales |
+| Sistema            | Dónde vive                                                | Tecnología                                                           | Para qué                                                                                          |
+| ------------------ | --------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| **IVR on-device**  | `IVRGeneratorModule.java` + `IVRMessageHelper.java`       | `android.speech.tts.TextToSpeech` (TTS nativo Android, motor Google) | Genera `ivr_corporate.mp3` en el dispositivo para reproducción local                              |
+| **Webhook TwiML**  | `webhook-server.js`                                       | Twilio TTS (voz `alice`, `es-MX`)                                    | Lo que escucha el spammer cuando el VPS recibe la llamada — **Twilio no está activo actualmente** |
+| **AI Test Screen** | `src/services/ElevenLabsService.ts` + `AITestsScreen.tsx` | ElevenLabs primero, fallback a `expo-speech`                         | Solo para la pantalla de pruebas, no interviene en llamadas reales                                |
 
 **Estado actual:** Twilio no está activo. El webhook existe pero no recibe llamadas. La generación de audio funcional para el mensaje al spammer es el TTS nativo de Android (`IVRGeneratorModule.java`).
 
@@ -117,14 +117,14 @@ En Modo 2, `CallAccessibilityService` también reacciona al estado OFFHOOK de fo
 
 ## 5. Modos de operación
 
-| | Modo 1 (HANGUP_IMMEDIATELY) | Modo 2 (BACKEND_FIXED) | Modo 3 (BACKEND_AI) |
-|---|---|---|---|
-| USSD | desactiva (`##21#`) | activa (`*21*34919933065#`) | activa (`*21*34919933065#`) |
-| Teléfono suena | sí, app lo cuelga | no | no |
-| Spammer escucha | nada | mensaje "Roberto" | Manolo (Gemini 2.5-flash) |
-| Requiere VPS | ❌ | ✅ | ✅ |
-| Requiere Zadarma config | ❌ | ✅ | ✅ |
-| Estado actual | ✅ funcional | ✅ funcional | ✅ funcional |
+|                         | Modo 1 (HANGUP_IMMEDIATELY) | Modo 2 (BACKEND_FIXED)      | Modo 3 (BACKEND_AI)         |
+| ----------------------- | --------------------------- | --------------------------- | --------------------------- |
+| USSD                    | desactiva (`##21#`)         | activa (`*21*34919933065#`) | activa (`*21*34919933065#`) |
+| Teléfono suena          | sí, app lo cuelga           | no                          | no                          |
+| Spammer escucha         | nada                        | mensaje "Roberto"           | Manolo (Gemini 2.5-flash)   |
+| Requiere VPS            | ❌                          | ✅                          | ✅                          |
+| Requiere Zadarma config | ❌                          | ✅                          | ✅                          |
+| Estado actual           | ✅ funcional                | ✅ funcional                | ✅ funcional                |
 
 ---
 
@@ -134,15 +134,16 @@ En Modo 2, `CallAccessibilityService` también reacciona al estado OFFHOOK de fo
 
 El VPS gestiona las llamadas con **Asterisk** (no Twilio). `webhook-server.js` existe pero Twilio no está activo.
 
-| Componente | Archivo | Puerto/Ruta | Estado |
-|-----------|---------|-------------|--------|
-| **Asterisk dialplan** | `vps_backend/extensions.conf` | contexto `[from-zadarma]` | ✅ funcional |
-| **AGI unificado** | `vps_backend/manolo_agi.py` | `/usr/share/asterisk/agi-bin/` | ✅ funcional |
-| **API de control** | `vps_backend/control_api.py` | puerto 5000 | ✅ funcional |
-| **Systemd service** | `vps_backend/asterisk-control-api.service` | — | instalado |
-| **TwiML stub** | `webhook-server.js` (raíz) | puerto 3000 | ⚠️ Twilio no activo |
+| Componente            | Archivo                                    | Puerto/Ruta                    | Estado              |
+| --------------------- | ------------------------------------------ | ------------------------------ | ------------------- |
+| **Asterisk dialplan** | `vps_backend/extensions.conf`              | contexto `[from-zadarma]`      | ✅ funcional        |
+| **AGI unificado**     | `vps_backend/manolo_agi.py`                | `/usr/share/asterisk/agi-bin/` | ✅ funcional        |
+| **API de control**    | `vps_backend/control_api.py`               | puerto 5000                    | ✅ funcional        |
+| **Systemd service**   | `vps_backend/asterisk-control-api.service` | —                              | instalado           |
+| **TwiML stub**        | `webhook-server.js` (raíz)                 | puerto 3000                    | ⚠️ Twilio no activo |
 
 **Flujo de decisión en el VPS:**
+
 ```
 Asterisk [from-zadarma]
   └── decision_agi.py lee /root/ai_bridge/current_mode.json
@@ -151,11 +152,13 @@ Asterisk [from-zadarma]
 ```
 
 **control_api.py endpoints (Flask, puerto 5000):**
+
 - `POST /set_mode` — body `{"mode": "FIXED"|"AI"}` → escribe `current_mode.json`
 - `GET /get_mode` — devuelve modo actual
 - `POST /set_message` — body `{"message": "..."}` → genera WAV con gTTS + ffmpeg (8kHz mono pcm_s16le) como `fixed_spam_message.wav`
 
 **Estado del webhook-server.js:**
+
 - 29 líneas, un único endpoint `POST /webhook/voice`, responde TwiML
 - Sin auth, sin rate limiting, sin PM2
 - Twilio no está activo — este fichero no recibe llamadas reales
@@ -170,11 +173,13 @@ Asterisk [from-zadarma]
 
 Esta configuración no vive en el código. Si se pierde, el Modo 2 deja de funcionar:
 
-| Servicio | Número/URL | Configuración |
-|----------|-----------|---------------|
-| **Zadarma** | `+34919933065` | Reenvío de entrantes → VPS (documentar URL exacta aquí cuando se confirme) |
-| **Twilio** | `+16186346366` | Webhook URL: `http://157.180.35.161:3000/webhook/voice` POST — **no activo actualmente** |
-| **VPS** | `157.180.35.161` | Puerto 3000. `node webhook-server.js` sin gestor de procesos |
+| Servicio             | Número/URL         | Configuración                                                                                                                                                                      |
+| -------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Zadarma**          | `+34919933065`     | Reenvío de entrantes → VPS (documentar URL exacta aquí cuando se confirme)                                                                                                         |
+| **Twilio**           | `+16186346366`     | Webhook URL: `http://157.180.35.161:3000/webhook/voice` POST — **no activo actualmente**                                                                                           |
+| **VPS**              | `157.180.35.161`   | Puerto 3000. `node webhook-server.js` sin gestor de procesos                                                                                                                       |
+| **Gemini free tier** | Google AI Studio   | 20 req/día con `gemini-2.5-flash`. Cuando se agota, Modo 3 falla silenciosamente (fallback hardcodeado). Solución: activar billing.                                                |
+| **Deepgram**         | `api.deepgram.com` | $200 crédito gratuito. **NO usar para STT en este proyecto** — devuelve transcript vacío para audio SIP 8kHz (baja calidad). Whisper local es más tolerante para este caso de uso. |
 
 ---
 
@@ -366,17 +371,17 @@ asterisk -rx "dialplan reload"
 
 ## 11. Valores hardcodeados — localizaciones exactas
 
-| Valor | Archivo | Línea | Notas |
-|-------|---------|-------|-------|
-| `"34919933065"` | CallForwardingManager.java | L34 | Número Zadarma |
-| `*21*34919933065#` | CallForwardingManager.java | L37 | USSD activar desvío |
-| `##21#` | CallForwardingManager.java | L38 | USSD desactivar |
-| `*#21#` | CallForwardingManager.java | L39 | USSD consultar estado |
-| `"/ivr_corporate.mp3"` | CallAccessibilityService.java | L501 | Ruta MP3 on-device |
-| `"es-MX"` / `"alice"` / `"Roberto"` | webhook-server.js | — | TwiML mensaje |
-| `3000` | webhook-server.js | L27 | Puerto servidor |
-| `5000` | .env | — | ⚠️ No coincide con puerto real |
-| últimos 9 dígitos | AnswerHangupHelper.java | L223 | Normalización España |
+| Valor                               | Archivo                       | Línea | Notas                          |
+| ----------------------------------- | ----------------------------- | ----- | ------------------------------ |
+| `"34919933065"`                     | CallForwardingManager.java    | L34   | Número Zadarma                 |
+| `*21*34919933065#`                  | CallForwardingManager.java    | L37   | USSD activar desvío            |
+| `##21#`                             | CallForwardingManager.java    | L38   | USSD desactivar                |
+| `*#21#`                             | CallForwardingManager.java    | L39   | USSD consultar estado          |
+| `"/ivr_corporate.mp3"`              | CallAccessibilityService.java | L501  | Ruta MP3 on-device             |
+| `"es-MX"` / `"alice"` / `"Roberto"` | webhook-server.js             | —     | TwiML mensaje                  |
+| `3000`                              | webhook-server.js             | L27   | Puerto servidor                |
+| `5000`                              | .env                          | —     | ⚠️ No coincide con puerto real |
+| últimos 9 dígitos                   | AnswerHangupHelper.java       | L223  | Normalización España           |
 
 ---
 
@@ -406,7 +411,15 @@ asterisk -rx "dialplan reload"
 
 - [ ] **Sin tests** en ninguna capa.
 
-- [x] **Modo 3 — integración Asterisk:** resuelto con `manolo_agi.py` (AGI único que reemplaza `decision_agi.py` + `victor_agi.py`). La clave fue consumir el header AGI de Asterisk antes de enviar cualquier comando (`agi_read_headers()`). Path correcto: `/usr/share/asterisk/agi-bin/`.
+- [x] **Modo 3 ✅ Funcional — conversación real con Manolo**
+  - TTS: ElevenLabs (voz Daniel, español)
+  - STT: Whisper small (local, lento)
+  - LLM: Gemini 2.5-flash (20 req/día free tier)
+  - Latencia: ~15s saludo, ~10s entre turnos
+
+- [ ] **Whisper carga en cada llamada AGI (~4-5s overhead):** El proceso AGI se lanza nuevo por cada llamada. Whisper small tarda 4-5s en cargar. Solución: servicio Python permanente con Whisper precargado escuchando en socket local. Impacto: reduce delay inicial de 15s a ~8s y entre turnos de 10s a ~5s.
+
+- [ ] **Quota Gemini agotada (resetea diariamente):** `gemini-2.5-flash` tiene límite de 20 req/día en free tier. Solución: activar billing en Google AI Studio o esperar reset diario. El Modo 3 no funciona cuando se agota la quota — Manolo responde siempre con el fallback `"Ay hijo no te he oído bien"`.
 
 ### Menor
 
@@ -442,14 +455,17 @@ En orden de prioridad lógica:
 ### Configuración Zadarma → Asterisk
 
 **Panel Zadarma:**
+
 ```
 Número: +34 919 93 30 65
 SIP Login: #719926
 External Server: 34919933065@157.180.35.161:5060
 ```
+
 ⚠️ Puerto crítico: debe ser `5060` (SIP), no `5000` (Flask).
 
 **pjsip.conf en el VPS (`/etc/asterisk/pjsip.conf`):**
+
 ```ini
 [zadarma-endpoint]
 type=endpoint
@@ -475,6 +491,7 @@ match=15.235.128.64/28
 ```
 
 **Firewall UFW — las 6 subnets de Zadarma (todas necesarias):**
+
 ```bash
 ufw allow from 185.45.152.0/24 to any port 5060 proto udp
 ufw allow from 185.45.154.0/24 to any port 5060 proto udp
@@ -483,6 +500,7 @@ ufw allow from 195.122.19.0/27 to any port 5060 proto udp
 ufw allow from 31.31.222.192/27 to any port 5060 proto udp
 ufw allow from 15.235.128.64/28 to any port 5060 proto udp
 ```
+
 Con solo 3 subnets las llamadas llegan intermitentemente. Deben estar las 6.
 
 ---
@@ -491,13 +509,13 @@ Con solo 3 subnets las llamadas llegan intermitentemente. Deben estar las 6.
 
 Estos bugs costaron horas — documentados para no repetirlos:
 
-| # | Síntoma | Causa | Solución |
-|---|---------|-------|----------|
-| 1 | Llamadas no llegan al VPS | External Server con puerto `5000` en panel Zadarma | Cambiar a `34919933065@157.180.35.161:5060` |
-| 2 | Llamadas llegan solo a veces | Solo 3 subnets de Zadarma en UFW | Añadir las 6 subnets completas |
-| 3 | AGI no encontrado por Asterisk | Script en `/root/ai_bridge/`, Asterisk busca en `/usr/share/asterisk/agi-bin/` | Copiar con `chmod +x` al directorio correcto |
-| 4 | Audio no encontrado por Asterisk | Audio en `/root/ai_bridge/`, Asterisk busca en `/var/lib/asterisk/sounds/` | Copiar como `fixed_spam_message.wav` al directorio correcto |
-| 5 | Sub-AGI falla (Modo 3) | `decision_agi.py` no leía el header AGI de Asterisk antes de enviar comandos | Unificar en `manolo_agi.py` con `agi_read_headers()` al inicio |
+| #   | Síntoma                          | Causa                                                                          | Solución                                                       |
+| --- | -------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| 1   | Llamadas no llegan al VPS        | External Server con puerto `5000` en panel Zadarma                             | Cambiar a `34919933065@157.180.35.161:5060`                    |
+| 2   | Llamadas llegan solo a veces     | Solo 3 subnets de Zadarma en UFW                                               | Añadir las 6 subnets completas                                 |
+| 3   | AGI no encontrado por Asterisk   | Script en `/root/ai_bridge/`, Asterisk busca en `/usr/share/asterisk/agi-bin/` | Copiar con `chmod +x` al directorio correcto                   |
+| 4   | Audio no encontrado por Asterisk | Audio en `/root/ai_bridge/`, Asterisk busca en `/var/lib/asterisk/sounds/`     | Copiar como `fixed_spam_message.wav` al directorio correcto    |
+| 5   | Sub-AGI falla (Modo 3)           | `decision_agi.py` no leía el header AGI de Asterisk antes de enviar comandos   | Unificar en `manolo_agi.py` con `agi_read_headers()` al inicio |
 
 ---
 
