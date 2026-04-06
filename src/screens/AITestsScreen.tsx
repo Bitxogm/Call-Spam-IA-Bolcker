@@ -269,8 +269,8 @@ export default function AITestScreen({ navigation }: AITestScreenProps) {
 
       Vibration.vibrate(30);
 
-      // Solo estado visual
-      console.log('🎤 UI listening activado (esperando soltar para startListening)');
+      await speechRecognitionService.startListening('es-ES');
+      console.log('🎤 SpeechRecognition iniciado en pressIn');
 
     } catch (error) {
       console.error('❌ Error iniciando grabación:', error);
@@ -299,13 +299,10 @@ export default function AITestScreen({ navigation }: AITestScreenProps) {
       console.log('🛑 Grabación detenida - Procesando...');
       setIsLoading(true);
 
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // Al soltar: iniciar reconocimiento, resultado por onSpeechResults
-      await speechRecognitionService.startListening('es-ES');
+      await speechRecognitionService.stopListening();
 
       setIsRecording(false);
-      console.log('🎧 SpeechRecognition iniciado, esperando onSpeechResults...');
+      console.log('🎧 SpeechRecognition detenido en pressOut, esperando onSpeechResults...');
 
     } catch (error) {
       console.error('❌ Error procesando voz:', error);
