@@ -84,7 +84,7 @@ except Exception as _e:
 def agi_stream_file(filename):
     return agi_send(f'STREAM FILE {filename} ""')
 
-def agi_record(filename, silence=3, maxdur=15):
+def agi_record(filename, silence=1, maxdur=15):
     return agi_send(f'RECORD FILE {filename} wav "|#" {maxdur * 1000} s={silence}')
 
 # ── Estado ─────────────────────────────────────────────────────
@@ -211,17 +211,15 @@ def run_ai():
     silencio_consecutivo = 0
     max_silencio = 2
 
-    saludo = '¿Dígame? Ay, espere un momento que no encuentro las gafas... ¿Quién es?'
-    audio_saludo = text_to_speech(saludo, 'saludo')
-    if audio_saludo:
-        agi_stream_file(audio_saludo)
+    agi_stream_file(f'{AUDIO_DIR}/saludo')
 
     while turno < max_turnos:
         turno += 1
         agi_log(f'--- Turno {turno} ---')
 
         rec_path = f'{AUDIO_DIR}/rec_{turno}'
-        agi_record(rec_path, silence=3, maxdur=20)
+        agi_record(rec_path, silence=1, maxdur=20)
+        agi_stream_file(f'{AUDIO_DIR}/pensando')
 
         texto = speech_to_text(rec_path)
 
@@ -253,6 +251,17 @@ def main():
     agi_read_headers()
     mode = get_current_mode()
     agi_log(f'Modo: {mode}')
+
+    # MEJORA 3 — saludo pregenerado; se regenera solo si no existe en disco
+    if not os.path.exists(f'{AUDIO_DIR}/saludo.wav'):
+        text_to_speech('¿Dígame? Ay, espere un momento que no encuentro las gafas... ¿Quién es?', 'saludo')
+        agi_log('Saludo pregenerado')
+
+    # MEJORA 2 — audio de pensamiento pregenerado
+    if not os.path.exists(f'{AUDIO_DIR}/pensando.wav'):
+        text_to_speech('Mmm... un momento hijo, que no oigo bien...', 'pensando')
+        agi_log('Pensando pregenerado')
+
     if mode == 'FIXED':
         run_fixed()
     else:
