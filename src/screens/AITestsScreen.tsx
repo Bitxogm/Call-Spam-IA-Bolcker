@@ -15,7 +15,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Animated,
-  PermissionsAndroid
+  PermissionsAndroid,
+  Vibration
 } from 'react-native';
 
 type AITestScreenProps = {
@@ -266,6 +267,8 @@ export default function AITestScreen({ navigation }: AITestScreenProps) {
         useNativeDriver: true,
       }).start();
 
+      Vibration.vibrate(30);
+
       // Solo estado visual
       console.log('🎤 UI listening activado (esperando soltar para startListening)');
 
@@ -295,6 +298,8 @@ export default function AITestScreen({ navigation }: AITestScreenProps) {
 
       console.log('🛑 Grabación detenida - Procesando...');
       setIsLoading(true);
+
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       // Al soltar: iniciar reconocimiento, resultado por onSpeechResults
       await speechRecognitionService.startListening('es-ES');
