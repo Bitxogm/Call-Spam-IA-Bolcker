@@ -146,10 +146,18 @@ El VPS gestiona las llamadas con **Asterisk** (no Twilio). `webhook-server.js` e
 
 ```
 Asterisk [from-zadarma]
-  └── decision_agi.py lee /root/ai_bridge/current_mode.json
+  └── AGI(manolo_agi.py) lee /root/ai_bridge/current_mode.json
         ├── FIXED → Playback fixed_spam_message → Hangup
-        └── AI    → AGI(victor_agi.py) → Manolo (Gemini 2.5-flash)
+        └── AI    → Manolo conversa (Gemini 2.5-flash), todo en el mismo script
 ```
+
+**Limpieza agosto 2026 — scripts VPS obsoletos, sustituidos por `manolo_agi.py`:**
+
+- `agi-bin/decision_agi.py` — **ELIMINADO**
+- `victor_agi.py` — **ELIMINADO**
+- `deploy.sh` — **ELIMINADO**, usar `deploy_modo3.sh` (despliega `manolo_agi.py` + `extensions.conf`)
+
+`manolo_agi.py` es ahora el AGI único y definitivo: decisión FIXED/AI + conversación, en un solo script.
 
 **control_api.py endpoints (Flask, puerto 5000):**
 
@@ -208,7 +216,6 @@ Call-Spam-IA-Blocker/
 │       ├── CallScreeningServiceImpl.java
 │       ├── ContactsModule.java
 │       ├── ContactsHelper.java
-│       ├── DatabaseHelper.java
 │       ├── SharedPreferencesHelper.java
 │       ├── LogsModule.java
 │       ├── LogsHelper.java
@@ -216,17 +223,9 @@ Call-Spam-IA-Blocker/
 │       │
 │       │── RESIDUOS IVR ON-DEVICE — ⚠️ no borrar sin limpiar referencias
 │       ├── IVRAudioPlayer.java             ← ⚠️ referenciado en CallAccessibilityService L44-45, 513, 516
-│       ├── IVRAudioTrackPlayer.java
 │       ├── IVRGeneratorModule.java         ← genera ivr_corporate.mp3 con Android TTS
 │       ├── IVRMessageHelper.java           ← TTS nativo a STREAM_VOICE_CALL
-│       ├── AudioPlaybackHelper.java
 │       └── SpeechRecognitionModule.java
-│       │
-│       │── RESIDUOS DEFAULT DIALER
-│       ├── InCallActivity.java
-│       ├── DialerActivity.java             ← 4 intent-filters priority=1000
-│       ├── DefaultDialerModule.java
-│       └── SpamCallService.java            ← InCallService residuo
 │
 ├── src/
 │   ├── screens/
@@ -247,15 +246,13 @@ Call-Spam-IA-Blocker/
 │
 ├── vps_backend/                            ← infraestructura del servidor
 │   ├── extensions.conf                     ← dialplan Asterisk [from-zadarma] ✅
-│   ├── agi-bin/
-│   │   └── decision_agi.py                 ← AGI decisión FIXED vs AI ✅
-│   ├── victor_agi.py                       ← AGI Manolo conversacional (Gemini) 🔨
+│   ├── manolo_agi.py                       ← AGI único y definitivo (decisión + conversación) ✅
 │   ├── control_api.py                      ← Flask API puerto 5000 ✅
 │   ├── asterisk-control-api.service        ← systemd unit para control_api
-│   ├── deploy.sh                           ← instala dependencias en VPS
-│   ├── deploy_modo3.sh                     ← instala dependencias Modo 3
+│   ├── deploy_modo3.sh                     ← script de deploy vigente (manolo_agi.py + extensions.conf)
 │   ├── install_service.sh                  ← registra systemd service
 │   └── README_VPS.md
+│                                           ← ELIMINADOS (limpieza agosto 2026): agi-bin/decision_agi.py, victor_agi.py, deploy.sh
 │
 ├── App.tsx
 ├── index.ts
@@ -424,7 +421,6 @@ asterisk -rx "dialplan reload"
 ### Menor
 
 - [ ] Typo en nombre del repo: `Bolcker` → `Blocker`
-- [ ] `expo-sqlite` en `package.json` sin uso real
 - [ ] `test.mp3` en la raíz
 - [ ] READMEs de planificación obsoletos en raíz
 
@@ -559,3 +555,7 @@ systemctl status asterisk-control-api
 systemctl restart asterisk
 systemctl restart asterisk-control-api
 ```
+
+---
+
+Limpieza agosto 2026: eliminados residuos de Twilio, DefaultDialer, IVR local y AGI scripts obsoletos. Stack del servidor: manolo_agi.py único AGI.
