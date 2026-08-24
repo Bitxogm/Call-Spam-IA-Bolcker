@@ -374,8 +374,6 @@ asterisk -rx "dialplan reload"
 
 - [ ] **Configuración de Zadarma no documentada en el repo.** Si se pierde, Modo 2 deja de funcionar sin rastro de por qué. Completar la tabla de sección 6 con la URL exacta de reenvío.
 
-- [ ] **`express` en `package.json` de la app móvil.** Debería estar en `/server/`.
-
 - [ ] **Sin tests** en ninguna capa.
 
 - [x] **Modo 3 ✅ Funcional — conversación real con Manolo**
