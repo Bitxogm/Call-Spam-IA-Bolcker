@@ -214,7 +214,6 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
           return;
         }
       }
-      // Función para probar Twilio
 
       // Registrar la llamada bloqueada
       await databaseService.logBlockedCall(fakeSpamNumber, blockReason);
@@ -584,13 +583,6 @@ const styles = StyleSheet.create({
   },
   buttonAI: {
     backgroundColor: '#4444ff',  // Azul para IA
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  buttonTwilio: {
-    backgroundColor: '#9900ff',  // Púrpura para Twilio
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderRadius: 10,
