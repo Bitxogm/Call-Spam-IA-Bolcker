@@ -32,17 +32,16 @@ Llegar al Modo 2 funcional costó mucho trabajo. Este documento existe para que 
 
 ---
 
-## 3. Sistemas de audio — hay tres, independientes entre sí
+## 3. Sistemas de audio — hay dos, independientes entre sí
 
 Es crítico no confundirlos:
 
 | Sistema            | Dónde vive                                                | Tecnología                                                           | Para qué                                                                                          |
 | ------------------ | --------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | **IVR on-device**  | `IVRGeneratorModule.java` + `IVRMessageHelper.java`       | `android.speech.tts.TextToSpeech` (TTS nativo Android, motor Google) | Genera `ivr_corporate.mp3` en el dispositivo para reproducción local                              |
-| **Webhook TwiML**  | `webhook-server.js`                                       | Twilio TTS (voz `alice`, `es-MX`)                                    | Lo que escucha el spammer cuando el VPS recibe la llamada — **Twilio no está activo actualmente** |
 | **AI Test Screen** | `src/services/ElevenLabsService.ts` + `AITestsScreen.tsx` | ElevenLabs primero, fallback a `expo-speech`                         | Solo para la pantalla de pruebas, no interviene en llamadas reales                                |
 
-**Estado actual:** Twilio no está activo. El webhook existe pero no recibe llamadas. La generación de audio funcional para el mensaje al spammer es el TTS nativo de Android (`IVRGeneratorModule.java`).
+**Estado actual:** La generación de audio funcional para el mensaje al spammer es el TTS nativo de Android (`IVRGeneratorModule.java`).
 
 ---
 
@@ -132,7 +131,7 @@ En Modo 2, `CallAccessibilityService` también reacciona al estado OFFHOOK de fo
 
 ### Stack real del VPS (verificado en código)
 
-El VPS gestiona las llamadas con **Asterisk** (no Twilio). `webhook-server.js` existe pero Twilio no está activo.
+El VPS gestiona las llamadas con **Asterisk**.
 
 | Componente            | Archivo                                    | Puerto/Ruta                    | Estado              |
 | --------------------- | ------------------------------------------ | ------------------------------ | ------------------- |
@@ -140,7 +139,6 @@ El VPS gestiona las llamadas con **Asterisk** (no Twilio). `webhook-server.js` e
 | **AGI unificado**     | `vps_backend/manolo_agi.py`                | `/usr/share/asterisk/agi-bin/` | ✅ funcional        |
 | **API de control**    | `vps_backend/control_api.py`               | puerto 5000                    | ✅ funcional        |
 | **Systemd service**   | `vps_backend/asterisk-control-api.service` | —                              | instalado           |
-| **TwiML stub**        | `webhook-server.js` (raíz)                 | puerto 3000                    | ⚠️ Twilio no activo |
 
 **Flujo de decisión en el VPS:**
 
@@ -165,17 +163,10 @@ Asterisk [from-zadarma]
 - `GET /get_mode` — devuelve modo actual
 - `POST /set_message` — body `{"message": "..."}` → genera WAV con gTTS + ffmpeg (8kHz mono pcm_s16le) como `fixed_spam_message.wav`
 
-**Estado del webhook-server.js:**
-
-- 29 líneas, un único endpoint `POST /webhook/voice`, responde TwiML
-- Sin auth, sin rate limiting, sin PM2
-- Twilio no está activo — este fichero no recibe llamadas reales
-
 ### Servicios auxiliares en src/services/
 
 - **`GeminiServices.ts`** — llama a `generativelanguage.googleapis.com` con `EXPO_PUBLIC_GEMINI_API_KEY`. Generación de texto, no TTS.
 - **`ElevenLabsService.ts`** — TTS premium. Intenta ElevenLabs, fallback a `expo-speech`. Solo usado en `AITestsScreen.tsx`, no en el flujo de llamadas reales.
-- **`TwilioService.ts`** — lee credenciales Twilio del `.env`, tiene `testConnection()` y código para llamadas salientes (parte comentada). Referenciado en `DashboardScreen.tsx` (botón "probar Twilio", L217). **No activo en producción.**
 
 ### Configuración externa (fuera del repo — crítica para Modo 2)
 
@@ -184,8 +175,7 @@ Esta configuración no vive en el código. Si se pierde, el Modo 2 deja de funci
 | Servicio             | Número/URL         | Configuración                                                                                                                                                                      |
 | -------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Zadarma**          | `+34919933065`     | Reenvío de entrantes → VPS (documentar URL exacta aquí cuando se confirme)                                                                                                         |
-| **Twilio**           | `+16186346366`     | Webhook URL: `http://157.180.35.161:3000/webhook/voice` POST — **no activo actualmente**                                                                                           |
-| **VPS**              | `157.180.35.161`   | Puerto 3000. `node webhook-server.js` sin gestor de procesos                                                                                                                       |
+| **VPS**              | `157.180.35.161`   | Puerto 5000 (`control_api.py`, gestionado por systemd `asterisk-control-api.service`)                                                                                              |
 | **Gemini free tier** | Google AI Studio   | 20 req/día con `gemini-2.5-flash`. Cuando se agota, Modo 3 falla silenciosamente (fallback hardcodeado). Solución: activar billing.                                                |
 | **Deepgram**         | `api.deepgram.com` | $200 crédito gratuito. **NO usar para STT en este proyecto** — devuelve transcript vacío para audio SIP 8kHz (baja calidad). Whisper local es más tolerante para este caso de uso. |
 
@@ -229,7 +219,7 @@ Call-Spam-IA-Blocker/
 │
 ├── src/
 │   ├── screens/
-│   │   ├── DashboardScreen.tsx             ← botón "probar Twilio" (L217)
+│   │   ├── DashboardScreen.tsx
 │   │   ├── SpamNumbersScreen.tsx
 │   │   ├── AITestsScreen.tsx               ← usa ElevenLabsService
 │   │   ├── WhitelistScreen.tsx
@@ -239,7 +229,6 @@ Call-Spam-IA-Blocker/
 │   └── services/
 │       ├── GeminiServices.ts               ← Gemini text generation
 │       ├── ElevenLabsService.ts            ← TTS ElevenLabs + fallback expo-speech
-│       ├── TwilioService.ts                ← Twilio API (no activo)
 │       ├── BlacklistService.ts
 │       ├── ContactsService.ts
 │       └── AnswerHangupService.ts
@@ -256,7 +245,6 @@ Call-Spam-IA-Blocker/
 │
 ├── App.tsx
 ├── index.ts
-├── webhook-server.js                       ← stub TwiML (puerto 3000, Twilio no activo)
 ├── package.json
 ├── tsconfig.json
 ├── app.json
@@ -277,19 +265,14 @@ EXPO_PUBLIC_GEMINI_MODEL=gemini-1.5-flash
 # ElevenLabs — activo (con fallback a expo-speech)
 EXPO_PUBLIC_ELEVENLABS_API_KEY=...
 
-# Twilio — en .env pero no activo actualmente
-EXPO_PUBLIC_TWILIO_ACCOUNT_SID=...
-EXPO_PUBLIC_TWILIO_AUTH_TOKEN=...
-EXPO_PUBLIC_TWILIO_PHONE_NUMBER=+16186346366
-
 # VPS
 EXPO_PUBLIC_VPS_IP=157.180.35.161
-EXPO_PUBLIC_VPS_PORT=5000               # ⚠️ no coincide con puerto real del server (3000)
+EXPO_PUBLIC_VPS_PORT=5000
 ```
 
 **Estado del `.env`:** verificado que no está commiteado (`git log --all` no lo muestra). Solo aparece `ios/.xcode.env` que es irrelevante.
 
-⚠️ El prefijo `EXPO_PUBLIC_*` embebe todos estos valores en el APK compilado. Especialmente crítico para Twilio SID/Token — moverlos al servidor en cuanto Twilio se reactive.
+⚠️ El prefijo `EXPO_PUBLIC_*` embebe todos estos valores en el APK compilado.
 
 ---
 
@@ -310,10 +293,6 @@ adb install android/app/build/outputs/apk/debug/app-debug.apk
 
 # Verificar tipos TypeScript — ejecutar tras CADA cambio TS
 npx tsc --noEmit
-
-# Servidor webhook
-node webhook-server.js
-# pm2 start webhook-server.js --name spam-webhook   ← pendiente configurar
 
 # Logs del dispositivo en tiempo real
 adb logcat | grep -E "SpamBlocker|CallAccessibility|AnswerHangup|CallForwarding"
@@ -344,7 +323,7 @@ asterisk -rx "dialplan reload"
 
 6. **Nunca borrar un `.java` sin verificar referencias en todo el proyecto.** Ejemplo crítico: `IVRAudioPlayer` está referenciado en `CallAccessibilityService.java` líneas 44-45, 513 y 516. Borrarlo sin limpiar esas referencias rompe el build.
 
-7. **No confundir los tres sistemas de audio.** Android TTS on-device, TwiML del webhook, y ElevenLabs/expo-speech de la pantalla de pruebas son independientes. Un cambio en uno no afecta a los otros.
+7. **No confundir los dos sistemas de audio.** Android TTS on-device y ElevenLabs/expo-speech de la pantalla de pruebas son independientes. Un cambio en uno no afecta al otro.
 
 8. **Ignorar los READMEs de planificación.** El código manda.
 
@@ -375,9 +354,6 @@ asterisk -rx "dialplan reload"
 | `##21#`                             | CallForwardingManager.java    | L38   | USSD desactivar                |
 | `*#21#`                             | CallForwardingManager.java    | L39   | USSD consultar estado          |
 | `"/ivr_corporate.mp3"`              | CallAccessibilityService.java | L501  | Ruta MP3 on-device             |
-| `"es-MX"` / `"alice"` / `"Roberto"` | webhook-server.js             | —     | TwiML mensaje                  |
-| `3000`                              | webhook-server.js             | L27   | Puerto servidor                |
-| `5000`                              | .env                          | —     | ⚠️ No coincide con puerto real |
 | últimos 9 dígitos                   | AnswerHangupHelper.java       | L223  | Normalización España           |
 
 ---
@@ -390,10 +366,6 @@ asterisk -rx "dialplan reload"
 
 - [ ] **Referencias a `IVRAudioPlayer` activas en `CallAccessibilityService`** (L44-45, 513, 516). Prerequisito para cualquier limpieza o refactor del servicio principal.
 
-- [ ] **Puerto inconsistente:** servidor en `3000`, `.env` dice `5000`.
-
-- [ ] **Credenciales Twilio en `.env` con prefijo `EXPO_PUBLIC_*`** → embebidas en el APK. Mover al servidor en cuanto Twilio se reactive.
-
 - [ ] **Permisos residuales en `AndroidManifest.xml`:** `BIND_INCALL_SERVICE`, `BIND_TELECOM_CONNECTION_SERVICE`, `CONTROL_INCALL_EXPERIENCE`, `MODIFY_AUDIO_SETTINGS`, `MODIFY_PHONE_STATE`, `MODIFY_AUDIO_ROUTING`. Services residuales: `SpamCallService`, `DialerActivity` (priority=1000), `InCallActivity`.
 
 ### Importante
@@ -401,8 +373,6 @@ asterisk -rx "dialplan reload"
 - [ ] **12 archivos Java residuales** compilados y declarando permisos innecesarios al usuario.
 
 - [ ] **Configuración de Zadarma no documentada en el repo.** Si se pierde, Modo 2 deja de funcionar sin rastro de por qué. Completar la tabla de sección 6 con la URL exacta de reenvío.
-
-- [ ] **`webhook-server.js` sin hardening:** sin auth, sin rate limiting, sin PM2, sin HTTPS.
 
 - [ ] **`express` en `package.json` de la app móvil.** Debería estar en `/server/`.
 
@@ -432,17 +402,11 @@ En orden de prioridad lógica:
 
 1. **Resolver coordinación Modo 2:** decidir si la lógica IVR on-device se elimina o coordina con el servidor. La opción limpia es que el servidor gestione el audio y el teléfono solo registre el evento.
 
-2. **Unificar puerto:** elegir 3000 o 5000, actualizar `.env` y el servidor.
+2. **Documentar configuración Zadarma** en sección 6 de este fichero.
 
-3. **Hardening del webhook:** token de autenticación compartido app↔servidor, rate limiting, PM2, HTTPS.
+3. **Limpiar residuos:** empezar por las referencias a `IVRAudioPlayer` en `CallAccessibilityService`, luego los 12 archivos Java y el Manifest.
 
-4. **Mover credenciales Twilio al servidor** cuando Twilio se reactive.
-
-5. **Documentar configuración Zadarma** en sección 6 de este fichero.
-
-6. **Limpiar residuos:** empezar por las referencias a `IVRAudioPlayer` en `CallAccessibilityService`, luego los 12 archivos Java y el Manifest.
-
-7. ~~**Modo 3 — Agente IA conversacional**~~ ✅ **Completado.** `manolo_agi.py` unifica la lógica de decisión y la conversación de Manolo en un único script AGI. Funcional en producción.
+4. ~~**Modo 3 — Agente IA conversacional**~~ ✅ **Completado.** `manolo_agi.py` unifica la lógica de decisión y la conversación de Manolo en un único script AGI. Funcional en producción.
 
 ---
 
