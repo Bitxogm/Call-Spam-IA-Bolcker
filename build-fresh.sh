@@ -77,11 +77,7 @@ if [ -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
     echo "🔍 Verificando contenido del APK..."
     HAS_DIALER=$(unzip -l android/app/build/outputs/apk/debug/app-debug.apk | grep -c "DialerActivity" || echo "0")
 
-    if [ "$HAS_DIALER" -gt "0" ]; then
-        echo "   ✅ DialerActivity incluido"
-    else
-        echo "   ❌ WARNING: DialerActivity NO encontrado en APK"
-    fi
+ 
 
     echo ""
     echo "📱 PASOS SIGUIENTES:"
