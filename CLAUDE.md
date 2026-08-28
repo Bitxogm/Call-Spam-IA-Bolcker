@@ -376,6 +376,8 @@ asterisk -rx "dialplan reload"
 
 - [ ] **Sin tests** en ninguna capa.
 
+- [ ] **`scripts/check-secrets.sh` da falsos positivos.** El pre-commit hook marca como "posible secreto" referencias a `process.env.EXPO_PUBLIC_*` y nombres de variable (`this.apiKey`) en `ElevenLabService.ts`/`GeminiServices.ts`, y una URL de documentación en `.env.example` — ninguno es un secreto real. Además falla `/dev/tty: No such device or address` en entornos no interactivos (CI, agentes) y cae a modo advertencia sin bloquear. No urgente, pero no es fiable como gate hasta que se corrija el patrón de detección y el fallback no interactivo.
+
 - [x] **Modo 3 ✅ Funcional — conversación real con Manolo**
   - LLM: Groq + llama-3.3-70b-versatile (gratis, ~0.2s)
   - TTS: Edge TTS voz es-ES-AlvaroNeural (gratis, ~1s)
