@@ -141,7 +141,8 @@ public class CallInterceptorModule extends ReactContextBaseJavaModule {
             // Mostrar notificación de prueba
             SpamNotificationManager.showIncomingSpamNotification(
                 reactContext,
-                "+34 900 123 456 (TEST)"
+                "+34 900 123 456 (TEST)",
+                "TEST"
             );
             promise.resolve("Notificación de prueba enviada");
         } catch (Exception e) {

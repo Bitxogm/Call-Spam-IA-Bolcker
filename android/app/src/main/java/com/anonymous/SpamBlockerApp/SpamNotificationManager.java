@@ -12,6 +12,10 @@ import android.os.Build;
 import android.util.Log;
 import androidx.core.app.NotificationCompat;
 
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+
 /**
  * Gestiona las notificaciones de spam y acciones de respuesta con IA
  */
@@ -29,8 +33,8 @@ public class SpamNotificationManager {
     /**
      * Muestra notificación de spam detectado con botón para contestar con IA
      */
-    public static void showIncomingSpamNotification(Context context, String phoneNumber) {
-        Log.d(TAG, "📲 Mostrando notificación de spam: " + phoneNumber);
+    public static void showIncomingSpamNotification(Context context, String phoneNumber, String modoUsado) {
+        Log.d(TAG, "📲 Mostrando notificación de spam: " + phoneNumber + " (" + modoUsado + ")");
 
         NotificationManager notificationManager =
             (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
@@ -44,6 +48,8 @@ public class SpamNotificationManager {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             createNotificationChannel(notificationManager);
         }
+
+        String timestamp = new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date());
 
         // Intent para contestar con IA
         Intent answerIntent = new Intent(context, CallAnswerReceiver.class);
@@ -72,11 +78,12 @@ public class SpamNotificationManager {
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_call)  // TODO: Usar icono personalizado
             .setContentTitle("🤖 Posible Spam Detectado")
-            .setContentText(phoneNumber)
+            .setContentText(phoneNumber + " · " + modoUsado)
             .setStyle(new NotificationCompat.BigTextStyle()
-                .bigText("Llamada de: " + phoneNumber + "\n\n¿Dejar que tu agente IA conteste?"))
+                .bigText("Llamada de: " + phoneNumber + "\nModo: " + modoUsado + "\nHora: " + timestamp))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
             .setColor(Color.rgb(255, 102, 0))  // Naranja
             .addAction(

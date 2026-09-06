@@ -98,6 +98,12 @@ public class CallScreeningServiceImpl extends CallScreeningService {
                         // Marcar número para answer+hangup
                         answerHangupHelper.markForAnswerHangup(callerNumber);
 
+                        SpamNotificationManager.showIncomingSpamNotification(
+                            this,
+                            callerNumber,
+                            "Modo 1 — Answer+Hangup"
+                        );
+
                         CallResponse response = new CallResponse.Builder()
                             .setDisallowCall(false)      // NO bloquear (permitir)
                             .setRejectCall(false)        // NO rechazar (permitir que suene)
@@ -155,7 +161,8 @@ public class CallScreeningServiceImpl extends CallScreeningService {
                 callHistoryHelper.addSpamCall(callerNumber, "Spam", "Notification");
                 SpamNotificationManager.showIncomingSpamNotification(
                     this,
-                    callerNumber
+                    callerNumber,
+                    "Notificación (Answer+Hangup desactivado)"
                 );
 
                 showToast("📲 Notificación enviada");
@@ -177,7 +184,7 @@ public class CallScreeningServiceImpl extends CallScreeningService {
                 logsHelper.logError("Error Answer+Hangup: " + e.getMessage() + " para número: " + callerNumber);
 
                 // Fallback: Modo normal con notificación
-                SpamNotificationManager.showIncomingSpamNotification(this, callerNumber);
+                SpamNotificationManager.showIncomingSpamNotification(this, callerNumber, "Modo 1 - Error (fallback)");
                 callHistoryHelper.addSpamCall(callerNumber, "Spam", "Notification (fallback)");
                 CallResponse response = new CallResponse.Builder()
                     .setDisallowCall(false)

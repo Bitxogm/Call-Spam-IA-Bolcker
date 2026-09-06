@@ -34,6 +34,7 @@ rm -rf android/app/build
 rm -rf android/build
 rm -rf android/.gradle
 rm -rf ~/.gradle/caches/build-cache-*  # Caché de builds de Gradle
+find . -type d -name ".cxx" -exec rm -rf {} + 2>/dev/null || true  # Cachés CMake/ninja stale (causa fbjni error)
 echo "✅ Builds de Android limpios"
 echo ""
 
