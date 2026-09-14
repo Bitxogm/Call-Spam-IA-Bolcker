@@ -15,6 +15,7 @@ import time
 import socket
 import subprocess
 import edge_tts
+import requests
 
 sys.path.insert(0, '/root/ai_bridge/venv/lib/python3.12/site-packages')
 sys.path.insert(0, '/root/ai_bridge')
@@ -39,6 +40,7 @@ AUDIO_DIR  = '/tmp/manolo_agi'
 WHISPER_SOCKET = '/tmp/whisper.sock'
 GROQ_KEY = os.getenv('GROQ_API_KEY')
 GEMINI_KEY = os.getenv('GEMINI_API_KEY')
+DEEPGRAM_KEY = os.getenv('DEEPGRAM_API_KEY')
 
 os.makedirs(AUDIO_DIR, exist_ok=True)
 groq_client = Groq(api_key=GROQ_KEY)
@@ -148,6 +150,35 @@ def text_to_speech(text, filename):
         agi_log(f'TTS error: {e}')
         return None
 
+def deepgram_stt(converted_wav_path):
+    """Transcribe con Deepgram (nova-2, español)."""
+    try:
+        with open(converted_wav_path, 'rb') as f:
+            audio_data = f.read()
+
+        response = requests.post(
+            'https://api.deepgram.com/v1/listen',
+            headers={
+                'Authorization': f'Token {DEEPGRAM_KEY}',
+                'Content-Type': 'audio/wav'
+            },
+            params={
+                'model': 'nova-2',
+                'language': 'es',
+                'punctuate': 'true'
+            },
+            data=audio_data,
+            timeout=10
+        )
+        response.raise_for_status()
+        result = response.json()
+        text = result['results']['channels'][0]['alternatives'][0]['transcript'].strip()
+        agi_log(f"STT Deepgram: '{text}'")
+        return text
+    except Exception as e:
+        agi_log(f'STT Deepgram falló ({e}), fallback a Whisper')
+        return None
+
 def speech_to_text_via_socket(converted_wav_path):
     """Pide STT al servicio Whisper por socket Unix local."""
     try:
@@ -187,12 +218,18 @@ def speech_to_text(wav_path):
             agi_log(f"ffmpeg falló: {result.stderr.decode('utf-8', errors='replace')}")
             return ''
 
-        # 1) Intento principal: servicio Whisper por socket Unix
+        # 1) Intento principal: Deepgram (si hay key configurada)
+        if DEEPGRAM_KEY:
+            deepgram_text = deepgram_stt(converted)
+            if deepgram_text is not None:
+                return deepgram_text
+
+        # 2) Whisper por socket Unix
         socket_text = speech_to_text_via_socket(converted)
         if socket_text is not None:
             return socket_text
 
-        # 2) Fallback local: Whisper en este proceso (carga bajo demanda)
+        # 3) Fallback local: Whisper en este proceso (carga bajo demanda)
         local_model = ensure_local_whisper_model()
         if local_model is not None:
             try:
@@ -203,7 +240,7 @@ def speech_to_text(wav_path):
             except Exception as w_err:
                 agi_log(f'STT Whisper local falló ({w_err}), usando Google SR')
 
-        # 3) Fallback final: Google Speech Recognition
+        # 4) Fallback final: Google Speech Recognition
         recognizer = sr.Recognizer()
         with sr.AudioFile(converted) as source:
             recognizer.adjust_for_ambient_noise(source, duration=0.5)
