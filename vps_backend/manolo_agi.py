@@ -13,6 +13,7 @@ import json
 import asyncio
 import time
 import socket
+import subprocess
 import edge_tts
 
 sys.path.insert(0, '/root/ai_bridge/venv/lib/python3.12/site-packages')
@@ -172,10 +173,19 @@ def speech_to_text_via_socket(converted_wav_path):
 def speech_to_text(wav_path):
     """Convierte WAV grabado por Asterisk a texto."""
     try:
-        audio = AudioSegment.from_file(wav_path + '.wav')
-        audio = audio.set_frame_rate(16000).set_channels(1)
         converted = wav_path + '_converted.wav'
-        audio.export(converted, format='wav')
+        result = subprocess.run([
+            'ffmpeg', '-y',
+            '-i', wav_path + '.wav',
+            '-ar', '16000',
+            '-ac', '1',
+            '-af', 'highpass=f=200,lowpass=f=3000,afftdn=nf=-25',
+            converted
+        ], capture_output=True)
+
+        if result.returncode != 0:
+            agi_log(f"ffmpeg falló: {result.stderr.decode('utf-8', errors='replace')}")
+            return ''
 
         # 1) Intento principal: servicio Whisper por socket Unix
         socket_text = speech_to_text_via_socket(converted)
