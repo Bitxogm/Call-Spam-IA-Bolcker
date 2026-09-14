@@ -114,7 +114,7 @@ def ensure_local_whisper_model():
 def agi_stream_file(filename):
     return agi_send(f'STREAM FILE {filename} ""')
 
-def agi_record(filename, silence=1, maxdur=15):
+def agi_record(filename, silence=0.5, maxdur=15):
     return agi_send(f'RECORD FILE {filename} wav "|#" {maxdur * 1000} s={silence}')
 
 # ── Estado ─────────────────────────────────────────────────────
@@ -317,7 +317,7 @@ def run_ai():
         agi_log(f'--- Turno {turno} ---')
 
         rec_path = f'{AUDIO_DIR}/rec_{turno}'
-        agi_record(rec_path, silence=1, maxdur=20)
+        agi_record(rec_path, silence=0.5, maxdur=20)
         agi_stream_file(f'{AUDIO_DIR}/pensando')
 
         texto = speech_to_text(rec_path)
