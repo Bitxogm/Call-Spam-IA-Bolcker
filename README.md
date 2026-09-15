@@ -24,28 +24,32 @@ MODO 1
     └── CallAccessibilityService detecta spam
           └── TelecomManager.acceptRingingCall() → endCall()
 
-MODOS 2 y 3
+MODO 2
   Llamada entrante
     └── Operador GSM aplica desvío USSD (*21*34919933065#)
           └── Zadarma (+34 919 93 30 65)
                 └── SIP INVITE → VPS Asterisk (157.180.35.161:5060)
-                      └── extensions.conf [from-zadarma]
-                            └── manolo_agi.py
-                                  ├── Lee /root/ai_bridge/current_mode.json
-                                  ├── FIXED → Playback fixed_spam_message → Hangup
-                                  └── AI    → Manolo
-                                              bucle: graba spammer
-                                                     → Whisper socket (/tmp/whisper.sock)
-                                                     → Groq llama-3.3-70b-versatile
-                                                     → Edge TTS (es-ES-AlvaroNeural) → WAV 8kHz
-                                                     → reproduce en llamada
+                      └── extensions.conf [from-zadarma] → Stasis(manolo-ari)
+                            └── manolo_ari.py lee current_mode.json
+                                  └── FIXED → Playback fixed_spam_message → Hangup
+
+MODO 3 (migrado a ARI en septiembre 2026)
+  Llamada entrante (mismo camino Zadarma → Asterisk que Modo 2)
+    └── extensions.conf [from-zadarma] → Stasis(manolo-ari)
+          └── manolo_ari.py (ARI + ExternalMedia, streaming UDP/RTP)
+                bucle por turno:
+                  ├── Recibe RTP/mulaw del spammer, VAD por energía
+                  │     (barge-in: 800ms de gracia + 3 frames antes de cortar)
+                  ├── STT: Deepgram Nova-2 (batch) — Whisper por socket si falla
+                  ├── LLM: Groq qwen/qwen3.8-27b, con historial real de la conversación
+                  └── TTS: Edge TTS (es-ES-AlvaroNeural) → mulaw 8kHz → RTP de vuelta
 ```
 
-La app controla el modo activo vía `BackendSyncService.ts` → `POST http://157.180.35.161:5000/set_mode`.
+La app controla el modo activo (FIXED/AI) vía `BackendSyncService.ts` → `POST http://157.180.35.161:5000/set_mode`. `manolo_ari.py` lee ese mismo `current_mode.json`.
 
 ### Estado por capa (importante)
 
-- **Producción Modo 3 (VPS/Asterisk):** Groq + Edge TTS + Whisper por socket (actualizado).
+- **Producción Modo 3 (VPS/Asterisk):** `manolo_ari.py` vía ARI + ExternalMedia — Deepgram + Groq + Edge TTS. `manolo_agi.py` (AGI) queda en disco como backup, ya no está en el dialplan.
 - **Pantalla de pruebas IA (app móvil):** sigue en migración y todavía usa `GeminiServices.ts` + `ElevenLabService.ts` en varias rutas.
 - **Conclusión:** el stack real de llamadas en producción y el stack del laboratorio de UI no son idénticos hoy.
 
@@ -58,11 +62,12 @@ La app controla el modo activo vía `BackendSyncService.ts` → `POST http://157
 | App Android                    | React Native (Expo) + Java                                                  |
 | Detección de spam              | `CallAccessibilityService.java` — AccessibilityService + PhoneStateListener |
 | Desvío de llamadas             | USSD vía `TelecomManager` → Zadarma SIP trunk                               |
-| PBX en VPS                     | Asterisk + pjsip                                                            |
-| AGI unificado                  | Python — `manolo_agi.py`                                                    |
-| IA conversacional (producción) | Groq `llama-3.3-70b-versatile` (Gemini queda como fallback en AGI)          |
-| TTS en VPS (producción)        | Edge TTS voz `es-ES-AlvaroNeural` → WAV 8kHz mono pcm_s16le                 |
-| STT en VPS (producción)        | Whisper small en servicio persistente vía Unix socket                       |
+| PBX en VPS                     | Asterisk + pjsip + ARI (REST/WebSocket)                                     |
+| Motor Modo 3 (producción)      | Python — `manolo_ari.py` (ARI + ExternalMedia, streaming UDP/RTP)           |
+| AGI legacy (backup, sin usar)  | Python — `manolo_agi.py`                                                    |
+| IA conversacional (producción) | Groq `qwen/qwen3.8-27b`, con historial de conversación real                 |
+| TTS en VPS (producción)        | Edge TTS voz `es-ES-AlvaroNeural` → mulaw 8kHz                              |
+| STT en VPS (producción)        | Deepgram Nova-2 (batch) — Whisper por socket Unix como fallback             |
 | API de control                 | Flask — `control_api.py` (puerto 5000)                                      |
 | Infraestructura                | VPS Hetzner Ubuntu 24.04 — `157.180.35.161`                                 |
 
@@ -79,8 +84,8 @@ La app controla el modo activo vía `BackendSyncService.ts` → `POST http://157
 ### Modos 2 y 3 (además)
 
 - Número Zadarma activo con reenvío configurado al VPS vía SIP
-- VPS con Asterisk, Python 3.12 y venv con dependencias instaladas
-- Fichero `/root/ai_bridge/.env` con `GROQ_API_KEY` (y opcionalmente `GEMINI_API_KEY` para fallback)
+- VPS con Asterisk (ARI activo en `ari.conf`/`http.conf`), Python 3.12 y venv con dependencias instaladas
+- Fichero `/root/ai_bridge/.env` con `GROQ_API_KEY`, `DEEPGRAM_API_KEY` y `ARI_PASSWORD`
 
 ---
 
@@ -121,7 +126,11 @@ Ejecutar desde la raíz del repo en el VPS:
 ```bash
 bash vps_backend/deploy.sh           # instala Asterisk, Python, dependencias
 bash vps_backend/install_service.sh  # registra control_api + whisper_server como servicios systemd
-bash vps_backend/deploy_modo3.sh     # copia manolo_agi.py y extensions.conf
+
+# Motor Modo 3 (ARI) — copiar manolo_ari.py y manolo_ari.service al VPS,
+# luego:
+sudo systemctl daemon-reload
+sudo systemctl enable --now manolo_ari.service
 ```
 
 Servicios esperados tras instalación:
@@ -129,7 +138,10 @@ Servicios esperados tras instalación:
 ```bash
 systemctl status asterisk-control-api
 systemctl status whisper_server
+systemctl status manolo_ari
 ```
+
+> `manolo_agi.py` + `deploy_modo3.sh` quedan como ruta de backup (AGI legacy) — no se ejecutan en el flujo de llamadas reales desde que `[from-zadarma]` apunta a `Stasis(manolo-ari)`.
 
 Para la configuración completa de pjsip y las subnets de Zadarma, ver sección 14 de [CLAUDE.md](CLAUDE.md).
 
@@ -165,13 +177,15 @@ Call-Spam-IA-Bolcker/
 │       └── …
 │
 ├── vps_backend/
-│   ├── manolo_agi.py                   ← AGI unificado: decisión + agente Manolo IA
-│   ├── whisper_server.py               ← servicio persistente Whisper (socket Unix)
+│   ├── manolo_ari.py                   ← motor Modo 3 en producción: ARI + ExternalMedia
+│   ├── manolo_ari.service              ← systemd unit para manolo_ari.py
+│   ├── manolo_agi.py                   ← AGI legacy (backup, ya no usado desde sept. 2026)
+│   ├── whisper_server.py               ← servicio persistente Whisper (fallback STT)
 │   ├── whisper_server.service          ← unit systemd del servicio Whisper
 │   ├── control_api.py                  ← Flask API de control (puerto 5000)
-│   ├── extensions.conf                 ← dialplan Asterisk [from-zadarma]
+│   ├── extensions.conf                 ← dialplan Asterisk [from-zadarma] → Stasis(manolo-ari)
 │   ├── deploy.sh                       ← instala dependencias en VPS
-│   ├── deploy_modo3.sh                 ← despliega manolo_agi.py en Asterisk
+│   ├── deploy_modo3.sh                 ← despliega manolo_agi.py (ruta legacy)
 │   ├── install_service.sh              ← registra systemd service
 │   └── asterisk-control-api.service   ← systemd unit para control_api
 │

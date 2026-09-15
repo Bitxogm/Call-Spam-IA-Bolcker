@@ -87,11 +87,11 @@ Llamada entra al teléfono
 │                                                              │
 │  3. VPS — Asterisk recibe la llamada                         │
 │     └── extensions.conf [from-zadarma]:                     │
-│         Answer → Wait(1) → AGI(decision_agi.py) → Hangup    │
+│         Answer → Stasis(manolo-ari) → Hangup                │
 │                                                              │
-│  4. decision_agi.py lee current_mode.json                    │
+│  4. manolo_ari.py (ARI + ExternalMedia) lee current_mode.json│
 │     ├── FIXED → Playback fixed_spam_message + Hangup        │
-│     └── AI    → AGI(victor_agi.py) [Modo 3]                 │
+│     └── AI    → Manolo conversa [Modo 3, ver sección 6]     │
 │                                                              │
 │  5. El modo lo controla control_api.py (Flask, puerto 5000) │
 │     └── BackendSyncService.ts → POST /set_mode              │
@@ -120,10 +120,10 @@ En Modo 2, `CallAccessibilityService` también reacciona al estado OFFHOOK de fo
 | ----------------------- | --------------------------- | --------------------------- | --------------------------- |
 | USSD                    | desactiva (`##21#`)         | activa (`*21*34919933065#`) | activa (`*21*34919933065#`) |
 | Teléfono suena          | sí, app lo cuelga           | no                          | no                          |
-| Spammer escucha         | nada                        | mensaje "Roberto"           | Manolo (Gemini 2.5-flash)   |
+| Spammer escucha         | nada                        | mensaje "Roberto"           | Manolo (Groq `qwen/qwen3.8-27b`) |
 | Requiere VPS            | ❌                          | ✅                          | ✅                          |
 | Requiere Zadarma config | ❌                          | ✅                          | ✅                          |
-| Estado actual           | ✅ funcional                | ✅ funcional                | ✅ funcional                |
+| Estado actual           | ✅ funcional                | ✅ funcional                | ✅ funcional (migrado a ARI, sept. 2026) |
 
 ---
 
@@ -135,27 +135,37 @@ El VPS gestiona las llamadas con **Asterisk**.
 
 | Componente            | Archivo                                    | Puerto/Ruta                    | Estado              |
 | --------------------- | ------------------------------------------ | ------------------------------ | ------------------- |
-| **Asterisk dialplan** | `vps_backend/extensions.conf`              | contexto `[from-zadarma]`      | ✅ funcional        |
-| **AGI unificado**     | `vps_backend/manolo_agi.py`                | `/usr/share/asterisk/agi-bin/` | ✅ funcional        |
+| **Asterisk dialplan** | `vps_backend/extensions.conf`              | contextos `[from-zadarma]` y `[manolo-ari-test]` | ✅ funcional        |
+| **Motor Modo 3 (ARI)**| `vps_backend/manolo_ari.py`                | ARI (`127.0.0.1:8088`) + ExternalMedia UDP `127.0.0.1:7000` | ✅ en producción (sept. 2026) |
 | **API de control**    | `vps_backend/control_api.py`               | puerto 5000                    | ✅ funcional        |
-| **Systemd service**   | `vps_backend/asterisk-control-api.service` | —                              | instalado           |
+| **Whisper (fallback STT)** | `vps_backend/whisper_server.py`       | socket Unix `/tmp/whisper.sock` | ✅ activo, fallback |
+| **Systemd — control API** | `vps_backend/asterisk-control-api.service` | —                          | instalado           |
+| **Systemd — Whisper** | `vps_backend/whisper_server.service`       | —                              | instalado           |
+| **Systemd — Manolo ARI** | `vps_backend/manolo_ari.service`        | —                              | instalado y activo  |
+| **AGI legacy (backup, sin usar)** | `vps_backend/manolo_agi.py`        | —                               | en disco, no referenciado desde el dialplan |
 
-**Flujo de decisión en el VPS:**
+**Migración septiembre 2026:** `[from-zadarma]` dejó de usar `AGI(manolo_agi.py)` y ahora entrega el canal a `Stasis(manolo-ari)`, atendido por `manolo_ari.py` vía ARI + ExternalMedia (streaming bidireccional UDP/RTP, sin el modelo graba→procesa→reproduce del AGI). `manolo_agi.py` queda en disco como backup, ya no forma parte del flujo de llamadas reales.
+
+**Flujo de decisión en el VPS (producción):**
 
 ```
 Asterisk [from-zadarma]
-  └── AGI(manolo_agi.py) lee /root/ai_bridge/current_mode.json
-        ├── FIXED → Playback fixed_spam_message → Hangup
-        └── AI    → Manolo conversa (Gemini 2.5-flash), todo en el mismo script
+  └── Stasis(manolo-ari)
+        └── manolo_ari.py (ARI + ExternalMedia)
+              ├── Recibe RTP/mulaw por UDP, VAD por energía (barge-in: 800ms de
+              │   gracia + 3 frames consecutivos antes de cortar la respuesta)
+              ├── STT: Deepgram Nova-2 (batch) — Whisper por socket como fallback
+              ├── LLM: Groq `qwen/qwen3.8-27b`, con historial de conversación real
+              └── TTS: Edge TTS `es-ES-AlvaroNeural` → mulaw 8kHz → RTP de vuelta
 ```
 
-**Limpieza agosto 2026 — scripts VPS obsoletos, sustituidos por `manolo_agi.py`:**
+**Limitación conocida de `manolo_ari.py`:** puerto UDP fijo (7000) + estado global → una sola llamada concurrente. Pendiente de asignación dinámica de puertos para producción a escala.
+
+**Limpieza agosto 2026 — scripts VPS obsoletos, sustituidos por `manolo_agi.py` en su momento:**
 
 - `agi-bin/decision_agi.py` — **ELIMINADO**
 - `victor_agi.py` — **ELIMINADO**
-- `deploy.sh` — **ELIMINADO**, usar `deploy_modo3.sh` (despliega `manolo_agi.py` + `extensions.conf`)
-
-`manolo_agi.py` es ahora el AGI único y definitivo: decisión FIXED/AI + conversación, en un solo script.
+- `deploy.sh` — **ELIMINADO**, usar `deploy_modo3.sh` (despliega `manolo_agi.py` + `extensions.conf`, hoy solo relevante para el backup AGI)
 
 **control_api.py endpoints (Flask, puerto 5000):**
 
@@ -177,7 +187,7 @@ Esta configuración no vive en el código. Si se pierde, el Modo 2 deja de funci
 | **Zadarma**          | `+34919933065`     | Reenvío de entrantes → VPS (documentar URL exacta aquí cuando se confirme)                                                                                                         |
 | **VPS**              | `157.180.35.161`   | Puerto 5000 (`control_api.py`, gestionado por systemd `asterisk-control-api.service`)                                                                                              |
 | **Gemini free tier** | Google AI Studio   | 20 req/día con `gemini-2.5-flash`. Cuando se agota, Modo 3 falla silenciosamente (fallback hardcodeado). Solución: activar billing.                                                |
-| **Deepgram**         | `api.deepgram.com` | $200 crédito gratuito. **NO usar para STT en este proyecto** — devuelve transcript vacío para audio SIP 8kHz (baja calidad). Whisper local es más tolerante para este caso de uso. |
+| **Deepgram**         | `api.deepgram.com` | $200 crédito gratuito. **STT principal desde sept. 2026** (Nova-2, batch) en `manolo_ari.py` — verificado funcional en prueba real sobre audio del ExternalMedia (RTP/mulaw 8kHz). Whisper queda como fallback si Deepgram falla. |
 
 ---
 
@@ -234,11 +244,15 @@ Call-Spam-IA-Blocker/
 │       └── AnswerHangupService.ts
 │
 ├── vps_backend/                            ← infraestructura del servidor
-│   ├── extensions.conf                     ← dialplan Asterisk [from-zadarma] ✅
-│   ├── manolo_agi.py                       ← AGI único y definitivo (decisión + conversación) ✅
+│   ├── extensions.conf                     ← dialplan Asterisk [from-zadarma] + [manolo-ari-test] ✅
+│   ├── manolo_ari.py                       ← motor Modo 3 en producción: ARI + ExternalMedia ✅
+│   ├── manolo_ari.service                  ← systemd unit para manolo_ari.py
+│   ├── manolo_agi.py                       ← AGI legacy, backup en disco, ya no usado (sept. 2026)
 │   ├── control_api.py                      ← Flask API puerto 5000 ✅
 │   ├── asterisk-control-api.service        ← systemd unit para control_api
-│   ├── deploy_modo3.sh                     ← script de deploy vigente (manolo_agi.py + extensions.conf)
+│   ├── whisper_server.py                   ← servicio persistente Whisper (fallback STT) ✅
+│   ├── whisper_server.service              ← systemd unit para whisper_server
+│   ├── deploy_modo3.sh                     ← script de deploy del AGI legacy (histórico)
 │   ├── install_service.sh                  ← registra systemd service
 │   └── README_VPS.md
 │                                           ← ELIMINADOS (limpieza agosto 2026): agi-bin/decision_agi.py, victor_agi.py, deploy.sh
@@ -378,15 +392,18 @@ asterisk -rx "dialplan reload"
 
 - [ ] **`scripts/check-secrets.sh` da falsos positivos.** El pre-commit hook marca como "posible secreto" referencias a `process.env.EXPO_PUBLIC_*` y nombres de variable (`this.apiKey`) en `ElevenLabService.ts`/`GeminiServices.ts`, y una URL de documentación en `.env.example` — ninguno es un secreto real. Además falla `/dev/tty: No such device or address` en entornos no interactivos (CI, agentes) y cae a modo advertencia sin bloquear. No urgente, pero no es fiable como gate hasta que se corrija el patrón de detección y el fallback no interactivo.
 
-- [x] **Modo 3 ✅ Funcional — conversación real con Manolo**
-  - LLM: Groq + llama-3.3-70b-versatile (gratis, ~0.2s)
-  - TTS: Edge TTS voz es-ES-AlvaroNeural (gratis, ~1s)
-  - STT: Whisper small via socket permanente (gratis, ~0.5s)
-  - Latencia por turno: ~8-14s (RECORD timeout el mayor problema)
+- [x] **Modo 3 ✅ Funcional — conversación real con Manolo, migrado a ARI (sept. 2026)**
+  - Motor: `manolo_ari.py` — ARI + ExternalMedia (streaming UDP/RTP), no AGI
+  - LLM: Groq `qwen/qwen3.8-27b`, con historial de conversación real (antes no se enviaba a la API — bug corregido)
+  - TTS: Edge TTS voz es-ES-AlvaroNeural
+  - STT: Deepgram Nova-2 (batch), Whisper por socket como fallback
+  - Barge-in: 800ms de periodo de gracia + 3 frames consecutivos de voz antes de cortar la respuesta (antes: 1 solo frame, demasiado sensible)
+  - Verificado en prueba real: conversación fluida
+  - Latencia por turno: no medida con instrumentación formal todavía — pendiente de confirmar con cifras exactas
 
-- [ ] **RECORD FILE devuelve timeout en vez de silence:** El canal SIP tiene comfort noise que impide la detección de silencio. Posible solución: reducir `maxdur` o usar VAD externo.
+- [ ] **`RECORD FILE` devuelve timeout en vez de silence (histórico, solo afecta al AGI legacy):** el canal SIP tiene comfort noise que impedía la detección de silencio en `manolo_agi.py`. No aplica al motor actual (`manolo_ari.py` no usa `RECORD FILE`, hace streaming continuo por ExternalMedia).
 
-- [ ] **Quota Gemini agotada (resetea diariamente):** `gemini-2.5-flash` tiene límite de 20 req/día en free tier. Solución: activar billing en Google AI Studio o esperar reset diario. El Modo 3 no funciona cuando se agota la quota — Manolo responde siempre con el fallback `"Ay hijo no te he oído bien"`.
+- [ ] **Quota Gemini agotada (histórico, solo afecta al AGI legacy):** `gemini-2.5-flash` tiene límite de 20 req/día en free tier — relevante solo si se vuelve a usar `manolo_agi.py`. `manolo_ari.py` (motor en producción) no tiene fallback a Gemini, solo Groq con un mensaje fijo de emergencia si la API falla.
 
 ### Menor
 
@@ -406,7 +423,11 @@ En orden de prioridad lógica:
 
 3. **Limpiar residuos:** empezar por las referencias a `IVRAudioPlayer` en `CallAccessibilityService`, luego los 12 archivos Java y el Manifest.
 
-4. ~~**Modo 3 — Agente IA conversacional**~~ ✅ **Completado.** `manolo_agi.py` unifica la lógica de decisión y la conversación de Manolo en un único script AGI. Funcional en producción.
+4. ~~**Modo 3 — Agente IA conversacional**~~ ✅ **Completado.** Primero con `manolo_agi.py` (AGI unificado), y desde sept. 2026 migrado a `manolo_ari.py` (ARI + ExternalMedia, streaming). Funcional en producción.
+
+5. **Medir latencia real por turno con `manolo_ari.py`.** El cambio a streaming se hizo para bajar la latencia frente al AGI, pero no se ha instrumentado con timestamps reales — pendiente antes de dar por optimizado el rendimiento.
+
+6. **Asignación dinámica de puertos UDP en `manolo_ari.py`.** Hoy usa un puerto fijo (7000) y estado global — soporta una sola llamada concurrente, no escala a producción con varias llamadas simultáneas.
 
 ---
 
@@ -512,14 +533,22 @@ curl -X POST http://157.180.35.161:5000/set_mode \
 # Consultar modo actual
 curl http://157.180.35.161:5000/get_mode
 
-# Estado del servicio control_api
+# Estado de los servicios
 systemctl status asterisk-control-api
+systemctl status whisper_server
+systemctl status manolo_ari
+
+# Logs del motor Modo 3 en vivo
+journalctl -u manolo_ari -f
 
 # Reiniciar servicios
 systemctl restart asterisk
 systemctl restart asterisk-control-api
+systemctl restart manolo_ari
 ```
 
 ---
 
-Limpieza agosto 2026: eliminados residuos de Twilio, DefaultDialer, IVR local y AGI scripts obsoletos. Stack del servidor: manolo_agi.py único AGI.
+Limpieza agosto 2026: eliminados residuos de Twilio, DefaultDialer, IVR local y AGI scripts obsoletos. Stack del servidor en ese momento: manolo_agi.py único AGI.
+
+Migración septiembre 2026: `[from-zadarma]` pasa de `AGI(manolo_agi.py)` a `Stasis(manolo-ari)`. Motor Modo 3 en producción: `manolo_ari.py` (ARI + ExternalMedia) + Deepgram Nova-2 + Groq `qwen/qwen3.8-27b` + Edge TTS. `manolo_agi.py` y Whisper quedan como backup/fallback, no eliminados.
