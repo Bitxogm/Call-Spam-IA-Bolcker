@@ -261,7 +261,7 @@ def get_manolo_response(chat_history, text):
         # 1) Intento principal: Groq
         try:
             groq_response = groq_client.chat.completions.create(
-                model='llama-3.1-8b-instant',
+                model='qwen/qwen3.8-27b',
                 messages=[
                     {'role': 'system', 'content': PROMPT_MANOLO},
                     {'role': 'user', 'content': text}
