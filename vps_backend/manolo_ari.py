@@ -52,7 +52,7 @@ FRAME_MS = 20
 FRAME_SAMPLES = SAMPLE_RATE * FRAME_MS // 1000   # 160 muestras/frame
 RTP_PAYLOAD_TYPE_ULAW = 0                        # PT=0 = PCMU (mulaw) según RFC 3551
 
-VAD_ENERGY_THRESHOLD = 500      # RMS sobre PCM16
+VAD_ENERGY_THRESHOLD = 1500     # RMS sobre PCM16
 SILENCE_MS_TO_CLOSE_TURN = 600  # silencio tras voz real -> fin de turno
 MAX_TURNOS = 8
 MAX_SILENCIO = 2
@@ -176,6 +176,8 @@ class CallState:
         self.pcm_buffer = bytearray()
         self.has_speech = False
         self.silence_ms = 0
+        self.tts_start_time = None
+        self.barge_in_frames = 0
 
         self.chat_history = []
         self.turno = 0
@@ -290,6 +292,8 @@ async def synthesize_mulaw(texto):
 
 
 async def play_response(state, texto):
+    state.tts_start_time = time.time()
+    state.barge_in_frames = 0
     try:
         mulaw_bytes = await synthesize_mulaw(texto)
         if not mulaw_bytes:
@@ -373,10 +377,23 @@ class RTPProtocol(asyncio.DatagramProtocol):
         pcm_chunk = audioop.ulaw2lin(mulaw_payload, 2)
         speaking_now = is_speech(pcm_chunk)
 
-        # Barge-in: si Manolo está hablando y llega voz real, cortar y empezar turno nuevo
-        if call_state.tts_task and not call_state.tts_task.done() and speaking_now:
+        if speaking_now:
+            call_state.barge_in_frames += 1
+        else:
+            call_state.barge_in_frames = 0
+
+        tts_activo = call_state.tts_task and not call_state.tts_task.done()
+        en_periodo_de_gracia = (
+            call_state.tts_start_time is not None
+            and (time.time() - call_state.tts_start_time) * 1000 < 800
+        )
+
+        # Barge-in: solo si Manolo habla, ya pasó el periodo de gracia,
+        # y hay 3 frames consecutivos de voz real (no 1 solo)
+        if tts_activo and not en_periodo_de_gracia and call_state.barge_in_frames >= 3:
             ari_log('Barge-in detectado')
             call_state.tts_task.cancel()
+            call_state.barge_in_frames = 0
             call_state.pcm_buffer = bytearray()
             call_state.has_speech = False
             call_state.silence_ms = 0
