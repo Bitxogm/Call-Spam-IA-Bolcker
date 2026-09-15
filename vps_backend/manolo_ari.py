@@ -10,6 +10,7 @@ llamada concurrente. Para producción hace falta asignación dinámica de puerto
 import sys
 import os
 import json
+import time
 import random
 import struct
 import asyncio
@@ -50,6 +51,7 @@ FRAME_SAMPLES = SAMPLE_RATE * FRAME_MS // 1000   # 160 muestras/frame
 RTP_PAYLOAD_TYPE_ULAW = 0                        # PT=0 = PCMU (mulaw) según RFC 3551
 
 VAD_ENERGY_THRESHOLD = 500      # RMS sobre PCM16 (solo para barge-in)
+SILENCE_TIMEOUT = 15            # segundos sin voz real detectada -> cuenta como silencio
 MAX_TURNOS = 8
 MAX_SILENCIO = 2
 
@@ -169,6 +171,8 @@ class CallState:
         self.external_media_channel_id = None
         self.remote_addr = None          # (ip, puerto) desde donde llega el RTP de Asterisk
         self.deepgram_ws = None
+        self.last_speech_ts = time.time()
+        self.closed = False
 
         self.chat_history = []
         self.turno = 0
@@ -211,13 +215,17 @@ DEEPGRAM_STREAM_URL = (
 
 async def deepgram_connect():
     headers = {'Authorization': f'Token {DEEPGRAM_KEY}'}
-    return await websockets.connect(DEEPGRAM_STREAM_URL, additional_headers=headers)
+    ws = await websockets.connect(DEEPGRAM_STREAM_URL, additional_headers=headers)
+    ari_log('Deepgram WS conectado')
+    return ws
 
 
 async def deepgram_receiver(state):
     try:
         async for raw in state.deepgram_ws:
             data = json.loads(raw)
+            ari_log(f'Deepgram respuesta: {data}')
+
             if data.get('type') != 'Results' or not data.get('is_final'):
                 continue
             alt = data.get('channel', {}).get('alternatives', [{}])[0]
@@ -306,12 +314,22 @@ async def play_response(state, texto):
 
 
 # ── Turno de conversación ───────────────────────────────────────
+async def silence_watchdog(state):
+    while not state.closed:
+        await asyncio.sleep(2)
+        if state.closed:
+            return
+        if time.time() - state.last_speech_ts > SILENCE_TIMEOUT:
+            state.silencio_consecutivo += 1
+            state.last_speech_ts = time.time()
+            ari_log(f'Silencio {state.silencio_consecutivo}/{MAX_SILENCIO} ({state.channel_id})')
+            if state.silencio_consecutivo >= MAX_SILENCIO:
+                await despedida_y_cierre(state)
+                return
+
+
 async def on_deepgram_transcript(state, texto):
     if not texto:
-        state.silencio_consecutivo += 1
-        ari_log(f'Silencio {state.silencio_consecutivo}/{MAX_SILENCIO} ({state.channel_id})')
-        if state.silencio_consecutivo >= MAX_SILENCIO:
-            await despedida_y_cierre(state)
         return
 
     state.silencio_consecutivo = 0
@@ -328,12 +346,21 @@ async def on_deepgram_transcript(state, texto):
 
 
 async def despedida_y_cierre(state):
+    state.closed = True
     despedida = '¿Hola? ¿Sigues ahí? Bueno, que Dios te bendiga hijo. Adiós.'
     if state.tts_task and not state.tts_task.done():
         state.tts_task.cancel()
     state.tts_task = asyncio.create_task(play_response(state, despedida))
     await asyncio.sleep(4)
     await ari.hangup(state.channel_id)
+
+
+async def send_to_deepgram(state, chunk):
+    try:
+        await state.deepgram_ws.send(chunk)
+        ari_log(f'Deepgram chunk enviado: {len(chunk)} bytes')
+    except Exception as e:
+        ari_log(f'Deepgram send error: {e}')
 
 
 # ── Protocolo UDP (recibe y envía RTP) ──────────────────────────
@@ -361,13 +388,16 @@ class RTPProtocol(asyncio.DatagramProtocol):
         pcm_chunk = audioop.ulaw2lin(mulaw_payload, 2)
         speaking_now = is_speech(pcm_chunk)
 
+        if speaking_now:
+            call_state.last_speech_ts = time.time()
+
         # Barge-in: si Manolo está hablando y llega voz real, cortar
         if call_state.tts_task and not call_state.tts_task.done() and speaking_now:
             ari_log('Barge-in detectado')
             call_state.tts_task.cancel()
 
         if call_state.deepgram_ws is not None:
-            asyncio.create_task(call_state.deepgram_ws.send(pcm_chunk))
+            asyncio.create_task(send_to_deepgram(call_state, pcm_chunk))
 
 
 # ── Eventos ARI ──────────────────────────────────────────────────
@@ -395,6 +425,7 @@ async def on_stasis_start(event):
 
     call_state.deepgram_ws = await deepgram_connect()
     asyncio.create_task(deepgram_receiver(call_state))
+    asyncio.create_task(silence_watchdog(call_state))
 
     em_id = await ari.create_external_media(f'{EXTERNAL_MEDIA_HOST}:{EXTERNAL_MEDIA_PORT}')
     ari_log(f'externalMedia creado: {em_id} -> {EXTERNAL_MEDIA_HOST}:{EXTERNAL_MEDIA_PORT}')
@@ -409,6 +440,7 @@ async def on_stasis_end(event):
     channel_id = event['channel']['id']
     if call_state and channel_id == call_state.channel_id:
         ari_log(f'Llamada terminada: {channel_id}')
+        call_state.closed = True
         if call_state.tts_task and not call_state.tts_task.done():
             call_state.tts_task.cancel()
         if call_state.deepgram_ws:
