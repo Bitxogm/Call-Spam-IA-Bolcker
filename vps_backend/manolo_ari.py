@@ -190,6 +190,7 @@ class CallState:
 
 
 call_state: CallState | None = None
+udp_transport: asyncio.DatagramTransport | None = None
 
 
 # ── VAD por energía (RMS sobre PCM16) ───────────────────────────
@@ -399,6 +400,7 @@ async def on_stasis_start(event):
 
     ari_log(f'Llamada entrante: {channel_id}')
     call_state = CallState(channel_id)
+    call_state.transport = udp_transport
 
     await ari.answer(channel_id)
     call_state.bridge_id = await ari.create_bridge()
@@ -432,11 +434,13 @@ EVENT_HANDLERS = {
 
 # ── Main ──────────────────────────────────────────────────────
 async def run_udp_server():
+    global udp_transport
     loop = asyncio.get_running_loop()
     transport, _protocol = await loop.create_datagram_endpoint(
         RTPProtocol,
         local_addr=(EXTERNAL_MEDIA_HOST, EXTERNAL_MEDIA_PORT),
     )
+    udp_transport = transport
     ari_log(f'Servidor UDP/RTP escuchando en {EXTERNAL_MEDIA_HOST}:{EXTERNAL_MEDIA_PORT}')
     return transport
 
