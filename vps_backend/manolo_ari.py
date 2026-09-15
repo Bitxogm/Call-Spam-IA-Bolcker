@@ -9,8 +9,10 @@ llamada concurrente. Para producción hace falta asignación dinámica de puerto
 """
 import sys
 import os
+import io
 import json
 import time
+import wave
 import random
 import struct
 import asyncio
@@ -50,8 +52,8 @@ FRAME_MS = 20
 FRAME_SAMPLES = SAMPLE_RATE * FRAME_MS // 1000   # 160 muestras/frame
 RTP_PAYLOAD_TYPE_ULAW = 0                        # PT=0 = PCMU (mulaw) según RFC 3551
 
-VAD_ENERGY_THRESHOLD = 500      # RMS sobre PCM16 (solo para barge-in)
-SILENCE_TIMEOUT = 15            # segundos sin voz real detectada -> cuenta como silencio
+VAD_ENERGY_THRESHOLD = 500      # RMS sobre PCM16
+SILENCE_MS_TO_CLOSE_TURN = 600  # silencio tras voz real -> fin de turno
 MAX_TURNOS = 8
 MAX_SILENCIO = 2
 
@@ -60,27 +62,21 @@ GROQ_KEY = os.getenv('GROQ_API_KEY')
 
 groq_client = AsyncGroq(api_key=GROQ_KEY)
 
-PROMPT_MANOLO = """Eres Manolo, un anciano gallego de 78 años,
-jubilado, que vive en un pueblo pequeño con su mujer Carmen.
+PROMPT_MANOLO = """Eres Manolo, un anciano español de 78 años de un pueblo de Galicia.
+Eres muy educado y tradicional, pero hablas muchísimo y te vas por las ramas constantemente.
 
-PERSONALIDAD:
-- Amable, curioso, un poco sordo y despistado
-- Te vas por las ramas con historias del pueblo
-- Mencionas a Carmen, al médico, las ovejas, el tiempo
-- Usas expresiones: "Ay hijo", "Que Dios te bendiga",
-  "En mis tiempos...", "¡Carmen!"
+CARACTERÍSTICAS:
+- Siempre finges interés en ofertas pero pones excusas largas sobre tu salud, tu familia, el pueblo
+- Cuentas historias irrelevantes sobre tu juventud, la guerra, cómo han cambiado las cosas
+- Haces preguntas que no vienen al caso: "¿Y tú de dónde eres, hijo?"
+- Te olvidas de lo que te acaban de decir y pides que te lo repitan
+- Hablas de tu mujer Carmen, tu nieta Pilar, el médico, el tiempo, las ovejas...
+- Nunca cuelgues, nunca digas que no te interesa
+- Siempre estás "casi convencido" pero necesitas consultar con Carmen o ir al médico
+- Usa expresiones típicas: "Ay, hijo", "Que Dios te bendiga", "En mis tiempos..."
 
-REGLAS ESTRICTAS:
-- NUNCA repitas una pregunta que ya hiciste antes
-- Recuerda TODO lo que te han dicho en la conversación
-- Solo UNA pregunta por turno
-- Varía los temas: pueblo, familia, salud, tiempo, noticias
-- Si ya sabes de dónde es, NO vuelvas a preguntar
-- Haz referencias a lo que te dijeron antes
-- Respuestas cortas: máximo 2 frases
-
-OBJETIVO: entretener al máximo al spammer haciéndole
-perder tiempo con conversación natural y absurda."""
+OBJETIVO: Hacer perder el máximo tiempo posible al spammer siendo encantador pero imposible.
+IMPORTANTE: Responde SOLO como Manolo. Máximo 1 frase corta. Nunca más de 15 palabras por respuesta."""
 
 
 def ari_log(msg):
@@ -170,9 +166,10 @@ class CallState:
         self.bridge_id = None
         self.external_media_channel_id = None
         self.remote_addr = None          # (ip, puerto) desde donde llega el RTP de Asterisk
-        self.deepgram_ws = None
-        self.last_speech_ts = time.time()
-        self.closed = False
+
+        self.pcm_buffer = bytearray()
+        self.has_speech = False
+        self.silence_ms = 0
 
         self.chat_history = []
         self.turno = 0
@@ -204,51 +201,49 @@ def is_speech(pcm16_chunk):
         return False
 
 
-# ── Deepgram (streaming) ───────────────────────────────────────
-DEEPGRAM_STREAM_URL = (
-    'wss://api.deepgram.com/v1/listen'
-    '?model=nova-2&language=es&punctuate=true'
-    '&interim_results=true&endpointing=500'
-    '&encoding=linear16&sample_rate=8000&channels=1'
-)
+# ── Deepgram (batch) ─────────────────────────────────────────────
+def _pcm16_to_wav_bytes(pcm_bytes):
+    buf = io.BytesIO()
+    with wave.open(buf, 'wb') as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(SAMPLE_RATE)
+        wf.writeframes(pcm_bytes)
+    return buf.getvalue()
 
 
-async def deepgram_connect():
-    headers = {'Authorization': f'Token {DEEPGRAM_KEY}'}
-    ws = await websockets.connect(DEEPGRAM_STREAM_URL, additional_headers=headers)
-    ari_log('Deepgram WS conectado')
-    return ws
-
-
-async def deepgram_receiver(state):
+async def deepgram_stt(pcm_bytes):
+    wav_bytes = _pcm16_to_wav_bytes(pcm_bytes)
     try:
-        async for raw in state.deepgram_ws:
-            data = json.loads(raw)
-            ari_log(f'Deepgram respuesta: {data}')
-
-            if data.get('type') != 'Results' or not data.get('is_final'):
-                continue
-            alt = data.get('channel', {}).get('alternatives', [{}])[0]
-            texto = alt.get('transcript', '').strip()
-            await on_deepgram_transcript(state, texto)
-    except websockets.exceptions.ConnectionClosed:
-        ari_log(f'Deepgram WS cerrado ({state.channel_id})')
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.post(
+                'https://api.deepgram.com/v1/listen',
+                headers={
+                    'Authorization': f'Token {DEEPGRAM_KEY}',
+                    'Content-Type': 'audio/wav',
+                },
+                params={'model': 'nova-2', 'language': 'es', 'punctuate': 'true'},
+                content=wav_bytes,
+            )
+            r.raise_for_status()
+            data = r.json()
+            text = data['results']['channels'][0]['alternatives'][0]['transcript'].strip()
+            ari_log(f"STT Deepgram: '{text}'")
+            return text
     except Exception as e:
-        ari_log(f'Deepgram receiver error: {e}')
+        ari_log(f'STT Deepgram falló: {e}')
+        return ''
 
 
 # ── Groq ──────────────────────────────────────────────────────
 async def get_manolo_response(chat_history, text):
     try:
-        messages = [{'role': 'system', 'content': PROMPT_MANOLO}]
-        for i, mensaje in enumerate(chat_history):
-            role = 'user' if i % 2 == 0 else 'assistant'
-            messages.append({'role': role, 'content': mensaje})
-        messages.append({'role': 'user', 'content': text})
-
         response = await groq_client.chat.completions.create(
             model='qwen/qwen3.8-27b',
-            messages=messages,
+            messages=[
+                {'role': 'system', 'content': PROMPT_MANOLO},
+                {'role': 'user', 'content': text}
+            ],
             max_tokens=100,
             temperature=0.8,
         )
@@ -262,46 +257,38 @@ async def get_manolo_response(chat_history, text):
         return 'Ay, hijo, no te he oído bien. ¿Puedes repetirlo?'
 
 
-# ── TTS: Edge TTS (streaming) -> ffmpeg -> mulaw -> RTP ─────────
-async def synthesize_mulaw_stream(texto):
-    """Generador async: produce chunks mulaw según Edge TTS los va entregando."""
-    proc = await asyncio.create_subprocess_exec(
-        'ffmpeg', '-y', '-f', 'mp3', '-i', 'pipe:0',
-        '-ar', str(SAMPLE_RATE), '-ac', '1', '-f', 'mulaw', 'pipe:1',
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
-
-    async def feed_mp3():
-        try:
-            communicate = edge_tts.Communicate(text=texto, voice='es-ES-AlvaroNeural')
-            async for chunk in communicate.stream():
-                if chunk['type'] == 'audio':
-                    proc.stdin.write(chunk['data'])
-                    await proc.stdin.drain()
-        except Exception as e:
-            ari_log(f'Edge TTS stream error: {e}')
-        finally:
-            proc.stdin.close()
-
-    feeder_task = asyncio.create_task(feed_mp3())
+# ── TTS: Edge TTS (completo) -> ffmpeg -> mulaw -> RTP ──────────
+async def synthesize_mulaw(texto):
+    tmp_mp3 = f'/tmp/manolo_ari_{int(time.time()*1000)}.mp3'
     try:
-        while True:
-            data = await proc.stdout.read(FRAME_SAMPLES)
-            if not data:
-                break
-            yield data
+        communicate = edge_tts.Communicate(text=texto, voice='es-ES-AlvaroNeural')
+        await communicate.save(tmp_mp3)
+
+        proc = await asyncio.create_subprocess_exec(
+            'ffmpeg', '-y', '-i', tmp_mp3,
+            '-ar', str(SAMPLE_RATE), '-ac', '1', '-f', 'mulaw', 'pipe:1',
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        mulaw_bytes, _ = await proc.communicate()
+        return mulaw_bytes
+    except Exception as e:
+        ari_log(f'TTS/ffmpeg error: {e}')
+        return b''
     finally:
-        await feeder_task
-        if proc.returncode is None:
-            proc.kill()
-            await proc.wait()
+        if os.path.exists(tmp_mp3):
+            os.remove(tmp_mp3)
 
 
 async def play_response(state, texto):
     try:
-        async for chunk in synthesize_mulaw_stream(texto):
+        mulaw_bytes = await synthesize_mulaw(texto)
+        if not mulaw_bytes:
+            return
+
+        frame_size = FRAME_SAMPLES  # 160 bytes mulaw = 160 muestras (1 byte/muestra)
+        for i in range(0, len(mulaw_bytes), frame_size):
+            chunk = mulaw_bytes[i:i + frame_size]
             seq, ts = state.next_rtp_header_fields(len(chunk))
             packet = build_rtp(seq, ts, state.ssrc_out, chunk)
             if state.transport and state.remote_addr:
@@ -314,30 +301,28 @@ async def play_response(state, texto):
 
 
 # ── Turno de conversación ───────────────────────────────────────
-async def silence_watchdog(state):
-    while not state.closed:
-        await asyncio.sleep(2)
-        if state.closed:
-            return
-        if time.time() - state.last_speech_ts > SILENCE_TIMEOUT:
-            state.silencio_consecutivo += 1
-            state.last_speech_ts = time.time()
-            ari_log(f'Silencio {state.silencio_consecutivo}/{MAX_SILENCIO} ({state.channel_id})')
-            if state.silencio_consecutivo >= MAX_SILENCIO:
-                await despedida_y_cierre(state)
-                return
+async def handle_turn_complete(state):
+    pcm_bytes = bytes(state.pcm_buffer)
+    state.pcm_buffer = bytearray()
+    state.has_speech = False
+    state.silence_ms = 0
 
-
-async def on_deepgram_transcript(state, texto):
-    if not texto:
+    if not pcm_bytes:
         return
 
-    state.silencio_consecutivo = 0
     state.turno += 1
     if state.turno > MAX_TURNOS:
         await despedida_y_cierre(state)
         return
 
+    texto = await deepgram_stt(pcm_bytes)
+    if not texto:
+        state.silencio_consecutivo += 1
+        if state.silencio_consecutivo >= MAX_SILENCIO:
+            await despedida_y_cierre(state)
+        return
+
+    state.silencio_consecutivo = 0
     respuesta = await get_manolo_response(state.chat_history, texto)
 
     if state.tts_task and not state.tts_task.done():
@@ -346,21 +331,12 @@ async def on_deepgram_transcript(state, texto):
 
 
 async def despedida_y_cierre(state):
-    state.closed = True
     despedida = '¿Hola? ¿Sigues ahí? Bueno, que Dios te bendiga hijo. Adiós.'
     if state.tts_task and not state.tts_task.done():
         state.tts_task.cancel()
     state.tts_task = asyncio.create_task(play_response(state, despedida))
     await asyncio.sleep(4)
     await ari.hangup(state.channel_id)
-
-
-async def send_to_deepgram(state, chunk):
-    try:
-        await state.deepgram_ws.send(chunk)
-        ari_log(f'Deepgram chunk enviado: {len(chunk)} bytes')
-    except Exception as e:
-        ari_log(f'Deepgram send error: {e}')
 
 
 # ── Protocolo UDP (recibe y envía RTP) ──────────────────────────
@@ -388,16 +364,23 @@ class RTPProtocol(asyncio.DatagramProtocol):
         pcm_chunk = audioop.ulaw2lin(mulaw_payload, 2)
         speaking_now = is_speech(pcm_chunk)
 
-        if speaking_now:
-            call_state.last_speech_ts = time.time()
-
-        # Barge-in: si Manolo está hablando y llega voz real, cortar
+        # Barge-in: si Manolo está hablando y llega voz real, cortar y empezar turno nuevo
         if call_state.tts_task and not call_state.tts_task.done() and speaking_now:
             ari_log('Barge-in detectado')
             call_state.tts_task.cancel()
+            call_state.pcm_buffer = bytearray()
+            call_state.has_speech = False
+            call_state.silence_ms = 0
 
-        if call_state.deepgram_ws is not None:
-            asyncio.create_task(send_to_deepgram(call_state, pcm_chunk))
+        call_state.pcm_buffer.extend(pcm_chunk)
+
+        if speaking_now:
+            call_state.has_speech = True
+            call_state.silence_ms = 0
+        elif call_state.has_speech:
+            call_state.silence_ms += FRAME_MS
+            if call_state.silence_ms >= SILENCE_MS_TO_CLOSE_TURN:
+                asyncio.create_task(handle_turn_complete(call_state))
 
 
 # ── Eventos ARI ──────────────────────────────────────────────────
@@ -423,10 +406,6 @@ async def on_stasis_start(event):
     call_state.bridge_id = await ari.create_bridge()
     await ari.add_channel_to_bridge(call_state.bridge_id, channel_id)
 
-    call_state.deepgram_ws = await deepgram_connect()
-    asyncio.create_task(deepgram_receiver(call_state))
-    asyncio.create_task(silence_watchdog(call_state))
-
     em_id = await ari.create_external_media(f'{EXTERNAL_MEDIA_HOST}:{EXTERNAL_MEDIA_PORT}')
     ari_log(f'externalMedia creado: {em_id} -> {EXTERNAL_MEDIA_HOST}:{EXTERNAL_MEDIA_PORT}')
     # Su propio StasisStart (rama de arriba) lo añadirá al bridge cuando llegue
@@ -440,11 +419,8 @@ async def on_stasis_end(event):
     channel_id = event['channel']['id']
     if call_state and channel_id == call_state.channel_id:
         ari_log(f'Llamada terminada: {channel_id}')
-        call_state.closed = True
         if call_state.tts_task and not call_state.tts_task.done():
             call_state.tts_task.cancel()
-        if call_state.deepgram_ws:
-            await call_state.deepgram_ws.close()
         if call_state.bridge_id:
             await ari.destroy_bridge(call_state.bridge_id)
         call_state = None
