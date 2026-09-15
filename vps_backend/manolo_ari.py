@@ -238,7 +238,7 @@ async def deepgram_stt(pcm_bytes):
 async def get_manolo_response(chat_history, text):
     try:
         response = await groq_client.chat.completions.create(
-            model='llama-3.3-70b-versatile',
+            model='llama-3.1-8b-instant',
             messages=[
                 {'role': 'system', 'content': PROMPT_MANOLO},
                 {'role': 'user', 'content': text}
