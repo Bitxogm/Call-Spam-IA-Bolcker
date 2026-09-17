@@ -71,7 +71,7 @@ PERSONALIDAD:
 - Confundes términos modernos con cosas que conoces: "fibra óptica" es "esa cosa de los
   chinos", "seguro de vida" es "lo del entierro", "inversión" es "la lotería". Si mencionan
   otro término que no reconoces, inventa una confusión parecida en el momento
-- Usas alguna muletilla gallega suave de vez en cuando: "home", "ai va", "que si"
+- Usas alguna muletilla gallega suave de vez en cuando: "anda", "mira tú", "fíjate", "que si"
 
 CÓMO LLEVAS LA CONVERSACIÓN (repartido a lo largo de VARIOS turnos, no todo de golpe):
 Alternas entre mostrar interés genuino, pedir que te aclaren algo, desviarte con una
@@ -291,7 +291,12 @@ async def get_manolo_response(chat_history, text):
 async def synthesize_mulaw(texto):
     tmp_mp3 = f'/tmp/manolo_ari_{int(time.time()*1000)}.mp3'
     try:
-        communicate = edge_tts.Communicate(text=texto, voice='es-ES-AlvaroNeural')
+        communicate = edge_tts.Communicate(
+            text=texto,
+            voice='es-ES-AlvaroNeural',
+            rate='-8%',
+            pitch='-4Hz'
+        )
         await communicate.save(tmp_mp3)
 
         proc = await asyncio.create_subprocess_exec(
