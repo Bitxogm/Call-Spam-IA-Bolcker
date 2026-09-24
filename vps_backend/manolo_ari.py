@@ -57,6 +57,9 @@ SILENCE_MS_TO_CLOSE_TURN = 600  # silencio tras voz real -> fin de turno
 MAX_TURNOS = 8
 MAX_SILENCIO = 2
 
+CALL_LOG_PATH = '/root/ai_bridge/call_log.json'
+CALL_LOG_MAX = 50               # rota las más viejas
+
 DEEPGRAM_KEY = os.getenv('DEEPGRAM_API_KEY')
 GROQ_KEY = os.getenv('GROQ_API_KEY')
 
@@ -218,6 +221,38 @@ class CallState:
 
 call_state: CallState | None = None
 udp_transport: asyncio.DatagramTransport | None = None
+
+
+# ── Registro de llamadas (call_log.json) ────────────────────────
+def load_call_log():
+    try:
+        with open(CALL_LOG_PATH) as f:
+            data = json.load(f)
+            return data if isinstance(data, list) else []
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def save_call_log(registros):
+    """Escritura atómica: control_api.py lee este fichero en paralelo."""
+    registros = registros[-CALL_LOG_MAX:]
+    tmp_path = CALL_LOG_PATH + '.tmp'
+    try:
+        with open(tmp_path, 'w') as f:
+            json.dump(registros, f, ensure_ascii=False)
+        os.replace(tmp_path, CALL_LOG_PATH)
+    except Exception as e:
+        ari_log(f'call_log write error: {e}')
+
+
+def extraer_numero(channel):
+    """Número del llamante. Campo pendiente de confirmar con un evento real."""
+    for clave in ('caller', 'connected'):
+        datos = channel.get(clave) or {}
+        numero = (datos.get('number') or '').strip()
+        if numero:
+            return numero
+    return 'desconocido'
 
 
 # ── VAD por energía (RMS sobre PCM16) ───────────────────────────
@@ -452,6 +487,23 @@ async def on_stasis_start(event):
     call_state = CallState(channel_id)
     call_state.transport = udp_transport
 
+    # Log temporal de diagnóstico: con esto confirmamos qué campo trae el número
+    ari_log(f'StasisStart channel: {json.dumps(channel, ensure_ascii=False)}')
+
+    numero = extraer_numero(channel)
+    ari_log(f'Número del llamante: {numero}')
+
+    log = load_call_log()
+    log.append({
+        'id': channel_id,
+        'numero': numero,
+        'timestamp_inicio': datetime.now().isoformat(),
+        'timestamp_fin': None,
+        'duracion_segundos': 0,
+        'estado': 'activa',
+    })
+    save_call_log(log)
+
     await ari.answer(channel_id)
     call_state.bridge_id = await ari.create_bridge()
     await ari.add_channel_to_bridge(call_state.bridge_id, channel_id)
@@ -469,6 +521,21 @@ async def on_stasis_end(event):
     channel_id = event['channel']['id']
     if call_state and channel_id == call_state.channel_id:
         ari_log(f'Llamada terminada: {channel_id}')
+
+        log = load_call_log()
+        for entry in log:
+            if entry.get('id') == channel_id and entry.get('estado') == 'activa':
+                fin = datetime.now()
+                try:
+                    inicio = datetime.fromisoformat(entry['timestamp_inicio'])
+                    entry['duracion_segundos'] = int((fin - inicio).total_seconds())
+                except Exception:
+                    entry['duracion_segundos'] = 0
+                entry['timestamp_fin'] = fin.isoformat()
+                entry['estado'] = 'finalizada'
+                break
+        save_call_log(log)
+
         if call_state.tts_task and not call_state.tts_task.done():
             call_state.tts_task.cancel()
         if call_state.bridge_id:

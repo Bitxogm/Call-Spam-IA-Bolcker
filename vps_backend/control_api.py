@@ -6,6 +6,15 @@ import subprocess
 
 app = Flask(__name__)
 STATE_FILE = 'current_mode.json'
+CALL_LOG_FILE = '/root/ai_bridge/call_log.json'   # absoluta: la escribe manolo_ari.py
+
+def load_call_log():
+    try:
+        with open(CALL_LOG_FILE, 'r') as f:
+            data = json.load(f)
+            return data if isinstance(data, list) else []
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
 
 def save_mode(mode):
     with open(STATE_FILE, 'w') as f:
@@ -34,6 +43,13 @@ def set_mode():
 def get_mode():
     mode = load_mode()
     return jsonify({'mode': mode}), 200
+
+@app.route('/call_log', methods=['GET'])
+def call_log():
+    registros = load_call_log()
+    # timestamp_inicio es ISO 8601: ordenar como string equivale a ordenar por fecha
+    registros.sort(key=lambda r: r.get('timestamp_inicio') or '', reverse=True)
+    return jsonify(registros[:50]), 200
 
 @app.route('/set_message', methods=['POST'])
 def set_message():
