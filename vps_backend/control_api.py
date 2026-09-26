@@ -7,7 +7,7 @@ import subprocess
 app = Flask(__name__)
 STATE_FILE = 'current_mode.json'
 CALL_LOG_FILE = '/root/ai_bridge/call_log.json'   # absoluta: la escribe manolo_ari.py
-SOUNDS_DIR = '/var/lib/asterisk/sounds/es'        # donde Asterisk SÍ puede leer
+SOUNDS_DIR = '/usr/share/asterisk/sounds/es'      # Data directory de Asterisk
 
 def load_call_log():
     try:

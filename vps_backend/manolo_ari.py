@@ -61,7 +61,7 @@ CALL_LOG_PATH = '/root/ai_bridge/call_log.json'
 CALL_LOG_MAX = 50               # rota las más viejas
 
 STATE_FILE = '/root/ai_bridge/current_mode.json'
-SOUNDS_DIR = '/var/lib/asterisk/sounds/es'
+SOUNDS_DIR = '/usr/share/asterisk/sounds/es'   # Data directory de Asterisk, igual que agi-bin/
 FIXED_SOUND = 'custom_fixed_message'          # el que genera control_api.py /set_message
 FIXED_SOUND_FALLBACK = 'fixed_spam_message'   # el que ya existe y funciona
 FIXED_PLAYBACK_TIMEOUT = 20     # segundos máximo esperando PlaybackFinished
@@ -508,6 +508,10 @@ class RTPProtocol(asyncio.DatagramProtocol):
 
 # ── Modo FIXED: reproducir mensaje y colgar ─────────────────────
 playbacks_pendientes: dict[str, asyncio.Event] = {}
+# Referencia fuerte a la tarea: sin ella el GC puede llevarse una tarea
+# fire-and-forget a medio ejecutar. Una sola basta: el diseño ya asume
+# una única llamada concurrente (puerto UDP fijo).
+fixed_task: asyncio.Task | None = None
 
 
 async def run_fixed(channel_id):
@@ -543,7 +547,7 @@ async def on_playback_finished(event):
 
 # ── Eventos ARI ──────────────────────────────────────────────────
 async def on_stasis_start(event):
-    global call_state
+    global call_state, fixed_task
     channel = event['channel']
     channel_id = channel['id']
     channel_name = channel.get('name', '')
@@ -582,7 +586,11 @@ async def on_stasis_start(event):
     # Modo FIXED: mensaje fijo y colgar. No hace falta bridge, externalMedia
     # ni Deepgram: el pipeline de conversación no interviene aquí.
     if get_current_mode() == 'FIXED':
-        await run_fixed(channel_id)
+        # En tarea aparte, NO con await: run_fixed espera PlaybackFinished, y
+        # run_ari_events despacha los handlers con await dentro del bucle que
+        # lee el WebSocket. Si bloqueamos aquí, ese evento no se lee nunca y
+        # la llamada se queda hasta el timeout.
+        fixed_task = asyncio.create_task(run_fixed(channel_id))
         return
 
     call_state.bridge_id = await ari.create_bridge()
