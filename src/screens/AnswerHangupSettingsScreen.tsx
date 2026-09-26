@@ -1,6 +1,6 @@
 // src/screens/AnswerHangupSettingsScreen.tsx
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, Switch, PermissionsAndroid, Platform, Linking, ActivityIndicator, TextInput, Permission } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, Switch, PermissionsAndroid, Platform, Linking, Permission } from 'react-native';
 import { answerHangupService } from '../services/AnswerHangupService';
 import backendSyncService from '../services/BackendSyncService';
 import callForwardingService from '../services/CallForwardingService';
@@ -16,16 +16,6 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
   const [loading, setLoading] = useState(true);
   const [isAccessibilityEnabled, setIsAccessibilityEnabled] = useState(false);
   const [checkingAccessibility, setCheckingAccessibility] = useState(false);
-
-  // Estados para Mensajes TTS (Escudo 2)
-  const [customMessage, setCustomMessage] = useState('Identificado como spam, no vuelva a llamar.');
-  const [isSyncingMessage, setIsSyncingMessage] = useState(false);
-
-  const PRESET_MESSAGES = [
-    "Identificado como spam. Su llamada ha sido enviada al archivo de 'Cosas que no me importan'.",
-    "Hola, soy Víctor. Mi dueño está ocupado siendo feliz, inténtelo de nuevo en el próximo siglo.",
-    "Error 404: Paciencia no encontrada. Por favor, deje de llamar o enviaré a un terminador a su oficina."
-  ];
 
   // Cargar configuración al iniciar
   useEffect(() => {
@@ -256,21 +246,10 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
         backendSyncService.syncMode(newMode === 'BACKEND_AI' ? 'AI' : 'FIXED');
       }
 
-      // En Modo 2 el servidor necesita el audio del mensaje actual. Sin esto,
-      // seguiría con el último sincronizado a mano (o con ninguno).
-      if (newMode === 'BACKEND_FIXED') {
-        try {
-          await backendSyncService.syncMessage(customMessage);
-        } catch {
-          // El cambio de modo sí funcionó: no lo reportamos como fallo.
-          console.warn('⚠️ No se pudo sincronizar el mensaje fijo, usa el botón Sincronizar');
-        }
-      }
-
       const modeDescriptions = {
-        HANGUP_IMMEDIATELY: '🛡️ Escudo 1: Se colgará la llamada inmediatamente.\n\n📞 Desvío desactivado (##21#).',
-        BACKEND_FIXED: '🔊 Escudo 2: Llamadas spam se desviarán a Zadarma.\n\n📞 Desvío activado (*21*+34919933065#).\n\nZadarma reproducirá mensaje corporativo fijo.',
-        BACKEND_AI: '🤖 Escudo 3: Llamadas spam se desviarán a Zadarma.\n\n📞 Desvío activado (*21*+34919933065#).\n\nVíctor (IA) conversará con el spammer.'
+        HANGUP_IMMEDIATELY: '🛡️ Escudo 1: Se colgará la llamada inmediatamente.\n\n📞 Desvío desactivado (##67#).',
+        BACKEND_FIXED: '🔊 Escudo 2: Llamadas spam se desviarán a Zadarma.\n\n📞 Desvío activado (*67*919933065#).\n\nZadarma reproducirá el mensaje fijo.',
+        BACKEND_AI: '🤖 Escudo 3: Llamadas spam se desviarán a Zadarma.\n\n📞 Desvío activado (*67*919933065#).\n\nManolo (IA) conversará con el spammer.'
       };
 
       Alert.alert(
@@ -429,66 +408,7 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
                 Ideal para discreción total.
               </Text>
               {mode === 'BACKEND_FIXED' && (
-                <View style={styles.fixedMessageEditor}>
-                  <Text style={styles.editorLabel}>Selecciona o escribe el mensaje:</Text>
-
-                  {/* Presets */}
-                  <View style={styles.presetsContainer}>
-                    {PRESET_MESSAGES.map((msg, index) => (
-                      <TouchableOpacity
-                        key={index}
-                        style={[
-                          styles.presetItem,
-                          customMessage === msg && styles.presetItemSelected
-                        ]}
-                        onPress={() => setCustomMessage(msg)}
-                      >
-                        <Text style={[
-                          styles.presetText,
-                          customMessage === msg && styles.presetTextSelected
-                        ]}>
-                          {index + 1}. {msg}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-
-                  {/* Input Manual */}
-                  <TextInput
-                    style={styles.customTextInput}
-                    value={customMessage}
-                    onChangeText={setCustomMessage}
-                    placeholder="Escribe tu mensaje aquí..."
-                    placeholderTextColor="#666"
-                    multiline
-                  />
-
-                  {/* Botón Sincronizar */}
-                  <TouchableOpacity
-                    style={[
-                      styles.syncMessageButton,
-                      isSyncingMessage && styles.syncMessageButtonDisabled
-                    ]}
-                    onPress={async () => {
-                      setIsSyncingMessage(true);
-                      try {
-                        await backendSyncService.syncMessage(customMessage);
-                        Alert.alert('✅ Sincronizado', 'El servidor ya tiene tu nuevo audio corporativo.');
-                      } catch (err) {
-                        Alert.alert('❌ Error', 'No se pudo enviar el mensaje al servidor.');
-                      } finally {
-                        setIsSyncingMessage(false);
-                      }
-                    }}
-                    disabled={isSyncingMessage}
-                  >
-                    {isSyncingMessage ? (
-                      <ActivityIndicator color="#fff" size="small" />
-                    ) : (
-                      <Text style={styles.syncMessageButtonText}>🔄 Sincronizar con Víctor</Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
+                <Text style={styles.modeStatus}>✅ Activo</Text>
               )}
             </TouchableOpacity>
 
@@ -796,70 +716,5 @@ const styles = StyleSheet.create({
     color: '#00ff88',
     fontWeight: '600',
     flex: 1,
-  },
-  // Estilos para Editor de Mensaje Fijo
-  fixedMessageEditor: {
-    marginTop: 15,
-    padding: 15,
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#444',
-  },
-  editorLabel: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginBottom: 10,
-  },
-  presetsContainer: {
-    marginBottom: 15,
-  },
-  presetItem: {
-    padding: 10,
-    backgroundColor: '#333',
-    borderRadius: 8,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  presetItemSelected: {
-    backgroundColor: '#004488',
-    borderColor: '#007bff',
-  },
-  presetText: {
-    color: '#bbb',
-    fontSize: 13,
-  },
-  presetTextSelected: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  customTextInput: {
-    backgroundColor: '#222',
-    color: '#fff',
-    padding: 12,
-    borderRadius: 8,
-    fontSize: 14,
-    minHeight: 60,
-    textAlignVertical: 'top',
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: '#444',
-  },
-  syncMessageButton: {
-    backgroundColor: '#007bff',
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  syncMessageButtonDisabled: {
-    backgroundColor: '#333',
-    opacity: 0.7,
-  },
-  syncMessageButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 14,
   },
 });

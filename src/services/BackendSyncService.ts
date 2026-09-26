@@ -51,42 +51,6 @@ class BackendSyncService {
   };
 
   /**
-   * Envía el texto para generar el audio del Mensaje Fijo
-   */
-  syncMessage = async (text: string) => {
-    try {
-      console.log(`🔄 Sincronizando mensaje TTS con el servidor: "${text}"`);
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout para audio
-
-      const response = await fetch(`http://${VPS_IP}:${API_PORT}/set_message`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ text }),
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error(`Server error: ${response.status}`);
-      }
-
-      console.log('✅ Mensaje TTS sincronizado y generado en el servidor');
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
-        console.error('❌ Timeout sincronizando mensaje con el servidor');
-      } else {
-        console.error('❌ Error sincronizando mensaje con el servidor:', error);
-      }
-      throw error;
-    }
-  };
-
-  /**
    * Descarga el historial de llamadas atendidas por Manolo (Modos 2/3).
    * Devuelve [] si el VPS no responde: el historial local debe seguir viéndose.
    */

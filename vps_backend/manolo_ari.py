@@ -62,8 +62,7 @@ CALL_LOG_MAX = 50               # rota las más viejas
 
 STATE_FILE = '/root/ai_bridge/current_mode.json'
 SOUNDS_DIR = '/usr/share/asterisk/sounds/es'   # Data directory de Asterisk, igual que agi-bin/
-FIXED_SOUND = 'custom_fixed_message'          # el que genera control_api.py /set_message
-FIXED_SOUND_FALLBACK = 'fixed_spam_message'   # el que ya existe y funciona
+FIXED_SOUND = 'fixed_spam_message'            # único mensaje del Modo 2
 FIXED_PLAYBACK_TIMEOUT = 20     # segundos máximo esperando PlaybackFinished
 
 DEEPGRAM_KEY = os.getenv('DEEPGRAM_API_KEY')
@@ -269,18 +268,6 @@ def get_current_mode():
         ari_log(f'No se pudo leer {STATE_FILE} ({e}), asumiendo AI')
         return 'AI'
 
-
-def elegir_sonido_fijo():
-    """
-    Nombre del sonido a reproducir en modo FIXED.
-
-    Si el usuario nunca sincronizó un mensaje desde la app, cae al que ya
-    existe en el servidor para que la llamada nunca quede en silencio.
-    """
-    if os.path.exists(os.path.join(SOUNDS_DIR, FIXED_SOUND + '.wav')):
-        return FIXED_SOUND
-    ari_log(f'{FIXED_SOUND}.wav no existe, usando fallback {FIXED_SOUND_FALLBACK}')
-    return FIXED_SOUND_FALLBACK
 
 
 def extraer_numero(channel):
@@ -515,11 +502,10 @@ fixed_task: asyncio.Task | None = None
 
 
 async def run_fixed(channel_id):
-    sonido = elegir_sonido_fijo()
-    ari_log(f'Modo FIXED: reproduciendo {sonido}')
+    ari_log(f'Modo FIXED: reproduciendo {FIXED_SOUND}')
 
     try:
-        playback = await ari.play(channel_id, sonido)
+        playback = await ari.play(channel_id, FIXED_SOUND)
         ari_log(f'Playback creado: {json.dumps(playback, ensure_ascii=False)}')
         playback_id = playback['id']
         terminado = asyncio.Event()
