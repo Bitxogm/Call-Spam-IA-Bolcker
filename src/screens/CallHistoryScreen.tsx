@@ -11,9 +11,16 @@ import {
   Linking,
 } from 'react-native';
 import CallHistoryService, { SpamCallRecord } from '../services/CallHistoryService';
+import backendSyncService from '../services/BackendSyncService';
+
+/** Fila del historial, con el origen para diferenciarla visualmente */
+type HistoryRow = SpamCallRecord & {
+  origen: 'local' | 'servidor';
+  duracion?: number;
+};
 
 const CallHistoryScreen: React.FC = () => {
-  const [history, setHistory] = useState<SpamCallRecord[]>([]);
+  const [history, setHistory] = useState<HistoryRow[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [totalCalls, setTotalCalls] = useState(0);
 
@@ -22,10 +29,30 @@ const CallHistoryScreen: React.FC = () => {
   }, []);
 
   const loadHistory = async () => {
-    const historyData = await CallHistoryService.getHistory();
-    const total = await CallHistoryService.getTotalSpamCalls();
-    setHistory(historyData);
-    setTotalCalls(total);
+    const [localData, serverData, total] = await Promise.all([
+      CallHistoryService.getHistory(),
+      backendSyncService.getCallLog(),
+      CallHistoryService.getTotalSpamCalls(),
+    ]);
+
+    const locales: HistoryRow[] = localData.map(r => ({ ...r, origen: 'local' }));
+
+    // El historial local usa "yyyy-MM-dd HH:mm:ss" (CallHistoryHelper.java).
+    // Normalizo el ISO del servidor al mismo formato: así ordena por string
+    // y se muestra igual, sin microsegundos.
+    const servidor: HistoryRow[] = serverData.map(r => ({
+      number: r.numero,
+      timestamp: r.timestamp_inicio.replace('T', ' ').slice(0, 19),
+      reason: 'Manolo (Modo 2/3)',
+      action: r.estado === 'activa' ? 'En curso' : 'Atendida por Manolo',
+      origen: 'servidor',
+      duracion: r.duracion_segundos,
+    }));
+
+    setHistory(
+      [...locales, ...servidor].sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+    );
+    setTotalCalls(total + serverData.length);
   };
 
   const handleRefresh = async () => {
@@ -58,6 +85,8 @@ const CallHistoryScreen: React.FC = () => {
 
   const getReasonColor = (reason: string) => {
     switch (reason) {
+      case 'Manolo (Modo 2/3)':
+        return '#007bff';
       case 'Blacklist':
         return '#dc3545';
       case 'Modo Radical':
@@ -73,6 +102,8 @@ const CallHistoryScreen: React.FC = () => {
 
   const getReasonIcon = (reason: string) => {
     switch (reason) {
+      case 'Manolo (Modo 2/3)':
+        return '🤖';
       case 'Blacklist':
         return '🚫';
       case 'Modo Radical':
@@ -136,9 +167,17 @@ const CallHistoryScreen: React.FC = () => {
           </View>
         ) : (
           history.map((record, index) => (
-            <View key={index} style={styles.callEntry}>
+            <View key={index} style={[
+              styles.callEntry,
+              { borderLeftColor: record.origen === 'servidor' ? '#007bff' : '#dc3545' }
+            ]}>
               <View style={styles.callHeader}>
-                <Text style={styles.callNumber}>{record.number}</Text>
+                <View>
+                  <Text style={styles.callNumber}>{record.number}</Text>
+                  <Text style={styles.origenBadge}>
+                    {record.origen === 'servidor' ? '☁️ Servidor' : '📱 Local'}
+                  </Text>
+                </View>
                 <View
                   style={[
                     styles.reasonBadge,
@@ -157,6 +196,7 @@ const CallHistoryScreen: React.FC = () => {
                 </Text>
                 <Text style={styles.callAction}>
                   {getActionIcon(record.action)} {record.action}
+                  {record.duracion !== undefined && ` · ⏱️ ${record.duracion}s`}
                 </Text>
               </View>
 
@@ -263,6 +303,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333',
     fontFamily: 'monospace',
+  },
+  origenBadge: {
+    fontSize: 11,
+    color: '#888',
+    marginTop: 2,
   },
   reasonBadge: {
     paddingHorizontal: 10,
