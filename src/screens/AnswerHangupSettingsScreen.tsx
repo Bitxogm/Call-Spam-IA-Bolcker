@@ -256,6 +256,17 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
         backendSyncService.syncMode(newMode === 'BACKEND_AI' ? 'AI' : 'FIXED');
       }
 
+      // En Modo 2 el servidor necesita el audio del mensaje actual. Sin esto,
+      // seguiría con el último sincronizado a mano (o con ninguno).
+      if (newMode === 'BACKEND_FIXED') {
+        try {
+          await backendSyncService.syncMessage(customMessage);
+        } catch {
+          // El cambio de modo sí funcionó: no lo reportamos como fallo.
+          console.warn('⚠️ No se pudo sincronizar el mensaje fijo, usa el botón Sincronizar');
+        }
+      }
+
       const modeDescriptions = {
         HANGUP_IMMEDIATELY: '🛡️ Escudo 1: Se colgará la llamada inmediatamente.\n\n📞 Desvío desactivado (##21#).',
         BACKEND_FIXED: '🔊 Escudo 2: Llamadas spam se desviarán a Zadarma.\n\n📞 Desvío activado (*21*+34919933065#).\n\nZadarma reproducirá mensaje corporativo fijo.',
