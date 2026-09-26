@@ -4,6 +4,8 @@ import { StyleSheet, Text, View, TouchableOpacity, Alert, NativeModules, ScrollV
 import { databaseService } from '../services/DataBaseService';
 import { contactsService } from '../services/ContactService';
 import nativeContactsService from '../services/ContactsService';
+import CallHistoryService from '../services/CallHistoryService';
+import backendSyncService from '../services/BackendSyncService';
 
 // Importar módulo nativo de Android
 const { CallInterceptorModule } = NativeModules;
@@ -42,13 +44,17 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
     try {
       console.log('📊 Cargando datos del dashboard...');
 
-      // Cargar datos de la base de datos
+      // Misma suma que CallHistoryScreen: historial nativo (Modo 1) +
+      // llamadas atendidas por el servidor (Modos 2/3). getCallLog() devuelve
+      // [] si el VPS no responde, así que el contador nunca deja de pintarse.
       const [
-        totalBlockedCalls,
+        localTotal,
+        serverLog,
         spamNumbersList,
         radicalModeEnabled
       ] = await Promise.all([
-        databaseService.getSetting('total_blocked_calls'),
+        CallHistoryService.getTotalSpamCalls(),
+        backendSyncService.getCallLog(),
         databaseService.getSpamNumbers(),
         // Misma fuente que usa la capa nativa (SharedPreferences), no SQLite
         nativeContactsService.isModoRadicalEnabled()
@@ -65,14 +71,14 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
       }
 
       // Actualizar estados
-      setBlockedCalls(parseInt(totalBlockedCalls || '0'));
+      setBlockedCalls(localTotal + serverLog.length);
       setSpamNumbers(spamNumbersList.length);
       setContactsCount(contactsStats.totalContacts);
       setContactsPermission(hasContactsPermission);
       setRadicalMode(radicalModeEnabled);
 
       console.log(`✅ Dashboard cargado:`, {
-        llamadas: totalBlockedCalls,
+        llamadas: localTotal + serverLog.length,
         spam: spamNumbersList.length,
         contactos: contactsStats.totalContacts,
         permisos: hasContactsPermission,
@@ -137,15 +143,13 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
         }
       }
 
-      // Registrar la llamada bloqueada
+      // Solo registra en la tabla de simulaciones de SQLite. El contador de la
+      // tarjeta ya no sale de aquí, así que no lo toca: recarga la cifra real.
       await databaseService.logBlockedCall(fakeSpamNumber, blockReason);
-      const newCount = await databaseService.incrementBlockedCalls();
-
-      setBlockedCalls(newCount);
 
       Alert.alert(
-        "📱 Llamada Bloqueada",
-        `¡Spam detectado y bloqueado!\\n📞 ${fakeSpamNumber}\\n🛡️ ${blockReason}\\n\\n📊 Total bloqueadas: ${newCount}`
+        "📱 Llamada Bloqueada (simulada)",
+        `📞 ${fakeSpamNumber}\n🛡️ ${blockReason}\n\nNo cuenta en la tarjeta: ahí solo van bloqueos reales.`
       );
 
       console.log(`📱 Llamada simulada bloqueada: ${fakeSpamNumber}`);

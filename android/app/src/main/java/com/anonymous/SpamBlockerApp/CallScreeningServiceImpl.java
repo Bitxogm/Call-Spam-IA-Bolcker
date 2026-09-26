@@ -98,6 +98,11 @@ public class CallScreeningServiceImpl extends CallScreeningService {
                         // Marcar número para answer+hangup
                         answerHangupHelper.markForAnswerHangup(callerNumber);
 
+                        // Registrar en el historial: es el único punto del camino
+                        // de Modo 1 que conoce el número. CallAccessibilityService,
+                        // que es quien cuelga, solo escribe en LogsHelper.
+                        callHistoryHelper.addSpamCall(callerNumber, "Spam", "Answer+Hangup");
+
                         SpamNotificationManager.showIncomingSpamNotification(
                             this,
                             callerNumber,
