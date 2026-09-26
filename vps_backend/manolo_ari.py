@@ -64,7 +64,7 @@ STATE_FILE = '/root/ai_bridge/current_mode.json'
 SOUNDS_DIR = '/var/lib/asterisk/sounds/es'
 FIXED_SOUND = 'custom_fixed_message'          # el que genera control_api.py /set_message
 FIXED_SOUND_FALLBACK = 'fixed_spam_message'   # el que ya existe y funciona
-FIXED_PLAYBACK_TIMEOUT = 60     # segundos máximo esperando PlaybackFinished
+FIXED_PLAYBACK_TIMEOUT = 20     # segundos máximo esperando PlaybackFinished
 
 DEEPGRAM_KEY = os.getenv('DEEPGRAM_API_KEY')
 GROQ_KEY = os.getenv('GROQ_API_KEY')
@@ -141,11 +141,14 @@ class ARIClient:
         r = await self.http.post(f'/bridges/{bridge_id}/addChannel', params={'channel': channel_id})
         r.raise_for_status()
 
-    async def play(self, channel_id, sound_name):
+    async def play(self, channel_id, sound_name, lang='es'):
+        # 'lang' es obligatorio: sin él, Asterisk resuelve sound: contra el
+        # idioma del canal (que llega como 'en' desde Zadarma) y busca en
+        # sounds/en/, donde el fichero no existe.
         r = await self.http.post(f'/channels/{channel_id}/play',
-                                 params={'media': f'sound:{sound_name}'})
+                                 params={'media': f'sound:{sound_name}', 'lang': lang})
         r.raise_for_status()
-        return r.json()['id']
+        return r.json()
 
     async def create_external_media(self, host_port):
         r = await self.http.post('/channels/externalMedia', params={
@@ -512,7 +515,9 @@ async def run_fixed(channel_id):
     ari_log(f'Modo FIXED: reproduciendo {sonido}')
 
     try:
-        playback_id = await ari.play(channel_id, sonido)
+        playback = await ari.play(channel_id, sonido)
+        ari_log(f'Playback creado: {json.dumps(playback, ensure_ascii=False)}')
+        playback_id = playback['id']
         terminado = asyncio.Event()
         playbacks_pendientes[playback_id] = terminado
         try:
