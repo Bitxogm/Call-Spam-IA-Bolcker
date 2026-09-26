@@ -402,13 +402,6 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.buttonAI}
-          onPress={() => navigation.navigate('AITest')}
-        >
-          <Text style={styles.buttonText}>🤖 Probar IA Anti-Spam</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
           style={[styles.button, { backgroundColor: '#ff9900' }]}
           onPress={() => navigation.navigate('AnswerHangupSettings')}
         >
@@ -580,13 +573,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: 'white',
-  },
-  buttonAI: {
-    backgroundColor: '#4444ff',  // Azul para IA
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    alignItems: 'center',
   },
   buttonCritical: {
     backgroundColor: '#ff6600',  // Naranja llamativo para acción crítica
