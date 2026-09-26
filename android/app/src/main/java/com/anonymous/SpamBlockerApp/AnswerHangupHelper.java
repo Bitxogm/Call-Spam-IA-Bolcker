@@ -30,6 +30,8 @@ public class AnswerHangupHelper {
     private static final String KEY_LAST_SPAM_NUMBER = "last_spam_number";
     private static final String KEY_LAST_SPAM_TIME = "last_spam_time";
     private static final String KEY_HANGUP_DELAY = "hangup_delay_seconds";
+    private static final String KEY_RINGING_NUMBER = "ringing_number";
+    private static final String KEY_WAS_RINGING = "was_ringing_before_offhook";
 
     // Defaults
     private static final int DEFAULT_DELAY_SECONDS = 2;
@@ -196,6 +198,39 @@ public class AnswerHangupHelper {
         }
 
         return match;
+    }
+
+    /**
+     * Guarda el número que está sonando.
+     *
+     * CallStateReceiver es un BroadcastReceiver declarado en el Manifest: Android
+     * crea una instancia nueva por cada broadcast, así que un campo de instancia
+     * no sobrevive de RINGING a OFFHOOK. Por eso el estado va en prefs.
+     */
+    public void setRinging(String number) {
+        prefs.edit()
+            .putString(KEY_RINGING_NUMBER, number)
+            .putBoolean(KEY_WAS_RINGING, true)
+            .apply();
+    }
+
+    public String getRingingNumber() {
+        return prefs.getString(KEY_RINGING_NUMBER, null);
+    }
+
+    /**
+     * true solo si hubo un RINGING previo. Evita tratar una llamada SALIENTE
+     * (que va directa a OFFHOOK) como spam a colgar.
+     */
+    public boolean wasRinging() {
+        return prefs.getBoolean(KEY_WAS_RINGING, false);
+    }
+
+    public void clearRinging() {
+        prefs.edit()
+            .remove(KEY_RINGING_NUMBER)
+            .putBoolean(KEY_WAS_RINGING, false)
+            .apply();
     }
 
     /**

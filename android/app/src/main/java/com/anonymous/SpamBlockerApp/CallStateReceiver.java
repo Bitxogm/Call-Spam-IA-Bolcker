@@ -29,7 +29,6 @@ public class CallStateReceiver extends BroadcastReceiver {
 
     private AnswerHangupHelper answerHangupHelper;
     private LogsHelper logsHelper;
-    private String lastIncomingNumber = null;
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -85,20 +84,22 @@ public class CallStateReceiver extends BroadcastReceiver {
      * Maneja estado RINGING (llamada entrante)
      */
     private void handleRinging(Context context, Intent intent) {
-        // Guardar número entrante
-        lastIncomingNumber = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER);
+        String numero = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER);
 
-        if (lastIncomingNumber != null) {
-            Log.d(TAG, "📞 RINGING: " + lastIncomingNumber);
-            logsHelper.logDebug("RINGING detectado: " + lastIncomingNumber);
+        if (numero != null) {
+            // Persistir: el OFFHOOK llega en otra instancia de este receiver
+            answerHangupHelper.setRinging(numero);
+
+            Log.d(TAG, "📞 RINGING: " + numero);
+            logsHelper.logDebug("RINGING detectado: " + numero);
 
             // Si este número está marcado para Answer+Hangup, contestar automáticamente
-            if (answerHangupHelper.shouldHangup(lastIncomingNumber)) {
+            if (answerHangupHelper.shouldHangup(numero)) {
                 AnswerHangupHelper.Mode mode = answerHangupHelper.getMode();
                 if (mode == AnswerHangupHelper.Mode.HANGUP_IMMEDIATELY) {
                     Log.d(TAG, "🔇 Spam detectado MODO 1 - Contestando automáticamente...");
-                    logsHelper.logInfo("Contestando automáticamente spam: " + lastIncomingNumber);
-                    answerCall(context, lastIncomingNumber);
+                    logsHelper.logInfo("Contestando automáticamente spam: " + numero);
+                    answerCall(context, numero);
                 } else {
                     Log.d(TAG, "⏭️ Spam detectado MODO BACKEND - NO contestar vía Receiver (dejando desvío)");
                 }
@@ -145,11 +146,16 @@ public class CallStateReceiver extends BroadcastReceiver {
         Log.d(TAG, "📞 OFFHOOK (contestada)");
         logsHelper.logInfo("OFFHOOK detectado - llamada contestada");
 
-        // Si no tenemos número guardado, intentar obtenerlo del intent
-        String incomingNumber = lastIncomingNumber;
-        if (incomingNumber == null) {
-            incomingNumber = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER);
+        // Guarda de llamada SALIENTE: sin RINGING previo, no es una entrante.
+        // EXTRA_INCOMING_NUMBER no viaja en el broadcast de OFFHOOK, así que el
+        // número se recupera de prefs (lo guardó handleRinging).
+        if (!answerHangupHelper.wasRinging()) {
+            Log.d(TAG, "📞 Llamada SALIENTE detectada - ignorando");
+            logsHelper.logDebug("OFFHOOK sin RINGING previo - saliente, ignorada");
+            return;
         }
+
+        String incomingNumber = answerHangupHelper.getRingingNumber();
 
         Log.d(TAG, "🔍 Número entrante: " + incomingNumber);
         logsHelper.logDebug("Número OFFHOOK: " + incomingNumber);
@@ -216,18 +222,7 @@ public class CallStateReceiver extends BroadcastReceiver {
             ivrHelper.stopIVR();
         }
 
-        lastIncomingNumber = null;
-    }
-
-    /**
-     * Programa un cuelgue de seguridad
-     */
-    private void scheduleSafetyHangup(Context context, String number) {
-        int delay = answerHangupHelper.getHangupDelay();
-        new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            Log.d(TAG, "🎯 Ejecutando hangup de seguridad (Receiver)");
-            hangupCall(context, number);
-        }, (delay + 1) * 1000L);
+        answerHangupHelper.clearRinging();
     }
 
     /**
