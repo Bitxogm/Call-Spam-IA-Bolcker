@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Alert, NativeModules, ScrollView } from 'react-native';
 import { databaseService } from '../services/DataBaseService';
 import { contactsService } from '../services/ContactService';
+import nativeContactsService from '../services/ContactsService';
 
 // Importar módulo nativo de Android
 const { CallInterceptorModule } = NativeModules;
@@ -45,11 +46,12 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
       const [
         totalBlockedCalls,
         spamNumbersList,
-        radicalModeSetting
+        radicalModeEnabled
       ] = await Promise.all([
         databaseService.getSetting('total_blocked_calls'),
         databaseService.getSpamNumbers(),
-        databaseService.getSetting('radical_mode')
+        // Misma fuente que usa la capa nativa (SharedPreferences), no SQLite
+        nativeContactsService.isModoRadicalEnabled()
       ]);
 
       // Verificar permisos de contactos
@@ -67,14 +69,14 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
       setSpamNumbers(spamNumbersList.length);
       setContactsCount(contactsStats.totalContacts);
       setContactsPermission(hasContactsPermission);
-      setRadicalMode(radicalModeSetting === 'true');
+      setRadicalMode(radicalModeEnabled);
 
       console.log(`✅ Dashboard cargado:`, {
         llamadas: totalBlockedCalls,
         spam: spamNumbersList.length,
         contactos: contactsStats.totalContacts,
         permisos: hasContactsPermission,
-        radical: radicalModeSetting
+        radical: radicalModeEnabled
       });
     } catch (error) {
       console.log('❌ Error cargando dashboard:', error);
