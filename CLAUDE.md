@@ -180,19 +180,24 @@ Asterisk [from-zadarma]
 - `victor_agi.py` — **ELIMINADO**
 - `deploy.sh` — **ELIMINADO**, usar `deploy_modo3.sh` (despliega `manolo_agi.py` + `extensions.conf`, hoy solo relevante para el backup AGI)
 
-**control_api.py endpoints (Flask, puerto 5000):**
+**control_api.py endpoints (Flask):**
+
+⚠️ **Los tres exigen la cabecera `X-API-Key`**, comparada con `CONTROL_API_TOKEN` del `.env` del VPS. Sin token configurado en el servidor, todo devuelve 401 — falla cerrado a propósito.
 
 - `POST /set_mode` — body `{"mode": "FIXED"|"AI"}` → escribe `current_mode.json`
 - `GET /get_mode` — devuelve el modo actual
-- `POST /set_message` — body `{"text": "..."}` (⚠️ la clave es `text`, no `message`) → gTTS + ffmpeg (8 kHz mono pcm_s16le) → `/usr/share/asterisk/sounds/es/custom_fixed_message.wav`
 - `GET /call_log` — últimas 50 llamadas atendidas por el servidor, ordenadas por `timestamp_inicio` desc. Las escribe `manolo_ari.py` en `<BRIDGE_DIR>/call_log.json`; las consume `CallHistoryScreen` vía `BackendSyncService.getCallLog()`
+
+**Eliminado (sept. 2026): `POST /set_message`.** Generaba `custom_fixed_message.wav` con gTTS para la UI de mensajes personalizados, que ya no existe. El Modo 2 reproduce siempre `fixed_spam_message`.
+
+**Dónde escucha Flask:** `CONTROL_API_BIND`, por defecto `127.0.0.1`. En producción es el gateway del bridge Docker al que está conectado Nginx Proxy Manager — NPM corre en contenedor y para él `127.0.0.1` es el propio contenedor. El puerto 5000 **no** se expone a Internet: el tráfico entra por 443 vía Cloudflare → NPM.
 
 **Audio del mensaje fijo (Modo 2) — ruta crítica:**
 
 Asterisk resuelve `sound:` contra su **Data directory**, que en este VPS es `/usr/share/asterisk`, **no** `/var/lib/asterisk` (ver lección 1, sección 15):
 
-- `control_api.py` L10 y `manolo_ari.py` L64 comparten `SOUNDS_DIR = '/usr/share/asterisk/sounds/es'`
-- `manolo_ari.py` reproduce `custom_fixed_message` y cae a `fixed_spam_message` si el primero no existe (`elegir_sonido_fijo()`, L280)
+- `manolo_ari.py` L64: `SOUNDS_DIR = '/usr/share/asterisk/sounds/es'`
+- `manolo_ari.py` L65 reproduce siempre `FIXED_SOUND = 'fixed_spam_message'`. El fallback a `custom_fixed_message` se eliminó con la UI de mensajes personalizados: si queda un WAV viejo en el servidor, se ignora
 - La llamada a ARI pasa `lang='es'` explícito (`ARIClient.play`, L144). Sin él Asterisk resuelve contra el idioma del canal, que llega como `en` desde Zadarma, y busca en `sounds/en/` — donde el fichero no está
 
 ### Servicios en src/services/
@@ -309,10 +314,17 @@ Call-Spam-IA-Blocker/
 Solo quedan dos. Las claves de IA (Groq, Deepgram) viven en el `.env` **del VPS**, nunca en la app.
 
 ```env
-# VPS — control_api.py
-EXPO_PUBLIC_VPS_IP=TU_VPS_IP
-EXPO_PUBLIC_VPS_PORT=5000
+# URL pública de control_api.py (Cloudflare → NPM → Flask). https obligatorio:
+# en release Android bloquea el tráfico en claro.
+EXPO_PUBLIC_VPS_URL=https://tu-subdominio.tu-dominio.com
+
+# Debe coincidir con CONTROL_API_TOKEN del .env del VPS
+EXPO_PUBLIC_CONTROL_API_TOKEN=
 ```
+
+En el `.env` **del VPS** hacen falta además `CONTROL_API_TOKEN` y `CONTROL_API_BIND`.
+
+⚠️ **El token acaba dentro del APK.** `EXPO_PUBLIC_*` se incrusta en el bundle en tiempo de compilación, así que cualquiera con el APK puede extraerlo — es el mismo mecanismo por el que las claves de Gemini y ElevenLabs acabaron en el historial de git. Aceptable mientras la app no se distribuya: protege contra escaneo de Internet, no contra quien tenga el APK. La solución definitiva está en el punto 2 del roadmap.
 
 **Eliminadas (sept. 2026):** `EXPO_PUBLIC_GEMINI_API_KEY`, `EXPO_PUBLIC_GEMINI_MODEL`, `EXPO_PUBLIC_ELEVENLABS_API_KEY` — sus consumidores (`GeminiServices.ts`, `ElevenLabsService.ts`) ya no existen. `.env.example` está actualizado.
 
@@ -418,9 +430,7 @@ asterisk -rx "dialplan reload"
 | ------------------------------------ | -------------- | ----- | ------------------------------------------- |
 | `<BRIDGE_DIR>/current_mode.json`     | manolo_ari.py  | L63   | Estado del modo, lo escribe `control_api.py` |
 | `/usr/share/asterisk/sounds/es`      | manolo_ari.py  | L64   | Data directory de Asterisk                  |
-| `/usr/share/asterisk/sounds/es`      | control_api.py | L10   | Debe coincidir con la de `manolo_ari.py`    |
-| `custom_fixed_message`               | manolo_ari.py  | L65   | Mensaje fijo del usuario                    |
-| `fixed_spam_message`                 | manolo_ari.py  | L66   | Fallback si el anterior no existe           |
+| `fixed_spam_message`                 | manolo_ari.py  | L65   | Único mensaje del Modo 2                    |
 | `20` (s)                             | manolo_ari.py  | L67   | Timeout esperando `PlaybackFinished`        |
 | `1500`                               | manolo_ari.py  | L55   | Umbral RMS del VAD (barge-in)               |
 | `7000`                               | manolo_ari.py  | —     | Puerto UDP de ExternalMedia, fijo           |
@@ -437,7 +447,7 @@ asterisk -rx "dialplan reload"
 
 ### Importante
 
-- [ ] **`control_api.py` sin autenticación.** Ningún endpoint valida nada. Por eso 5000/tcp sigue cerrado en UFW y la app no puede sincronizar: abrirlo hoy expondría `GET /call_log` —  números de terceros — a cualquiera. Prerequisito para que los Modos 2/3 se controlen desde el móvil. Ver lección 4 y el punto 1 del roadmap.
+- [ ] **Autenticación de `control_api.py`: implementada en el repo, sin desplegar.** El código ya exige `X-API-Key` en los tres endpoints, pero falta la infraestructura: registro DNS en Cloudflare, Proxy Host en NPM, `CONTROL_API_TOKEN` y `CONTROL_API_BIND` en el `.env` del VPS, y el token en el `.env` de la app. Hasta que eso esté, la app sigue sin sincronizar. Punto 1 del roadmap.
 
 - [ ] **Residuos IVR on-device:** `IVRAudioPlayer.java` (referenciado en `CallAccessibilityService` L44, L513) e `IVRMessageHelper.java` (referenciado en `CallStateReceiver` L213). Ya no pueden reproducir nada porque el MP3 no se genera, pero siguen compilando. Borrarlos exige limpiar esas 3 referencias primero.
 
@@ -470,23 +480,33 @@ asterisk -rx "dialplan reload"
 
 En orden de prioridad lógica:
 
-1. **Autenticar `control_api.py` con `X-API-Key`.** Es **prerequisito para que la app sincronice con el servidor**: hasta que exista, 5000/tcp se queda cerrado en UFW y los Modos 2/3 solo se controlan desde el propio VPS. Hoy ningún endpoint valida nada y `GET /call_log` devuelve números de terceros. Toca `control_api.py` (comparar la cabecera con una variable de entorno) y `BackendSyncService.ts` (enviarla). Solo después: `ufw allow 5000/tcp`.
+1. **Exponer `control_api.py` por HTTPS y desplegar la autenticación.** El código del repo ya está hecho (`X-API-Key` en los tres endpoints, `CONTROL_API_BIND`). Falta la infraestructura, y es **prerequisito para que la app sincronice**:
 
-2. **Asignación dinámica de puertos UDP en `manolo_ari.py`.** Hoy puerto fijo 7000 + estado global = una sola llamada concurrente. Es el techo real del sistema.
+   - Registro `A` en Cloudflare para el subdominio, con **proxy naranja activado** (así el origen no queda expuesto por DNS)
+   - Proxy Host en la UI de **Nginx Proxy Manager** — no un `.conf`: NPM corre en Docker. Scheme `http`, Forward a la IP del gateway del bridge Docker de NPM, puerto 5000, Force SSL on, certificado **Cloudflare Origin** (no Let's Encrypt), SSL/TLS de Cloudflare en **Full (strict)**
+   - `CONTROL_API_TOKEN` y `CONTROL_API_BIND` en el `.env` del VPS. El bind es el gateway del bridge, **no** `127.0.0.1`: para un contenedor, loopback es el propio contenedor
+   - Rate limiting en **Cloudflare**, no en Nginx: detrás del proxy, `$binary_remote_addr` son IPs de Cloudflare. Además `limit_req_zone` no cabe en la pestaña Advanced de NPM, que inyecta en el bloque `server` y no en `http`
+   - El token en el `.env` de la app, y rebuild
 
-3. **Medir latencia por turno con timestamps reales.** Instrumentar recepción de audio → STT → LLM → TTS → primer paquete RTP de vuelta. Sin esto no se sabe si el cambio a streaming sirvió.
+   **`ufw allow 5000/tcp` no se ejecuta en ningún momento.** El tráfico entra por 443.
 
-4. **Unificar `ContactService.ts` y `ContactsService.ts`** y dejar una sola fuente para el Modo Radical.
+2. **Token fuera del APK (`EncryptedSharedPreferences`).** Hoy `EXPO_PUBLIC_CONTROL_API_TOKEN` se incrusta en el bundle y es extraíble de cualquier APK. La alternativa: un campo en Ajustes donde se pega el token una vez, guardado cifrado en el dispositivo vía módulo nativo. El token deja de estar en el APK y en el repo, y rotarlo no exige recompilar. Coste estimado: un `TextInput`, dos métodos en Java y leerlo desde `BackendSyncService`.
 
-5. **Limpiar residuos:** quitar las 3 referencias a `IVRAudioPlayer`/`IVRMessageHelper`, borrar los dos ficheros, y después los 6 permisos del manifest.
+3. **Asignación dinámica de puertos UDP en `manolo_ari.py`.** Hoy puerto fijo 7000 + estado global = una sola llamada concurrente. Es el techo real del sistema.
 
-6. **Arreglar `scripts/check-secrets.sh`** o retirarlo: un gate que siempre avisa y nunca bloquea no es un gate.
+4. **Medir latencia por turno con timestamps reales.** Instrumentar recepción de audio → STT → LLM → TTS → primer paquete RTP de vuelta. Sin esto no se sabe si el cambio a streaming sirvió.
 
-7. ~~**Modo 3 — Agente IA conversacional**~~ ✅ **Completado.** Primero con `manolo_agi.py`, y desde sept. 2026 con `manolo_ari.py` (ARI + ExternalMedia, streaming).
+5. **Unificar `ContactService.ts` y `ContactsService.ts`** y dejar una sola fuente para el Modo Radical.
 
-8. ~~**Resolver coordinación Modo 2**~~ ✅ **Resuelto de facto** al eliminar `IVRGeneratorModule`: el teléfono ya no puede reproducir audio en Modo 2 (sección 4).
+6. **Limpiar residuos:** quitar las 3 referencias a `IVRAudioPlayer`/`IVRMessageHelper`, borrar los dos ficheros, y después los 6 permisos del manifest.
 
-9. ~~**Documentar configuración Zadarma**~~ ✅ **Hecho**, en `CLAUDE.local.md` (sección 14).
+7. **Arreglar `scripts/check-secrets.sh`** o retirarlo: un gate que siempre avisa y nunca bloquea no es un gate.
+
+8. ~~**Modo 3 — Agente IA conversacional**~~ ✅ **Completado.** Primero con `manolo_agi.py`, y desde sept. 2026 con `manolo_ari.py` (ARI + ExternalMedia, streaming).
+
+9. ~~**Resolver coordinación Modo 2**~~ ✅ **Resuelto de facto** al eliminar `IVRGeneratorModule`: el teléfono ya no puede reproducir audio en Modo 2 (sección 4).
+
+10. ~~**Documentar configuración Zadarma**~~ ✅ **Hecho**, en `CLAUDE.local.md` (sección 14).
 
 ---
 
@@ -573,15 +593,17 @@ Cuatro fallos que costaron una sesión entera cada uno. Si algo de Modo 1 o Modo
 - `CallHistoryScreen` solo muestra el historial local del Modo 1; `getCallLog()` devuelve `[]` por timeout
 - **Los Modos 2 y 3 funcionan igual de bien:** la llamada entra por SIP en el 5060, que sí está abierto. El 5000 solo afecta al control desde la app
 
-**Solución real:** autenticar `control_api.py` con `X-API-Key` y solo entonces abrir el puerto. Es el punto 1 del roadmap.
+**Solución real:** autenticar `control_api.py` con `X-API-Key` y exponerlo por HTTPS — **sin abrir el 5000 nunca**. El tráfico entra por 443 vía Cloudflare → Nginx Proxy Manager → Flask en el bridge Docker. El código del repo ya lo exige; falta la infraestructura. Punto 1 del roadmap.
+
+**Y hay un segundo bloqueante, independiente del firewall:** la exención de tráfico en claro vive en `android/app/src/debug/AndroidManifest.xml`, solo en el source set de debug. Con `targetSdkVersion 34`, un build de release bloquea cualquier `http://`. Aunque el puerto estuviera abierto, la app en release no habría podido hablar con el servidor. Por eso la solución es HTTPS y no "abrir el puerto".
 
 **Regla de diagnóstico que sí se generaliza:** "el servicio está arriba" no significa "el servicio es alcanzable". Comprobarlo desde **fuera** del host, no con un `curl` local:
 
 ```bash
-curl http://TU_VPS_IP:5000/get_mode
+curl -H "X-API-Key: $TOKEN" https://tu-subdominio.tu-dominio.com/get_mode
 ```
 
-Si responde en local pero no desde fuera, es el firewall — y antes de abrirlo, mirar qué queda expuesto.
+Si responde en local pero no desde fuera, es la red — y antes de abrir nada, mirar qué quedaría expuesto.
 
 ---
 
