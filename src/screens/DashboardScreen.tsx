@@ -226,10 +226,6 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
       {/* BOTONES DE ACCIÓN */}
       <View style={styles.buttonsContainer}>
 
-        <TouchableOpacity style={styles.button} onPress={navigateToSpamNumbers}>
-          <Text style={styles.buttonText}>📋 Gestionar Números</Text>
-        </TouchableOpacity>
-
         <TouchableOpacity
           style={styles.button}
           onPress={() => navigation.navigate('Whitelist')}
