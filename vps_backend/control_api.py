@@ -7,6 +7,7 @@ import subprocess
 app = Flask(__name__)
 STATE_FILE = 'current_mode.json'
 CALL_LOG_FILE = '/root/ai_bridge/call_log.json'   # absoluta: la escribe manolo_ari.py
+SOUNDS_DIR = '/usr/share/asterisk/sounds/es'      # Data directory de Asterisk
 
 def load_call_log():
     try:
@@ -62,7 +63,9 @@ def set_message():
         # Generar audio con gTTS
         tts = gTTS(text=text, lang='es')
         temp_mp3 = "custom_fixed.mp3"
-        target_wav = "custom_fixed_message.wav"
+        # Asterisk corre como usuario 'asterisk' y no puede leer /root (0700),
+        # así que el WAV tiene que acabar en su propio árbol de sonidos.
+        target_wav = os.path.join(SOUNDS_DIR, "custom_fixed_message.wav")
         
         tts.save(temp_mp3)
         

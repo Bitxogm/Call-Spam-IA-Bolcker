@@ -6,7 +6,6 @@ import { createStackNavigator } from '@react-navigation/stack';
 // Importar nuestras pantallas (las vamos a crear)
 import DashboardScreen from './src/screens/DashboardScreen';
 import SpamNumbersScreen from './src/screens/SpamNumbersScreen';
-import AITestScreen from './src/screens/AITestsScreen';
 import WhitelistScreen from './src/screens/WhitelistScreen';
 import LogsScreen from './src/screens/LogsScreen';
 import CallHistoryScreen from './src/screens/CallHistoryScreen';
@@ -44,13 +43,6 @@ export default function App() {
           name="SpamNumbers" 
           component={SpamNumbersScreen}
           options={{ title: '📋 Gestionar Números' }}
-        />
-
-        {/* Pantalla 3: Testing IA */}
-        <Stack.Screen
-          name="AITest"
-          component={AITestScreen}
-          options={{ title: '🤖 Testing IA' }}
         />
 
         {/* Pantalla 4: Whitelist de Contactos */}

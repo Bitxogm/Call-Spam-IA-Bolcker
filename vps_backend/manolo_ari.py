@@ -60,6 +60,12 @@ MAX_SILENCIO = 2
 CALL_LOG_PATH = '/root/ai_bridge/call_log.json'
 CALL_LOG_MAX = 50               # rota las más viejas
 
+STATE_FILE = '/root/ai_bridge/current_mode.json'
+SOUNDS_DIR = '/usr/share/asterisk/sounds/es'   # Data directory de Asterisk, igual que agi-bin/
+FIXED_SOUND = 'custom_fixed_message'          # el que genera control_api.py /set_message
+FIXED_SOUND_FALLBACK = 'fixed_spam_message'   # el que ya existe y funciona
+FIXED_PLAYBACK_TIMEOUT = 20     # segundos máximo esperando PlaybackFinished
+
 DEEPGRAM_KEY = os.getenv('DEEPGRAM_API_KEY')
 GROQ_KEY = os.getenv('GROQ_API_KEY')
 
@@ -134,6 +140,15 @@ class ARIClient:
     async def add_channel_to_bridge(self, bridge_id, channel_id):
         r = await self.http.post(f'/bridges/{bridge_id}/addChannel', params={'channel': channel_id})
         r.raise_for_status()
+
+    async def play(self, channel_id, sound_name, lang='es'):
+        # 'lang' es obligatorio: sin él, Asterisk resuelve sound: contra el
+        # idioma del canal (que llega como 'en' desde Zadarma) y busca en
+        # sounds/en/, donde el fichero no existe.
+        r = await self.http.post(f'/channels/{channel_id}/play',
+                                 params={'media': f'sound:{sound_name}', 'lang': lang})
+        r.raise_for_status()
+        return r.json()
 
     async def create_external_media(self, host_port):
         r = await self.http.post('/channels/externalMedia', params={
@@ -243,6 +258,29 @@ def save_call_log(registros):
         os.replace(tmp_path, CALL_LOG_PATH)
     except Exception as e:
         ari_log(f'call_log write error: {e}')
+
+
+def get_current_mode():
+    """FIXED = mensaje fijo y colgar. AI = conversación con Manolo."""
+    try:
+        with open(STATE_FILE) as f:
+            return json.load(f).get('mode', 'AI')
+    except Exception as e:
+        ari_log(f'No se pudo leer {STATE_FILE} ({e}), asumiendo AI')
+        return 'AI'
+
+
+def elegir_sonido_fijo():
+    """
+    Nombre del sonido a reproducir en modo FIXED.
+
+    Si el usuario nunca sincronizó un mensaje desde la app, cae al que ya
+    existe en el servidor para que la llamada nunca quede en silencio.
+    """
+    if os.path.exists(os.path.join(SOUNDS_DIR, FIXED_SOUND + '.wav')):
+        return FIXED_SOUND
+    ari_log(f'{FIXED_SOUND}.wav no existe, usando fallback {FIXED_SOUND_FALLBACK}')
+    return FIXED_SOUND_FALLBACK
 
 
 def extraer_numero(channel):
@@ -468,9 +506,48 @@ class RTPProtocol(asyncio.DatagramProtocol):
                 asyncio.create_task(handle_turn_complete(call_state))
 
 
+# ── Modo FIXED: reproducir mensaje y colgar ─────────────────────
+playbacks_pendientes: dict[str, asyncio.Event] = {}
+# Referencia fuerte a la tarea: sin ella el GC puede llevarse una tarea
+# fire-and-forget a medio ejecutar. Una sola basta: el diseño ya asume
+# una única llamada concurrente (puerto UDP fijo).
+fixed_task: asyncio.Task | None = None
+
+
+async def run_fixed(channel_id):
+    sonido = elegir_sonido_fijo()
+    ari_log(f'Modo FIXED: reproduciendo {sonido}')
+
+    try:
+        playback = await ari.play(channel_id, sonido)
+        ari_log(f'Playback creado: {json.dumps(playback, ensure_ascii=False)}')
+        playback_id = playback['id']
+        terminado = asyncio.Event()
+        playbacks_pendientes[playback_id] = terminado
+        try:
+            await asyncio.wait_for(terminado.wait(), timeout=FIXED_PLAYBACK_TIMEOUT)
+            ari_log('Reproducción terminada')
+        except asyncio.TimeoutError:
+            # Red de seguridad: sin esto la llamada se quedaría abierta
+            ari_log(f'PlaybackFinished no llegó en {FIXED_PLAYBACK_TIMEOUT}s, colgando igualmente')
+        finally:
+            playbacks_pendientes.pop(playback_id, None)
+    except Exception as e:
+        ari_log(f'Error reproduciendo mensaje fijo: {e}')
+
+    await ari.hangup(channel_id)
+
+
+async def on_playback_finished(event):
+    playback_id = event.get('playback', {}).get('id')
+    terminado = playbacks_pendientes.get(playback_id)
+    if terminado:
+        terminado.set()
+
+
 # ── Eventos ARI ──────────────────────────────────────────────────
 async def on_stasis_start(event):
-    global call_state
+    global call_state, fixed_task
     channel = event['channel']
     channel_id = channel['id']
     channel_name = channel.get('name', '')
@@ -505,6 +582,17 @@ async def on_stasis_start(event):
     save_call_log(log)
 
     await ari.answer(channel_id)
+
+    # Modo FIXED: mensaje fijo y colgar. No hace falta bridge, externalMedia
+    # ni Deepgram: el pipeline de conversación no interviene aquí.
+    if get_current_mode() == 'FIXED':
+        # En tarea aparte, NO con await: run_fixed espera PlaybackFinished, y
+        # run_ari_events despacha los handlers con await dentro del bucle que
+        # lee el WebSocket. Si bloqueamos aquí, ese evento no se lee nunca y
+        # la llamada se queda hasta el timeout.
+        fixed_task = asyncio.create_task(run_fixed(channel_id))
+        return
+
     call_state.bridge_id = await ari.create_bridge()
     await ari.add_channel_to_bridge(call_state.bridge_id, channel_id)
 
@@ -546,6 +634,7 @@ async def on_stasis_end(event):
 EVENT_HANDLERS = {
     'StasisStart': on_stasis_start,
     'StasisEnd': on_stasis_end,
+    'PlaybackFinished': on_playback_finished,
 }
 
 

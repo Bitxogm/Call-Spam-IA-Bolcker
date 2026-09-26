@@ -2,7 +2,6 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, Switch, PermissionsAndroid, Platform, Linking, ActivityIndicator, TextInput, Permission } from 'react-native';
 import { answerHangupService } from '../services/AnswerHangupService';
-import ivrGeneratorService from '../services/IVRGeneratorService';
 import backendSyncService from '../services/BackendSyncService';
 import callForwardingService from '../services/CallForwardingService';
 
@@ -18,10 +17,6 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
   const [isAccessibilityEnabled, setIsAccessibilityEnabled] = useState(false);
   const [checkingAccessibility, setCheckingAccessibility] = useState(false);
 
-  // Estados para generación de audio IVR
-  const [ivrAudioExists, setIvrAudioExists] = useState(false);
-  const [generatingIVR, setGeneratingIVR] = useState(false);
-
   // Estados para Mensajes TTS (Escudo 2)
   const [customMessage, setCustomMessage] = useState('Identificado como spam, no vuelva a llamar.');
   const [isSyncingMessage, setIsSyncingMessage] = useState(false);
@@ -36,8 +31,6 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
   useEffect(() => {
     loadSettings();
     checkAccessibilityService();
-    ensureInCallServiceEnabled(); // CRÍTICO: Habilitar SpamCallService
-    checkIVRAudioExists(); // Verificar si ya existe audio IVR generado
   }, []);
 
   // Verificar Accessibility Service cuando cambie el modo o se active
@@ -61,38 +54,6 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
       Alert.alert('Error', 'No se pudo cargar la configuración');
     } finally {
       setLoading(false);
-    }
-  };
-
-  /**
-   * Asegura que SpamCallService (InCallService) esté habilitado
-   * CRÍTICO: Sin esto, el servicio no se inicia y Modo 2/3 no funcionan
-   */
-  const ensureInCallServiceEnabled = async () => {
-    try {
-      console.log('🔍 Verificando estado de SpamCallService...');
-
-      const status = await answerHangupService.checkInCallServiceStatus();
-      console.log(`📊 Estado actual: ${status.stateName} (${status.stateCode})`);
-
-      if (!status.isEnabled) {
-        console.log('⚠️ SpamCallService está DESHABILITADO, habilitando...');
-        const success = await answerHangupService.enableInCallService();
-
-        if (success) {
-          console.log('✅ SpamCallService habilitado correctamente');
-
-          // Verificar nuevamente el estado
-          const newStatus = await answerHangupService.checkInCallServiceStatus();
-          console.log(`📊 Nuevo estado: ${newStatus.stateName} (${newStatus.stateCode})`);
-        } else {
-          console.error('❌ No se pudo habilitar SpamCallService');
-        }
-      } else {
-        console.log('✅ SpamCallService ya está habilitado');
-      }
-    } catch (error) {
-      console.error('❌ Error verificando/habilitando SpamCallService:', error);
     }
   };
 
@@ -275,58 +236,6 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
     }
   };
 
-  /**
-   * Verifica si ya existe audio IVR pre-generado
-   */
-  const checkIVRAudioExists = async () => {
-    try {
-      const result = await ivrGeneratorService.checkExists();
-      setIvrAudioExists(result.exists);
-      console.log(`🔊 Audio IVR: ${result.exists ? 'Existe' : 'No existe'}`);
-    } catch (error) {
-      console.error('❌ Error verificando audio IVR:', error);
-      setIvrAudioExists(false);
-    }
-  };
-
-  /**
-   * Genera el audio IVR con TTS nativo
-   */
-  const handleGenerateIVRAudio = async () => {
-    try {
-      setGeneratingIVR(true);
-
-      Alert.alert(
-        '🔊 Generando Audio IVR',
-        'Generando mensaje corporativo con TTS nativo...\nEsto puede tardar unos segundos.',
-        [{ text: 'OK' }]
-      );
-
-      const result = await ivrGeneratorService.generateWithNativeTTS();
-
-      setIvrAudioExists(true);
-
-      Alert.alert(
-        '✅ Audio Generado',
-        `Mensaje IVR generado correctamente.\n\nRuta: ${result.path}\nTamaño: ${(result.size / 1024).toFixed(2)} KB\n\nAhora cuando uses Modo 2, el spammer escuchará este mensaje en lugar de escucharlo tú.`,
-        [{ text: 'Entendido' }]
-      );
-
-      console.log('✅ Audio IVR generado:', result);
-
-    } catch (error: any) {
-      console.error('❌ Error generando audio IVR:', error);
-
-      Alert.alert(
-        '❌ Error',
-        `No se pudo generar el audio IVR.\n\nError: ${error.message}`,
-        [{ text: 'OK' }]
-      );
-    } finally {
-      setGeneratingIVR(false);
-    }
-  };
-
   const handleModeChange = async (newMode: 'HANGUP_IMMEDIATELY' | 'BACKEND_FIXED' | 'BACKEND_AI') => {
     try {
       // Mapear nuevos modos a los estados internos del servicio si es necesario
@@ -345,6 +254,17 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
       // Sincronizar con el backend si es uno de los modos de Zadarma
       if (newMode === 'BACKEND_FIXED' || newMode === 'BACKEND_AI') {
         backendSyncService.syncMode(newMode === 'BACKEND_AI' ? 'AI' : 'FIXED');
+      }
+
+      // En Modo 2 el servidor necesita el audio del mensaje actual. Sin esto,
+      // seguiría con el último sincronizado a mano (o con ninguno).
+      if (newMode === 'BACKEND_FIXED') {
+        try {
+          await backendSyncService.syncMessage(customMessage);
+        } catch {
+          // El cambio de modo sí funcionó: no lo reportamos como fallo.
+          console.warn('⚠️ No se pudo sincronizar el mensaje fijo, usa el botón Sincronizar');
+        }
       }
 
       const modeDescriptions = {
@@ -390,13 +310,15 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
         <Text style={styles.subtitle}>Configuración de auto-respuesta</Text>
       </View>
 
-      {/* BOTÓN DE DIAGNÓSTICO */}
-      <TouchableOpacity
-        style={styles.diagnosticButton}
-        onPress={showPermissionDiagnostic}
-      >
-        <Text style={styles.diagnosticButtonText}>🔍 Verificar Permisos</Text>
-      </TouchableOpacity>
+      {/* BOTÓN DE DIAGNÓSTICO (solo desarrollo) */}
+      {__DEV__ && (
+        <TouchableOpacity
+          style={styles.diagnosticButton}
+          onPress={showPermissionDiagnostic}
+        >
+          <Text style={styles.diagnosticButtonText}>🔍 Verificar Permisos</Text>
+        </TouchableOpacity>
+      )}
 
       {/* ADVERTENCIA DE ACCESSIBILITY SERVICE */}
       {isEnabled && (mode === 'BACKEND_FIXED' || mode === 'BACKEND_AI') && !isAccessibilityEnabled && (
@@ -629,9 +551,9 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
             <Text style={styles.infoText}>
               • Answer+Hangup solo procesa llamadas detectadas como spam{'\n'}
               • Requiere permiso "Registro de llamadas" (READ_CALL_LOG){'\n'}
-              • Modos 2 y 3 requieren configurar el desvío condicional (`*67*919933065#`){'\n'}
-              • El móvil rechazará la llamada y el servidor Zadarma se encargará del resto.{'\n'}
-              • Tu Samsung permanecerá en silencio y discreto.
+              • Modos 2 y 3 activan el desvío incondicional (*21*34919933065#){'\n'}
+              • La llamada se desvía en la red del operador: tu móvil no suena{'\n'}
+              • Manolo (IA) atiende en el servidor y el spammer nunca llega a ti.
             </Text>
           </View>
         </>
@@ -724,9 +646,6 @@ const styles = StyleSheet.create({
     borderColor: '#007bff',
     backgroundColor: '#1a3a5a',
   },
-  modeOptionDisabled: {
-    opacity: 0.6,
-  },
   modeHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -742,16 +661,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#ffffff',
     flex: 1,
-  },
-  comingSoonBadge: {
-    backgroundColor: '#ff9900',
-    color: '#000000',
-    fontSize: 11,
-    fontWeight: 'bold',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    marginLeft: 8,
   },
   modeDescription: {
     fontSize: 14,
@@ -887,73 +796,6 @@ const styles = StyleSheet.create({
     color: '#00ff88',
     fontWeight: '600',
     flex: 1,
-  },
-  // Estilos para botón de generación IVR
-  generateIVRButton: {
-    backgroundColor: '#ff9900',
-    padding: 16,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 12,
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  generateIVRButtonSuccess: {
-    backgroundColor: '#1a4a2a',
-    borderColor: '#00ff88',
-  },
-  generateIVRButtonDisabled: {
-    backgroundColor: '#3a3a3a',
-    opacity: 0.6,
-  },
-  generateIVRButtonIcon: {
-    fontSize: 20,
-    marginRight: 10,
-  },
-  generateIVRButtonText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#ffffff',
-  },
-  ivrSuccessNote: {
-    fontSize: 13,
-    color: '#00ff88',
-    marginTop: 10,
-    fontStyle: 'italic',
-    textAlign: 'center',
-  },
-  // Estilos para Default Dialer Warning
-  defaultDialerWarning: {
-    backgroundColor: '#3a2a1a',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 20,
-    borderWidth: 2,
-    borderColor: '#ff6600',
-  },
-  defaultDialerButton: {
-    backgroundColor: '#ff6600',
-    padding: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  defaultDialerButtonText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: 'bold',
-  },
-  defaultDialerSuccess: {
-    backgroundColor: '#1a3a2a',
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 20,
-    borderWidth: 2,
-    borderColor: '#00ff88',
-    flexDirection: 'row',
-    alignItems: 'center',
   },
   // Estilos para Editor de Mensaje Fijo
   fixedMessageEditor: {
