@@ -1,13 +1,38 @@
 from flask import Flask, request, jsonify
 import json
 import os
-from gtts import gTTS
-import subprocess
+import hmac
+from functools import wraps
 
 app = Flask(__name__)
 STATE_FILE = 'current_mode.json'
 CALL_LOG_FILE = '/root/ai_bridge/call_log.json'   # absoluta: la escribe manolo_ari.py
-SOUNDS_DIR = '/usr/share/asterisk/sounds/es'      # Data directory de Asterisk
+
+API_TOKEN = os.getenv('CONTROL_API_TOKEN')
+
+# Nginx Proxy Manager corre en un contenedor: para él 127.0.0.1 es el propio
+# contenedor, no el host. El valor real es el gateway del bridge Docker al que
+# NPM está conectado. Por defecto loopback: si la variable falta, el servicio
+# queda inalcanzable (fallo visible) en vez de escuchando donde no toca.
+BIND_HOST = os.getenv('CONTROL_API_BIND', '127.0.0.1')
+
+
+def requiere_token(f):
+    """
+    Exige la cabecera X-API-Key en todos los endpoints.
+
+    Sin CONTROL_API_TOKEN configurado se rechaza TODO: falla cerrado. Lo
+    contrario -sin token, permitir- es como estos servicios acaban abiertos
+    tras un despliegue en el que se olvidó el .env.
+    """
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        enviado = request.headers.get('X-API-Key', '')
+        # compare_digest en vez de ==: comparación en tiempo constante
+        if not API_TOKEN or not hmac.compare_digest(enviado, API_TOKEN):
+            return jsonify({'status': 'error', 'message': 'unauthorized'}), 401
+        return f(*args, **kwargs)
+    return wrapper
 
 def load_call_log():
     try:
@@ -28,6 +53,7 @@ def load_mode():
     return 'AI'
 
 @app.route('/set_mode', methods=['POST'])
+@requiere_token
 def set_mode():
     data = request.json
     if not data:
@@ -41,60 +67,28 @@ def set_mode():
     return jsonify({'status': 'error', 'message': 'Invalid mode'}), 400
 
 @app.route('/get_mode', methods=['GET'])
+@requiere_token
 def get_mode():
     mode = load_mode()
     return jsonify({'mode': mode}), 200
 
 @app.route('/call_log', methods=['GET'])
+@requiere_token
 def call_log():
     registros = load_call_log()
     # timestamp_inicio es ISO 8601: ordenar como string equivale a ordenar por fecha
     registros.sort(key=lambda r: r.get('timestamp_inicio') or '', reverse=True)
     return jsonify(registros[:50]), 200
 
-@app.route('/set_message', methods=['POST'])
-def set_message():
-    data = request.json
-    if not data or 'text' not in data:
-        return jsonify({'status': 'error', 'message': 'No text provided'}), 400
-        
-    text = data.get('text')
-    try:
-        # Generar audio con gTTS
-        tts = gTTS(text=text, lang='es')
-        temp_mp3 = "custom_fixed.mp3"
-        # Asterisk corre como usuario 'asterisk' y no puede leer /root (0700),
-        # así que el WAV tiene que acabar en su propio árbol de sonidos.
-        target_wav = os.path.join(SOUNDS_DIR, "custom_fixed_message.wav")
-        
-        tts.save(temp_mp3)
-        
-        # Convertir a formato WAV legible por Asterisk (8000Hz, mono, pcm_s16le)
-        # Usamos ffmpeg para asegurar compatibilidad total
-        subprocess.run([
-            'ffmpeg', '-y', '-i', temp_mp3, 
-            '-ar', '8000', '-ac', '1', 
-            '-codec:a', 'pcm_s16le', 
-            target_wav
-        ], check=True)
-        
-        # Limpiar temporal
-        if os.path.exists(temp_mp3):
-            os.remove(temp_mp3)
-            
-        print(f"✅ Nuevo audio corporativo generado: {text[:30]}...")
-        return jsonify({'status': 'success', 'message': 'Audio generated'}), 200
-    except Exception as e:
-        print(f"❌ Error generando audio: {str(e)}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 if __name__ == '__main__':
     # Inicializar con AI por defecto
     if not os.path.exists(STATE_FILE):
         save_mode('AI')
     print("========================================")
-    print("🚀 API de Control Víctor (MODO SEGURO)")
-    print("📡 Escuchando en: http://0.0.0.0:5000")
+    print("🚀 API de Control Manolo")
+    print(f"📡 Escuchando en: http://{BIND_HOST}:5000")
+    print(f"🔑 Token: {'configurado' if API_TOKEN else '❌ NO CONFIGURADO — todo devolverá 401'}")
     print("========================================")
-    # threaded=True permite que múltiples rquest no bloqueen el servidor
-    app.run(host='0.0.0.0', port=5000, threaded=True, debug=False)
+    # threaded=True permite que varias peticiones no se bloqueen entre sí
+    app.run(host=BIND_HOST, port=5000, threaded=True, debug=False)

@@ -1,17 +1,32 @@
 // src/services/BackendSyncService.ts
-import { Alert } from 'react-native';
 
-// Sin fallback a una IP real: el repo es público. Si falta la variable, las
-// peticiones fallan de forma legible en vez de apuntar a un host hardcodeado.
-const VPS_IP = process.env.EXPO_PUBLIC_VPS_IP;
-const API_PORT = process.env.EXPO_PUBLIC_VPS_PORT || '5000';
+// URL completa, no IP + puerto: el servidor está detrás de Cloudflare → Nginx
+// Proxy Manager, y en release Android bloquea el tráfico en claro
+// (usesCleartextTraffic solo está en el manifest de debug). Tiene que ser https.
+const BASE_URL = process.env.EXPO_PUBLIC_VPS_URL;
+const TOKEN = process.env.EXPO_PUBLIC_CONTROL_API_TOKEN;
 
-if (!VPS_IP) {
+if (!BASE_URL || !TOKEN) {
   console.warn(
-    '⚠️ EXPO_PUBLIC_VPS_IP no está definida: los Modos 2 y 3 no podrán ' +
-    'sincronizar con el servidor. Añádela al .env y recompila.'
+    '⚠️ Falta EXPO_PUBLIC_VPS_URL o EXPO_PUBLIC_CONTROL_API_TOKEN: los Modos 2 ' +
+    'y 3 no podrán sincronizar. Añádelas al .env y recompila.'
   );
 }
+
+const headers = () => ({
+  'Content-Type': 'application/json',
+  'X-API-Key': TOKEN ?? '',
+});
+
+/** Un 401 no es "el VPS está caído": es token mal configurado. Que se vea. */
+const avisarSi401 = (status: number, endpoint: string) => {
+  if (status === 401) {
+    console.error(
+      `❌ 401 en ${endpoint}: el token de la app no coincide con el del VPS ` +
+      '(revisa CONTROL_API_TOKEN en el servidor y EXPO_PUBLIC_CONTROL_API_TOKEN en el .env)'
+    );
+  }
+};
 
 /** Registro de llamada atendida por Manolo en el VPS (call_log.json) */
 export interface ServerCallRecord {
@@ -34,11 +49,9 @@ class BackendSyncService {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
 
-      const response = await fetch(`http://${VPS_IP}:${API_PORT}/set_mode`, {
+      const response = await fetch(`${BASE_URL}/set_mode`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: headers(),
         body: JSON.stringify({ mode }),
         signal: controller.signal
       });
@@ -48,6 +61,7 @@ class BackendSyncService {
       if (response.ok) {
         console.log('✅ Modo sincronizado correctamente con el servidor');
       } else {
+        avisarSi401(response.status, '/set_mode');
         console.error('❌ Error sincronizando con el servidor:', response.status);
       }
     } catch (error: any) {
@@ -68,13 +82,15 @@ class BackendSyncService {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-      const response = await fetch(`http://${VPS_IP}:${API_PORT}/call_log`, {
+      const response = await fetch(`${BASE_URL}/call_log`, {
+        headers: headers(),
         signal: controller.signal,
       });
 
       clearTimeout(timeoutId);
 
       if (!response.ok) {
+        avisarSi401(response.status, '/call_log');
         console.error('❌ /call_log respondió', response.status);
         return [];
       }
