@@ -38,3 +38,5 @@ yarn-error.*
 .vscode
 .env
 scripts/
+# bundle JS generado — lo regenera build-fresh.sh (pasos 4 y 5) en cada build
+android/app/src/main/assets/index.android.bundle
