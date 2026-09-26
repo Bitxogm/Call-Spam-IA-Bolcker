@@ -1,5 +1,5 @@
 // CallHistoryScreen.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Alert,
   Linking,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import CallHistoryService, { SpamCallRecord } from '../services/CallHistoryService';
 import backendSyncService from '../services/BackendSyncService';
 
@@ -24,9 +25,15 @@ const CallHistoryScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [totalCalls, setTotalCalls] = useState(0);
 
-  useEffect(() => {
-    loadHistory();
-  }, []);
+  // useFocusEffect en lugar de useEffect + addListener('focus'): dispara una
+  // sola vez por foco, incluido el montaje. Con las dos cosas por separado la
+  // primera apertura cargaba dos veces, y getCallLog() tarda 5s en timeout
+  // mientras el puerto 5000 siga cerrado.
+  useFocusEffect(
+    useCallback(() => {
+      loadHistory();
+    }, [])
+  );
 
   const loadHistory = async () => {
     const [localData, serverData, total] = await Promise.all([
@@ -140,9 +147,6 @@ const CallHistoryScreen: React.FC = () => {
       </View>
 
       <View style={styles.actions}>
-        <TouchableOpacity style={styles.refreshButton} onPress={handleRefresh}>
-          <Text style={styles.buttonText}>🔄 Actualizar</Text>
-        </TouchableOpacity>
         <TouchableOpacity
           style={styles.clearButton}
           onPress={handleClearHistory}
@@ -241,13 +245,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#ddd',
-  },
-  refreshButton: {
-    flex: 1,
-    backgroundColor: '#28a745',
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
   },
   clearButton: {
     flex: 1,
