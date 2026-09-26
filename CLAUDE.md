@@ -32,16 +32,21 @@ Llegar al Modo 2 funcional costó mucho trabajo. Este documento existe para que 
 
 ---
 
-## 3. Sistemas de audio — hay dos, independientes entre sí
+## 3. Sistemas de audio — solo queda uno vivo
 
-Es crítico no confundirlos:
+Tras la limpieza de septiembre 2026 el único audio que oye el spammer lo genera el **servidor**. En la app ya no hay TTS ni IA.
 
-| Sistema            | Dónde vive                                                | Tecnología                                                           | Para qué                                                                                          |
-| ------------------ | --------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| **IVR on-device**  | `IVRGeneratorModule.java` + `IVRMessageHelper.java`       | `android.speech.tts.TextToSpeech` (TTS nativo Android, motor Google) | Genera `ivr_corporate.mp3` en el dispositivo para reproducción local                              |
-| **AI Test Screen** | `src/services/ElevenLabsService.ts` + `AITestsScreen.tsx` | ElevenLabs primero, fallback a `expo-speech`                         | Solo para la pantalla de pruebas, no interviene en llamadas reales                                |
+| Sistema                                  | Dónde vive                                                 | Tecnología                                                                                     | Estado                |
+| ---------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | --------------------- |
+| **Audio del servidor** (Modo 2 y Modo 3) | `vps_backend/control_api.py` y `vps_backend/manolo_ari.py` | Modo 2: gTTS + ffmpeg → WAV 8 kHz. Modo 3: Edge TTS `es-ES-AlvaroNeural` → mulaw 8 kHz → RTP  | ✅ en producción      |
+| **IVR on-device**                        | `IVRAudioPlayer.java`, `IVRMessageHelper.java`             | `android.speech.tts.TextToSpeech` + `MediaPlayer` sobre `STREAM_VOICE_CALL`                    | ⚠️ residuo, ver abajo |
 
-**Estado actual:** La generación de audio funcional para el mensaje al spammer es el TTS nativo de Android (`IVRGeneratorModule.java`).
+**Eliminados (sept. 2026):** `IVRGeneratorModule.java`, `SpeechRecognitionModule.java`, `AITestsScreen.tsx`, `ElevenLabsService.ts`, `GeminiServices.ts`.
+
+Como `IVRGeneratorModule` ya no existe, **nadie genera `ivr_corporate.mp3`**: la rama de `CallAccessibilityService` que lo busca (L501) nunca lo encuentra y no hace nada. Los dos ficheros IVR siguen en disco solo porque tienen referencias vivas que romperían el build:
+
+- `IVRAudioPlayer` ← `CallAccessibilityService.java` L44, L513
+- `IVRMessageHelper` ← `CallStateReceiver.java` L213 (`handleIdle`, detiene un IVR que ya no arranca nadie)
 
 ---
 
@@ -57,6 +62,8 @@ Llamada entra al teléfono
         └── TelecomManager.endCall()
 ```
 
+⚠️ **El Accessibility Service es obligatorio, no es un residuo.** Se intentó eliminarlo moviendo la lógica a `CallStateReceiver` y en dispositivo real el resultado fue que **contesta pero no cuelga**. Revertido en `03782bc`. Detalle en la lección 2 (sección 15).
+
 ### Modo 2 — Backend Fixed (desvío GSM + Asterisk)
 
 ```
@@ -68,8 +75,8 @@ Llamada entra al teléfono
 │              ("BACKEND_FIXED")                               │
 │          └── CallForwardingManager.enableForwarding()        │
 │              └── ejecuta USSD en el operador:                │
-│                  *21*34919933065#                            │
-│                  (desvío incondicional → Zadarma)            │
+│                  *67*919933065#                              │
+│                  (desvío → Zadarma; ver nota USSD sección 5) │
 └──────────────────────────────────────────────────────────────┘
                            ↓
                   (por cada llamada spam)
@@ -103,27 +110,33 @@ Llamada entra al teléfono
 │  DESACTIVAR Modo 2                                           │
 │                                                              │
 │  CallForwardingManager.disableForwarding()                   │
-│    └── USSD: ##21#  (cancela desvío en el operador)          │
-│  Consultar estado: *#21#                                     │
+│    └── USSD: ##67#  (cancela desvío en el operador)          │
+│  Consultar estado: *#67#                                     │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### ⚠️ Problema de coordinación conocido (on-device)
+### Problema de coordinación (on-device) — resuelto de facto
 
-En Modo 2, `CallAccessibilityService` también reacciona al estado OFFHOOK de forma independiente al servidor. Busca `ivr_corporate.mp3` y lo reproduce si existe. El servidor Asterisk ya gestiona el audio — el teléfono no debería hacer nada adicional.
+En Modo 2, `CallAccessibilityService` sigue reaccionando al estado OFFHOOK de forma independiente del servidor y busca `ivr_corporate.mp3`. Desde que se eliminó `IVRGeneratorModule` ese fichero **no se genera nunca**, así que la rama muere en el `if (audioFile.exists())` y el teléfono no reproduce nada. El audio queda en exclusiva del servidor, que es lo que se buscaba.
+
+Sigue siendo deuda cosmética — el código muerto conviene borrarlo — pero ya no puede pisar a Asterisk.
 
 ---
 
 ## 5. Modos de operación
 
-|                         | Modo 1 (HANGUP_IMMEDIATELY) | Modo 2 (BACKEND_FIXED)      | Modo 3 (BACKEND_AI)         |
-| ----------------------- | --------------------------- | --------------------------- | --------------------------- |
-| USSD                    | desactiva (`##21#`)         | activa (`*21*34919933065#`) | activa (`*21*34919933065#`) |
-| Teléfono suena          | sí, app lo cuelga           | no                          | no                          |
-| Spammer escucha         | nada                        | mensaje "Roberto"           | Manolo (Groq `qwen/qwen3.8-27b`) |
-| Requiere VPS            | ❌                          | ✅                          | ✅                          |
-| Requiere Zadarma config | ❌                          | ✅                          | ✅                          |
-| Estado actual           | ✅ funcional                | ✅ funcional                | ✅ funcional (migrado a ARI, sept. 2026) |
+|                                | Modo 1 (HANGUP_IMMEDIATELY)               | Modo 2 (BACKEND_FIXED)                    | Modo 3 (BACKEND_AI)              |
+| ------------------------------ | ----------------------------------------- | ----------------------------------------- | -------------------------------- |
+| USSD                           | desactiva (`##67#`)                       | activa (`*67*919933065#`)                 | activa (`*67*919933065#`)        |
+| Teléfono suena                 | sí, app lo cuelga                         | no                                        | no                               |
+| Spammer escucha                | nada                                      | mensaje fijo (gTTS)                       | Manolo (Groq `qwen/qwen3.8-27b`) |
+| Requiere Accessibility Service | ✅ **imprescindible**                     | ❌                                        | ❌                               |
+| Requiere VPS                   | ❌                                        | ✅                                        | ✅                               |
+| Requiere Zadarma config        | ❌                                        | ✅                                        | ✅                               |
+| Requiere puerto 5000 abierto   | ❌                                        | ✅ (sincronizar mensaje)                  | ✅ (cambiar de modo)             |
+| Estado actual                  | ✅ verificado en dispositivo (sept. 2026) | ✅ verificado en dispositivo (sept. 2026) | ✅ funcional (ARI)               |
+
+⚠️ **Los códigos USSD reales no son `*21*`.** Desde `b41448d` (marzo 2026) `CallForwardingManager` usa el código **67** y el número **sin prefijo de país**: `*67*919933065#` / `##67#` / `*#67#`. La documentación anterior de este fichero decía `*21*34919933065#`, que no es lo que ejecuta la app. El código GSM estándar de desvío incondicional es `*21*` y `*67*` es desvío en ocupado, pero `*67*` es el que funciona con el operador de Víctor — no cambiarlo sin probar en dispositivo.
 
 ---
 
@@ -170,24 +183,40 @@ Asterisk [from-zadarma]
 **control_api.py endpoints (Flask, puerto 5000):**
 
 - `POST /set_mode` — body `{"mode": "FIXED"|"AI"}` → escribe `current_mode.json`
-- `GET /get_mode` — devuelve modo actual
-- `POST /set_message` — body `{"message": "..."}` → genera WAV con gTTS + ffmpeg (8kHz mono pcm_s16le) como `fixed_spam_message.wav`
+- `GET /get_mode` — devuelve el modo actual
+- `POST /set_message` — body `{"text": "..."}` (⚠️ la clave es `text`, no `message`) → gTTS + ffmpeg (8 kHz mono pcm_s16le) → `/usr/share/asterisk/sounds/es/custom_fixed_message.wav`
+- `GET /call_log` — últimas 50 llamadas atendidas por el servidor, ordenadas por `timestamp_inicio` desc. Las escribe `manolo_ari.py` en `/root/ai_bridge/call_log.json`; las consume `CallHistoryScreen` vía `BackendSyncService.getCallLog()`
 
-### Servicios auxiliares en src/services/
+**Audio del mensaje fijo (Modo 2) — ruta crítica:**
 
-- **`GeminiServices.ts`** — llama a `generativelanguage.googleapis.com` con `EXPO_PUBLIC_GEMINI_API_KEY`. Generación de texto, no TTS.
-- **`ElevenLabsService.ts`** — TTS premium. Intenta ElevenLabs, fallback a `expo-speech`. Solo usado en `AITestsScreen.tsx`, no en el flujo de llamadas reales.
+Asterisk resuelve `sound:` contra su **Data directory**, que en este VPS es `/usr/share/asterisk`, **no** `/var/lib/asterisk` (ver lección 1, sección 15):
+
+- `control_api.py` L10 y `manolo_ari.py` L64 comparten `SOUNDS_DIR = '/usr/share/asterisk/sounds/es'`
+- `manolo_ari.py` reproduce `custom_fixed_message` y cae a `fixed_spam_message` si el primero no existe (`elegir_sonido_fijo()`, L280)
+- La llamada a ARI pasa `lang='es'` explícito (`ARIClient.play`, L144). Sin él Asterisk resuelve contra el idioma del canal, que llega como `en` desde Zadarma, y busca en `sounds/en/` — donde el fichero no está
+
+### Servicios en src/services/
+
+Ninguno habla con una IA: toda la inteligencia vive en el VPS.
+
+- **`BackendSyncService.ts`** — cliente HTTP de `control_api.py`: `syncMode()`, `syncMessage()`, `getCallLog()`. Timeout de 5 s y degradación silenciosa (devuelve `[]`, no lanza) para que la app siga usable sin VPS
+- **`AnswerHangupService.ts`** — bridge al módulo nativo: modo, delay, permisos, estado del Accessibility Service
+- **`CallForwardingService.ts`** — bridge al módulo USSD
+- **`BlacklistService.ts`**, **`CallHistoryService.ts`**, **`LogsService.ts`**, **`DataBaseService.ts`** — persistencia local (SQLite / SharedPreferences)
+- ⚠️ **`ContactService.ts`** y **`ContactsService.ts`** — dos ficheros distintos, con nombres casi idénticos, **ambos en uso**: `DashboardScreen` importa `contactsService` de `ContactService.ts`, `WhitelistScreen` importa `ContactsService` de `ContactsService.ts`. De ahí el bug del Modo Radical (ver sección 12)
 
 ### Configuración externa (fuera del repo — crítica para Modo 2)
 
 Esta configuración no vive en el código. Si se pierde, el Modo 2 deja de funcionar:
 
-| Servicio             | Número/URL         | Configuración                                                                                                                                                                      |
-| -------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Zadarma**          | `+34919933065`     | Reenvío de entrantes → VPS (documentar URL exacta aquí cuando se confirme)                                                                                                         |
-| **VPS**              | `157.180.35.161`   | Puerto 5000 (`control_api.py`, gestionado por systemd `asterisk-control-api.service`)                                                                                              |
-| **Gemini free tier** | Google AI Studio   | 20 req/día con `gemini-2.5-flash`. Cuando se agota, Modo 3 falla silenciosamente (fallback hardcodeado). Solución: activar billing.                                                |
-| **Deepgram**         | `api.deepgram.com` | $200 crédito gratuito. **STT principal desde sept. 2026** (Nova-2, batch) en `manolo_ari.py` — verificado funcional en prueba real sobre audio del ExternalMedia (RTP/mulaw 8kHz). Whisper queda como fallback si Deepgram falla. |
+| Servicio             | Número/URL         | Configuración                                                                                                                                                                                                                    |
+| -------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Zadarma**          | `+34919933065`     | Reenvío de entrantes → VPS. External Server: `34919933065@157.180.35.161:5060`, SIP Login `#719926` (detalle en sección 14)                                                                                                       |
+| **VPS — SIP**        | `157.180.35.161`   | Puerto 5060/udp abierto solo a las 6 subnets de Zadarma                                                                                                                                                                          |
+| **VPS — control API**| `157.180.35.161`   | Puerto **5000/tcp abierto en UFW** — sin esta regla la app no sincroniza ni el modo ni el mensaje fijo, y falla en silencio (ver lección 4, sección 15)                                                                           |
+| **Deepgram**         | `api.deepgram.com` | $200 crédito gratuito. **STT principal desde sept. 2026** (Nova-2, batch) en `manolo_ari.py` — verificado en prueba real sobre audio del ExternalMedia (RTP/mulaw 8 kHz). Whisper queda como fallback si Deepgram falla           |
+| **Groq**             | `api.groq.com`     | LLM de Manolo: `qwen/qwen3.8-27b`. Si la API falla, `manolo_ari.py` responde con un mensaje fijo de emergencia, no hay fallback a otro proveedor                                                                                  |
+| **Gemini**           | Google AI Studio   | Ya **no se usa**. Era el fallback de `manolo_agi.py` (20 req/día en free tier). `GeminiServices.ts` eliminado de la app                                                                                                           |
 
 ---
 
@@ -196,56 +225,62 @@ Esta configuración no vive en el código. Si se pierde, el Modo 2 deja de funci
 ```
 Call-Spam-IA-Blocker/
 ├── android/app/src/main/
-│   ├── AndroidManifest.xml                 ← tiene residuos (ver sección 11)
+│   ├── AndroidManifest.xml                 ← limpio de services residuales; quedan 6 permisos de más (sección 12)
 │   └── java/com/anonymous/SpamBlockerApp/
 │       │
 │       │── ACTIVOS
-│       ├── CallAccessibilityService.java   ← CORE: detección de spam
+│       ├── CallAccessibilityService.java   ← CORE Modo 1: detecta spam, contesta y cuelga. NO se puede eliminar
+│       ├── CallScreeningServiceImpl.java   ← primer filtro + notificación de bloqueo (Modo 1)
 │       ├── CallInterceptorService.java     ← foreground service
-│       ├── AnswerHangupHelper.java         ← lógica Answer+Hangup + normalización ES (L223)
+│       ├── AnswerHangupHelper.java         ← lógica Answer+Hangup + normalización ES (L222-225)
 │       ├── AnswerHangupModule.java         ← bridge RN↔Java
-│       ├── CallForwardingManager.java      ← gestión USSD, Zadarma hardcodeado (L34)
+│       ├── CallForwardingManager.java      ← gestión USSD, Zadarma hardcodeado (L34-39)
 │       ├── CallForwardingModule.java       ← bridge RN↔Java para desvío
+│       ├── CallStateReceiver.java          ← receiver de PHONE_STATE. Detecta, pero NO consigue colgar (lección 2)
+│       ├── SpamNotificationManager.java    ← notificación local al bloquear en Modo 1
 │       ├── BlacklistModule.java
 │       ├── CallHistoryHelper.java
 │       ├── CallHistoryModule.java
 │       ├── CallInterceptorModule.java
 │       ├── CallInterceptorPackage.java
 │       ├── CallAnswerReceiver.java
-│       ├── CallStateReceiver.java
-│       ├── CallScreeningServiceImpl.java
 │       ├── ContactsModule.java
 │       ├── ContactsHelper.java
 │       ├── SharedPreferencesHelper.java
 │       ├── LogsModule.java
 │       ├── LogsHelper.java
-│       └── SpamNotificationManager.java
+│       ├── MainActivity.kt
+│       └── MainApplication.kt
 │       │
-│       │── RESIDUOS IVR ON-DEVICE — ⚠️ no borrar sin limpiar referencias
-│       ├── IVRAudioPlayer.java             ← ⚠️ referenciado en CallAccessibilityService L44-45, 513, 516
-│       ├── IVRGeneratorModule.java         ← genera ivr_corporate.mp3 con Android TTS
-│       ├── IVRMessageHelper.java           ← TTS nativo a STREAM_VOICE_CALL
-│       └── SpeechRecognitionModule.java
+│       │── RESIDUOS IVR — ⚠️ no borrar sin limpiar las referencias (sección 3)
+│       ├── IVRAudioPlayer.java             ← referenciado en CallAccessibilityService L44, L513
+│       └── IVRMessageHelper.java           ← referenciado en CallStateReceiver L213
+│                                           ← ELIMINADOS (sept. 2026): IVRGeneratorModule.java, SpeechRecognitionModule.java
 │
 ├── src/
 │   ├── screens/
 │   │   ├── DashboardScreen.tsx
 │   │   ├── SpamNumbersScreen.tsx
-│   │   ├── AITestsScreen.tsx               ← usa ElevenLabsService
 │   │   ├── WhitelistScreen.tsx
 │   │   ├── LogsScreen.tsx
-│   │   ├── CallHistoryScreen.tsx
-│   │   └── AnswerHangupSettingsScreen.tsx
+│   │   ├── CallHistoryScreen.tsx           ← historial local (Modo 1) + servidor (Modos 2/3) fusionados
+│   │   └── AnswerHangupSettingsScreen.tsx  ← selector de modo; sincroniza mensaje fijo al pasar a Modo 2
+│   │                                       ← ELIMINADA (sept. 2026): AITestsScreen.tsx
 │   └── services/
-│       ├── GeminiServices.ts               ← Gemini text generation
-│       ├── ElevenLabsService.ts            ← TTS ElevenLabs + fallback expo-speech
+│       ├── BackendSyncService.ts           ← cliente de control_api.py (modo, mensaje, call_log)
+│       ├── AnswerHangupService.ts
+│       ├── CallForwardingService.ts
 │       ├── BlacklistService.ts
-│       ├── ContactsService.ts
-│       └── AnswerHangupService.ts
+│       ├── CallHistoryService.ts
+│       ├── LogsService.ts
+│       ├── DataBaseService.ts
+│       ├── ContactService.ts               ← ⚠️ usado por DashboardScreen
+│       └── ContactsService.ts              ← ⚠️ usado por WhitelistScreen (ver sección 12)
+│                                           ← ELIMINADOS (sept. 2026): GeminiServices.ts, ElevenLabsService.ts
 │
 ├── vps_backend/                            ← infraestructura del servidor
 │   ├── extensions.conf                     ← dialplan Asterisk [from-zadarma] + [manolo-ari-test] ✅
-│   ├── manolo_ari.py                       ← motor Modo 3 en producción: ARI + ExternalMedia ✅
+│   ├── manolo_ari.py                       ← motor Modos 2 y 3 en producción: ARI + ExternalMedia ✅
 │   ├── manolo_ari.service                  ← systemd unit para manolo_ari.py
 │   ├── manolo_agi.py                       ← AGI legacy, backup en disco, ya no usado (sept. 2026)
 │   ├── control_api.py                      ← Flask API puerto 5000 ✅
@@ -255,38 +290,35 @@ Call-Spam-IA-Blocker/
 │   ├── deploy_modo3.sh                     ← script de deploy del AGI legacy (histórico)
 │   ├── install_service.sh                  ← registra systemd service
 │   └── README_VPS.md
-│                                           ← ELIMINADOS (limpieza agosto 2026): agi-bin/decision_agi.py, victor_agi.py, deploy.sh
+│                                           ← ELIMINADOS (agosto 2026): agi-bin/decision_agi.py, victor_agi.py, deploy.sh
 │
 ├── App.tsx
 ├── index.ts
 ├── package.json
 ├── tsconfig.json
 ├── app.json
-├── build-fresh.sh
-├── rebuild-clean.sh
-└── copy-apk.sh
+├── build-fresh.sh                          ← build limpio (borra .cxx) + copia el APK
+└── copy-apk.sh                             ← copia el APK a ~/Downloads
+                                            ← ELIMINADO (sept. 2026): rebuild-clean.sh (redundante con build-fresh.sh)
 ```
 
 ---
 
 ## 8. Variables de entorno
 
+Solo quedan dos. Las claves de IA (Groq, Deepgram) viven en `/root/ai_bridge/.env` **en el VPS**, nunca en la app.
+
 ```env
-# IA — activo
-EXPO_PUBLIC_GEMINI_API_KEY=...
-EXPO_PUBLIC_GEMINI_MODEL=gemini-1.5-flash
-
-# ElevenLabs — activo (con fallback a expo-speech)
-EXPO_PUBLIC_ELEVENLABS_API_KEY=...
-
-# VPS
+# VPS — control_api.py
 EXPO_PUBLIC_VPS_IP=157.180.35.161
 EXPO_PUBLIC_VPS_PORT=5000
 ```
 
-**Estado del `.env`:** verificado que no está commiteado (`git log --all` no lo muestra). Solo aparece `ios/.xcode.env` que es irrelevante.
+**Eliminadas (sept. 2026):** `EXPO_PUBLIC_GEMINI_API_KEY`, `EXPO_PUBLIC_GEMINI_MODEL`, `EXPO_PUBLIC_ELEVENLABS_API_KEY` — sus consumidores (`GeminiServices.ts`, `ElevenLabsService.ts`) ya no existen. `.env.example` está actualizado.
 
-⚠️ El prefijo `EXPO_PUBLIC_*` embebe todos estos valores en el APK compilado.
+**Estado del `.env`:** verificado que no está commiteado (`git log --all` no lo muestra). Solo aparece `ios/.xcode.env`, que es irrelevante.
+
+⚠️ El prefijo `EXPO_PUBLIC_*` embebe estos valores en el APK compilado.
 
 ---
 
@@ -296,24 +328,30 @@ EXPO_PUBLIC_VPS_PORT=5000
 # Instalar dependencias
 npm install
 
-# Build debug Android
-npm run android
-./build-fresh.sh          # alternativa
-./rebuild-clean.sh        # build limpio si hay problemas de caché
+# Build debug Android — usar SIEMPRE build-fresh.sh
+# Borra los .cxx de android/app y de node_modules/*/android antes de compilar
+# (las cachés CMake obsoletas rompen el build con fbjni::fbjni) y copia el APK
+./build-fresh.sh
+
+# Copiar el APK a ~/Downloads por separado
+./copy-apk.sh
 
 # Instalar APK en dispositivo
 adb install android/app/build/outputs/apk/debug/app-debug.apk
-./copy-apk.sh
 
 # Verificar tipos TypeScript — ejecutar tras CADA cambio TS
 npx tsc --noEmit
 
 # Logs del dispositivo en tiempo real
-adb logcat | grep -E "SpamBlocker|CallAccessibility|AnswerHangup|CallForwarding"
+adb logcat | grep -E "SpamBlocker|CallAccessibility|AnswerHangup|CallForwarding|CallStateReceiver|CallScreening"
 adb logcat *:E
 
+# adb inalámbrico (el Pixel 8 se usa sin cable)
+adb pair <ip>:<puerto-de-emparejamiento>    # el código lo muestra el teléfono
+adb connect <ip>:<puerto-de-depuración>      # puerto distinto al de emparejamiento
+
 # Verificar estado del desvío USSD en el operador
-# Marcar desde el teclado del teléfono: *#21#
+# Marcar desde el teclado del teléfono: *#67#
 
 # Recargar dialplan Asterisk sin reiniciar el servicio
 asterisk -rx "dialplan reload"
@@ -335,13 +373,15 @@ asterisk -rx "dialplan reload"
 
 5. **No tocar `/android/` sin avisar primero.** Cualquier cambio en Java requiere rebuild completo (~2-5 min). Confirmar antes de proceder.
 
-6. **Nunca borrar un `.java` sin verificar referencias en todo el proyecto.** Ejemplo crítico: `IVRAudioPlayer` está referenciado en `CallAccessibilityService.java` líneas 44-45, 513 y 516. Borrarlo sin limpiar esas referencias rompe el build.
+6. **Nunca borrar un `.java` sin verificar referencias en todo el proyecto.** Casos vivos: `IVRAudioPlayer` en `CallAccessibilityService.java` (L44, L513) e `IVRMessageHelper` en `CallStateReceiver.java` (L213). Borrarlos sin limpiar esas referencias rompe el build.
 
-7. **No confundir los dos sistemas de audio.** Android TTS on-device y ElevenLabs/expo-speech de la pantalla de pruebas son independientes. Un cambio en uno no afecta al otro.
+7. **No tocar `CallAccessibilityService`.** Es la única capa que consigue contestar y colgar en Modo 1. Ya se intentó sustituirlo por `CallStateReceiver` y falló en dispositivo real — lección 2, sección 15.
 
-8. **Ignorar los READMEs de planificación.** El código manda.
+8. **Todo cambio en la capa de llamadas se verifica en dispositivo real.** `npx tsc --noEmit` y que compile no dicen nada sobre si la llamada se cuelga. La prueba es una llamada de verdad desde el Note 20.
 
-9. **Conventional Commits** cuando Víctor pida commitear:
+9. **Ignorar los READMEs de planificación.** El código manda.
+
+10. **Conventional Commits** cuando Víctor pida commitear:
    `feat:` / `fix:` / `refactor:` / `docs:` / `chore:` / `test:`
 
 ### Flujo de una tarea típica
@@ -361,14 +401,29 @@ asterisk -rx "dialplan reload"
 
 ## 11. Valores hardcodeados — localizaciones exactas
 
-| Valor                               | Archivo                       | Línea | Notas                          |
-| ----------------------------------- | ----------------------------- | ----- | ------------------------------ |
-| `"34919933065"`                     | CallForwardingManager.java    | L34   | Número Zadarma                 |
-| `*21*34919933065#`                  | CallForwardingManager.java    | L37   | USSD activar desvío            |
-| `##21#`                             | CallForwardingManager.java    | L38   | USSD desactivar                |
-| `*#21#`                             | CallForwardingManager.java    | L39   | USSD consultar estado          |
-| `"/ivr_corporate.mp3"`              | CallAccessibilityService.java | L501  | Ruta MP3 on-device             |
-| últimos 9 dígitos                   | AnswerHangupHelper.java       | L223  | Normalización España           |
+### App Android
+
+| Valor                  | Archivo                       | Línea     | Notas                                        |
+| ---------------------- | ----------------------------- | --------- | -------------------------------------------- |
+| `"919933065"`          | CallForwardingManager.java    | L34       | Número Zadarma, **sin prefijo de país**      |
+| `*67*919933065#`       | CallForwardingManager.java    | L37       | USSD activar desvío (**67**, no 21)          |
+| `##67#`                | CallForwardingManager.java    | L38       | USSD desactivar                              |
+| `*#67#`                | CallForwardingManager.java    | L39       | USSD consultar estado                        |
+| `"/ivr_corporate.mp3"` | CallAccessibilityService.java | L501      | Ruta MP3 on-device — ya nadie genera el fichero |
+| últimos 9 dígitos      | AnswerHangupHelper.java       | L222-225  | Normalización España                         |
+
+### VPS
+
+| Valor                                | Archivo        | Línea | Notas                                       |
+| ------------------------------------ | -------------- | ----- | ------------------------------------------- |
+| `/root/ai_bridge/current_mode.json`  | manolo_ari.py  | L63   | Estado del modo, lo escribe `control_api.py` |
+| `/usr/share/asterisk/sounds/es`      | manolo_ari.py  | L64   | Data directory de Asterisk                  |
+| `/usr/share/asterisk/sounds/es`      | control_api.py | L10   | Debe coincidir con la de `manolo_ari.py`    |
+| `custom_fixed_message`               | manolo_ari.py  | L65   | Mensaje fijo del usuario                    |
+| `fixed_spam_message`                 | manolo_ari.py  | L66   | Fallback si el anterior no existe           |
+| `20` (s)                             | manolo_ari.py  | L67   | Timeout esperando `PlaybackFinished`        |
+| `1500`                               | manolo_ari.py  | L55   | Umbral RMS del VAD (barge-in)               |
+| `7000`                               | manolo_ari.py  | —     | Puerto UDP de ExternalMedia, fijo           |
 
 ---
 
@@ -376,40 +431,37 @@ asterisk -rx "dialplan reload"
 
 ### Crítica
 
-- [ ] **Lógica on-device y servidor sin coordinación en Modo 2.** Cuando el operador desvía la llamada, `CallAccessibilityService` también reacciona al estado OFFHOOK de forma independiente. El MP3 que busca (`ivr_corporate.mp3`) puede o no existir según si `IVRGeneratorModule` lo generó previamente. Hay que decidir qué capa gestiona el audio.
+- [ ] **Una sola llamada concurrente en `manolo_ari.py`.** Puerto UDP fijo (7000) + estado global. Con dos llamadas simultáneas la segunda pisa a la primera. Es el bloqueante real para cualquier uso más allá del propio Víctor.
 
-- [ ] **Referencias a `IVRAudioPlayer` activas en `CallAccessibilityService`** (L44-45, 513, 516). Prerequisito para cualquier limpieza o refactor del servicio principal.
-
-- [ ] **Permisos residuales en `AndroidManifest.xml`:** `BIND_INCALL_SERVICE`, `BIND_TELECOM_CONNECTION_SERVICE`, `CONTROL_INCALL_EXPERIENCE`, `MODIFY_AUDIO_SETTINGS`, `MODIFY_PHONE_STATE`, `MODIFY_AUDIO_ROUTING`. Services residuales: `SpamCallService`, `DialerActivity` (priority=1000), `InCallActivity`.
+- [ ] **Estado del Modo Radical leído de dos sitios distintos.** `WhitelistScreen` lo lee y escribe con `ContactsService.ts`; `DashboardScreen` usa `ContactService.ts`. La fuente autoritativa para la capa nativa es SharedPreferences, y el Dashboard puede mostrar un estado que no es el que aplica el servicio. Unificar en un único servicio.
 
 ### Importante
 
-- [ ] **12 archivos Java residuales** compilados y declarando permisos innecesarios al usuario.
+- [ ] **Residuos IVR on-device:** `IVRAudioPlayer.java` (referenciado en `CallAccessibilityService` L44, L513) e `IVRMessageHelper.java` (referenciado en `CallStateReceiver` L213). Ya no pueden reproducir nada porque el MP3 no se genera, pero siguen compilando. Borrarlos exige limpiar esas 3 referencias primero.
 
-- [ ] **Configuración de Zadarma no documentada en el repo.** Si se pierde, Modo 2 deja de funcionar sin rastro de por qué. Completar la tabla de sección 6 con la URL exacta de reenvío.
+- [ ] **6 permisos residuales en `AndroidManifest.xml`:** `BIND_INCALL_SERVICE`, `BIND_TELECOM_CONNECTION_SERVICE`, `CONTROL_INCALL_EXPERIENCE`, `MODIFY_AUDIO_SETTINGS`, `MODIFY_PHONE_STATE`, `MODIFY_AUDIO_ROUTING`. Los services que los usaban (`SpamCallService`, `DialerActivity`, `InCallActivity`) ya están fuera del manifest — los permisos siguen asustando al usuario sin aportar nada.
 
 - [ ] **Sin tests** en ninguna capa.
 
-- [ ] **`scripts/check-secrets.sh` da falsos positivos.** El pre-commit hook marca como "posible secreto" referencias a `process.env.EXPO_PUBLIC_*` y nombres de variable (`this.apiKey`) en `ElevenLabService.ts`/`GeminiServices.ts`, y una URL de documentación en `.env.example` — ninguno es un secreto real. Además falla `/dev/tty: No such device or address` en entornos no interactivos (CI, agentes) y cae a modo advertencia sin bloquear. No urgente, pero no es fiable como gate hasta que se corrija el patrón de detección y el fallback no interactivo.
+- [ ] **Latencia por turno sin instrumentar.** El paso de AGI a ARI se hizo para bajarla, pero nunca se midió con timestamps reales. Sin cifras no se puede afirmar que el streaming mejoró nada.
 
-- [x] **Modo 3 ✅ Funcional — conversación real con Manolo, migrado a ARI (sept. 2026)**
-  - Motor: `manolo_ari.py` — ARI + ExternalMedia (streaming UDP/RTP), no AGI
-  - LLM: Groq `qwen/qwen3.8-27b`, con historial de conversación real (antes no se enviaba a la API — bug corregido)
-  - TTS: Edge TTS voz es-ES-AlvaroNeural
-  - STT: Deepgram Nova-2 (batch), Whisper por socket como fallback
-  - Barge-in: 800ms de periodo de gracia + 3 frames consecutivos de voz antes de cortar la respuesta (antes: 1 solo frame, demasiado sensible)
-  - Verificado en prueba real: conversación fluida
-  - Latencia por turno: no medida con instrumentación formal todavía — pendiente de confirmar con cifras exactas
+- [ ] **`scripts/check-secrets.sh` no es fiable como gate.** Marca como "posible secreto" el propio texto de este CLAUDE.md que describe el problema, además de referencias a `process.env.EXPO_PUBLIC_*` y nombres de variable. Y falla con `/dev/tty: No such device or address` en entornos no interactivos (CI, agentes), cayendo a modo advertencia sin bloquear.
 
-- [ ] **`RECORD FILE` devuelve timeout en vez de silence (histórico, solo afecta al AGI legacy):** el canal SIP tiene comfort noise que impedía la detección de silencio en `manolo_agi.py`. No aplica al motor actual (`manolo_ari.py` no usa `RECORD FILE`, hace streaming continuo por ExternalMedia).
+- [ ] **"Borrar Todo" en `CallHistoryScreen` solo limpia el historial local.** Las llamadas del servidor (`call_log.json`) reaparecen al siguiente refresco, porque no hay endpoint para borrarlas.
 
-- [ ] **Quota Gemini agotada (histórico, solo afecta al AGI legacy):** `gemini-2.5-flash` tiene límite de 20 req/día en free tier — relevante solo si se vuelve a usar `manolo_agi.py`. `manolo_ari.py` (motor en producción) no tiene fallback a Gemini, solo Groq con un mensaje fijo de emergencia si la API falla.
+### Resueltos en esta sesión (sept. 2026)
+
+- [x] **Modo 2 reproducía a Manolo en lugar del mensaje fijo.** `manolo_ari.py` no leía `current_mode.json`: la rama FIXED nunca se había portado del AGI. Añadidos `get_current_mode()`, `elegir_sonido_fijo()` y `run_fixed()`.
+- [x] **El mensaje fijo no se encontraba** — ruta y idioma equivocados. Ver lección 1.
+- [x] **Modo FIXED no colgaba hasta el timeout** — interbloqueo del bucle de eventos ARI. Ver lección 3.
+- [x] **La app no sincronizaba con el VPS** — puerto 5000 cerrado en UFW. Ver lección 4.
+- [x] **Referencias a `IVRAudioPlayer` documentadas y acotadas** — dejan de ser un riesgo ciego para refactorizar.
+- [x] **Modo 3 funcional con ARI.** Groq `qwen/qwen3.8-27b` con historial real (antes no se enviaba a la API), Edge TTS `es-ES-AlvaroNeural`, Deepgram Nova-2 con Whisper de fallback, barge-in con 800 ms de gracia + 3 frames consecutivos.
+- [x] **Builds rotos por cachés CMake obsoletas.** `build-fresh.sh` borra los `.cxx` de `android/app` y de `node_modules/*/android/`.
 
 ### Menor
 
 - [ ] Typo en nombre del repo: `Bolcker` → `Blocker`
-- [ ] `test.mp3` en la raíz
-- [ ] READMEs de planificación obsoletos en raíz
 
 ---
 
@@ -417,17 +469,21 @@ asterisk -rx "dialplan reload"
 
 En orden de prioridad lógica:
 
-1. **Resolver coordinación Modo 2:** decidir si la lógica IVR on-device se elimina o coordina con el servidor. La opción limpia es que el servidor gestione el audio y el teléfono solo registre el evento.
+1. **Asignación dinámica de puertos UDP en `manolo_ari.py`.** Hoy puerto fijo 7000 + estado global = una sola llamada concurrente. Es el techo real del sistema.
 
-2. **Documentar configuración Zadarma** en sección 6 de este fichero.
+2. **Medir latencia por turno con timestamps reales.** Instrumentar recepción de audio → STT → LLM → TTS → primer paquete RTP de vuelta. Sin esto no se sabe si el cambio a streaming sirvió.
 
-3. **Limpiar residuos:** empezar por las referencias a `IVRAudioPlayer` en `CallAccessibilityService`, luego los 12 archivos Java y el Manifest.
+3. **Unificar `ContactService.ts` y `ContactsService.ts`** y dejar una sola fuente para el Modo Radical.
 
-4. ~~**Modo 3 — Agente IA conversacional**~~ ✅ **Completado.** Primero con `manolo_agi.py` (AGI unificado), y desde sept. 2026 migrado a `manolo_ari.py` (ARI + ExternalMedia, streaming). Funcional en producción.
+4. **Limpiar residuos:** quitar las 3 referencias a `IVRAudioPlayer`/`IVRMessageHelper`, borrar los dos ficheros, y después los 6 permisos del manifest.
 
-5. **Medir latencia real por turno con `manolo_ari.py`.** El cambio a streaming se hizo para bajar la latencia frente al AGI, pero no se ha instrumentado con timestamps reales — pendiente antes de dar por optimizado el rendimiento.
+5. **Arreglar `scripts/check-secrets.sh`** o retirarlo: un gate que siempre avisa y nunca bloquea no es un gate.
 
-6. **Asignación dinámica de puertos UDP en `manolo_ari.py`.** Hoy usa un puerto fijo (7000) y estado global — soporta una sola llamada concurrente, no escala a producción con varias llamadas simultáneas.
+6. ~~**Modo 3 — Agente IA conversacional**~~ ✅ **Completado.** Primero con `manolo_agi.py`, y desde sept. 2026 con `manolo_ari.py` (ARI + ExternalMedia, streaming).
+
+7. ~~**Resolver coordinación Modo 2**~~ ✅ **Resuelto de facto** al eliminar `IVRGeneratorModule`: el teléfono ya no puede reproducir audio en Modo 2 (sección 4).
+
+8. ~~**Documentar configuración Zadarma**~~ ✅ **Hecho** en la sección 14.
 
 ---
 
@@ -484,19 +540,30 @@ ufw allow from 15.235.128.64/28 to any port 5060 proto udp
 
 Con solo 3 subnets las llamadas llegan intermitentemente. Deben estar las 6.
 
+**Firewall UFW — puerto de la API de control (imprescindible para la app):**
+
+```bash
+ufw allow 5000/tcp
+```
+
+Sin esta regla `control_api.py` está escuchando pero inalcanzable desde el móvil: la app no puede cambiar de modo ni sincronizar el mensaje fijo, y falla **en silencio**. Es la lección 4 de la sección 15.
+
 ---
 
 ### Bugs de configuración resueltos (VPS)
 
 Estos bugs costaron horas — documentados para no repetirlos:
 
-| #   | Síntoma                          | Causa                                                                          | Solución                                                       |
-| --- | -------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------- |
-| 1   | Llamadas no llegan al VPS        | External Server con puerto `5000` en panel Zadarma                             | Cambiar a `34919933065@157.180.35.161:5060`                    |
-| 2   | Llamadas llegan solo a veces     | Solo 3 subnets de Zadarma en UFW                                               | Añadir las 6 subnets completas                                 |
-| 3   | AGI no encontrado por Asterisk   | Script en `/root/ai_bridge/`, Asterisk busca en `/usr/share/asterisk/agi-bin/` | Copiar con `chmod +x` al directorio correcto                   |
-| 4   | Audio no encontrado por Asterisk | Audio en `/root/ai_bridge/`, Asterisk busca en `/var/lib/asterisk/sounds/`     | Copiar como `fixed_spam_message.wav` al directorio correcto    |
-| 5   | Sub-AGI falla (Modo 3)           | `decision_agi.py` no leía el header AGI de Asterisk antes de enviar comandos   | Unificar en `manolo_agi.py` con `agi_read_headers()` al inicio |
+| #   | Síntoma                               | Causa                                                                                     | Solución                                                            |
+| --- | ------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| 1   | Llamadas no llegan al VPS             | External Server con puerto `5000` en panel Zadarma                                        | Cambiar a `34919933065@157.180.35.161:5060`                         |
+| 2   | Llamadas llegan solo a veces          | Solo 3 subnets de Zadarma en UFW                                                          | Añadir las 6 subnets completas                                      |
+| 3   | AGI no encontrado por Asterisk        | Script en `/root/ai_bridge/`, Asterisk busca en `/usr/share/asterisk/agi-bin/`            | Copiar con `chmod +x` al directorio correcto                        |
+| 4   | Audio no encontrado por Asterisk      | Audio en `/root/ai_bridge/`, fuera del árbol que lee el usuario `asterisk`                | Copiar como `.wav` a `/usr/share/asterisk/sounds/es/`               |
+| 5   | Sub-AGI falla (Modo 3)                | `decision_agi.py` no leía el header AGI de Asterisk antes de enviar comandos              | Unificar en `manolo_agi.py` con `agi_read_headers()` al inicio      |
+| 6   | `sound:` da "File does not exist"     | Asterisk resuelve contra el **Data directory** (`/usr/share/asterisk`), no `/var/lib`     | `SOUNDS_DIR = '/usr/share/asterisk/sounds/es'` en los dos ficheros  |
+| 7   | Mismo error con la ruta ya correcta   | El canal de Zadarma llega con `language=en`, y `sound:` se resuelve por idioma de canal   | Pasar `lang='es'` explícito en `POST /channels/{id}/play`           |
+| 8   | La app no cambia de modo ni sincroniza| Puerto 5000/tcp cerrado en UFW — el servicio estaba arriba, el puerto no                  | `ufw allow 5000/tcp`                                                |
 
 ---
 
@@ -545,10 +612,70 @@ journalctl -u manolo_ari -f
 systemctl restart asterisk
 systemctl restart asterisk-control-api
 systemctl restart manolo_ari
+
+# Comprobar que el puerto de la API está realmente abierto (lección 4)
+ufw status | grep 5000
+curl http://157.180.35.161:5000/get_mode   # desde fuera del VPS
+
+# Verificar que el mensaje fijo existe donde Asterisk lo busca (lección 1)
+ls -l /usr/share/asterisk/sounds/es/custom_fixed_message.wav
+ls -l /usr/share/asterisk/sounds/es/fixed_spam_message.wav
 ```
+
+---
+
+## 15. Lecciones aprendidas — trampas ya pisadas
+
+Cuatro fallos que costaron una sesión entera cada uno. Si algo de Modo 1 o Modo 2 se rompe, empezar por aquí.
+
+### Lección 1 — Asterisk busca los sonidos en `/usr/share/asterisk`, no en `/var/lib/asterisk`
+
+**Síntoma:** `sound:fixed_spam_message` daba "File does not exist" aunque el WAV estaba en `/var/lib/asterisk/sounds/es/`.
+
+**Causa:** el *Data directory* de esta instalación es `/usr/share/asterisk` — el mismo árbol donde vive `agi-bin/`. Todo lo que Asterisk resuelve por nombre lógico (`sound:`) se busca ahí.
+
+**Y un segundo nivel:** con la ruta ya correcta seguía fallando, porque `sound:` se resuelve **por idioma del canal** y el canal de Zadarma llega con `language=en` → Asterisk buscaba en `sounds/en/`. Hay que pasar `lang='es'` explícito en `POST /channels/{id}/play`.
+
+**Regla:** al añadir audio, `ls` en `/usr/share/asterisk/sounds/es/` y pasar `lang` siempre. Nunca fiarse del idioma del canal.
+
+### Lección 2 — El Accessibility Service no es eliminable
+
+**Síntoma:** tras quitar `CallAccessibilityService` y mover la lógica a `CallStateReceiver`, en dispositivo real la app **detectaba el spam pero no contestaba ni colgaba**.
+
+**Causa:** `CallStateReceiver` está declarado en el manifest, y Android crea **una instancia nueva por cada broadcast**. Los campos de instancia (`lastIncomingNumber`, `wasRingingBeforeOffhook`) no sobreviven de RINGING a OFFHOOK, y `EXTRA_INCOMING_NUMBER` solo viaja en RINGING. Al llegar OFFHOOK el receiver no sabe a qué número pertenece la llamada, así que no cuelga. `CallScreeningService`, por su parte, **no puede contestar** una llamada por diseño.
+
+**Regla:** Modo 1 depende del Accessibility Service. Si se vuelve a intentar quitarlo, el estado entre broadcasts tiene que persistirse (SharedPreferences), y aun así hay que **probarlo en dispositivo real** antes de dar nada por bueno. Revertido en `03782bc`.
+
+### Lección 3 — No hacer `await` de un handler largo dentro del bucle de eventos ARI
+
+**Síntoma:** en Modo 2 el mensaje fijo se oía completo, pero la llamada no colgaba hasta agotar el timeout de 20 s.
+
+**Causa:** `run_ari_events()` despacha con `await handler(event)` **dentro** de `async for raw in ws`. `run_fixed()` esperaba el evento `PlaybackFinished`… que no podía leerse, porque el bucle que lo lee estaba suspendido dentro del propio handler. Interbloqueo clásico: el handler espera un evento que solo llegará cuando el handler termine.
+
+**Solución:** lanzar `run_fixed()` con `asyncio.create_task()` y guardar una referencia fuerte contra el GC.
+
+**Matiz importante:** **no** convertir todo el dispatcher a `create_task`. El `StasisStart` del canal `UnicastRTP/` lee `call_state.bridge_id` que escribe el `StasisStart` del canal entrante; hoy funciona porque los handlers corren en orden. Hacerlos todos concurrentes provocaría una carrera justo en el camino de Modo 3, que sí funciona.
+
+### Lección 4 — Puerto 5000 cerrado en UFW: la app falla en silencio
+
+**Síntoma:** `control_api.py` arriba y sano (`systemctl status` OK, `curl` local OK), pero la app no cambiaba de modo ni sincronizaba el mensaje fijo. Sin error visible.
+
+**Causa:** el puerto 5000/tcp no estaba abierto en UFW. Las peticiones del móvil se descartaban antes de llegar a Flask, y `BackendSyncService` está escrito para degradar en silencio (timeout de 5 s, devuelve vacío en vez de lanzar) — lo cual es correcto para la UX, pero esconde el fallo.
+
+**Solución:** `ufw allow 5000/tcp`.
+
+**Regla de diagnóstico:** "el servicio está arriba" no significa "el servicio es alcanzable". Verificar siempre desde **fuera** del VPS:
+
+```bash
+curl http://157.180.35.161:5000/get_mode
+```
+
+Si responde en local pero no desde fuera, es el firewall.
 
 ---
 
 Limpieza agosto 2026: eliminados residuos de Twilio, DefaultDialer, IVR local y AGI scripts obsoletos. Stack del servidor en ese momento: manolo_agi.py único AGI.
 
 Migración septiembre 2026: `[from-zadarma]` pasa de `AGI(manolo_agi.py)` a `Stasis(manolo-ari)`. Motor Modo 3 en producción: `manolo_ari.py` (ARI + ExternalMedia) + Deepgram Nova-2 + Groq `qwen/qwen3.8-27b` + Edge TTS. `manolo_agi.py` y Whisper quedan como backup/fallback, no eliminados.
+
+Sesión 26 septiembre 2026: `manolo_ari.py` asume también el Modo 2 (`run_fixed()` leyendo `current_mode.json`). Limpieza de UI en `refactor/ui-cleanup-sept-2026`: fuera `AITestsScreen`, `ElevenLabsService`, `GeminiServices`, `IVRGeneratorModule`, `SpeechRecognitionModule`; historial del servidor fusionado en `CallHistoryScreen`. Modos 1 y 2 verificados en dispositivo real. Documentadas las 4 lecciones de la sección 15.
