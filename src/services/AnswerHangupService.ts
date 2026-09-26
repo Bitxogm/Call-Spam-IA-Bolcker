@@ -155,6 +155,35 @@ class AnswerHangupService {
   };
 
   /**
+   * Verifica si el servicio de Accesibilidad está habilitado
+   *
+   * CRÍTICO: Para que funcione Modo 1 (Answer+Hangup) necesitamos el
+   * Accessibility Service: CallStateReceiver solo no consigue colgar.
+   */
+  isAccessibilityServiceEnabled = async (): Promise<boolean> => {
+    try {
+      const isEnabled = await AnswerHangupModule.isAccessibilityServiceEnabled();
+      return isEnabled;
+    } catch (error) {
+      console.error('❌ Error verificando Accessibility Service:', error);
+      return false;
+    }
+  };
+
+  /**
+   * Abre la configuración de Accesibilidad
+   */
+  openAccessibilitySettings = async (): Promise<boolean> => {
+    try {
+      await AnswerHangupModule.openAccessibilitySettings();
+      return true;
+    } catch (error) {
+      console.error('❌ Error abriendo configuración de Accesibilidad:', error);
+      return false;
+    }
+  };
+
+  /**
    * Prueba si un número sería bloqueado por los prefijos 800/900
    * TESTING: Para verificar que la lógica de bloqueo funciona
    */

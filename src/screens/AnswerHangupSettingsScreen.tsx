@@ -14,6 +14,8 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
   const [mode, setMode] = useState<'HANGUP_IMMEDIATELY' | 'BACKEND_FIXED' | 'BACKEND_AI'>('HANGUP_IMMEDIATELY');
   const [delay, setDelay] = useState(2);
   const [loading, setLoading] = useState(true);
+  const [isAccessibilityEnabled, setIsAccessibilityEnabled] = useState(false);
+  const [checkingAccessibility, setCheckingAccessibility] = useState(false);
 
   // Estados para Mensajes TTS (Escudo 2)
   const [customMessage, setCustomMessage] = useState('Identificado como spam, no vuelva a llamar.');
@@ -28,7 +30,15 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
   // Cargar configuración al iniciar
   useEffect(() => {
     loadSettings();
+    checkAccessibilityService();
   }, []);
+
+  // Verificar Accessibility Service cuando cambie el modo o se active
+  useEffect(() => {
+    if (isEnabled && (mode === 'BACKEND_FIXED' || mode === 'BACKEND_AI')) {
+      checkAccessibilityService();
+    }
+  }, [mode, isEnabled]);
 
   const loadSettings = async () => {
     try {
@@ -177,6 +187,55 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
     }
   };
 
+  /**
+   * Verifica si el Accessibility Service está habilitado
+   */
+  const checkAccessibilityService = async () => {
+    try {
+      setCheckingAccessibility(true);
+      const enabled = await answerHangupService.isAccessibilityServiceEnabled();
+      setIsAccessibilityEnabled(enabled);
+      console.log('♿ Accessibility Service:', enabled ? 'HABILITADO' : 'DESHABILITADO');
+    } catch (error) {
+      console.error('❌ Error verificando Accessibility Service:', error);
+      setIsAccessibilityEnabled(false);
+    } finally {
+      setCheckingAccessibility(false);
+    }
+  };
+
+  /**
+   * Abre la configuración de Accesibilidad
+   */
+  const openAccessibilitySettings = async () => {
+    try {
+      await answerHangupService.openAccessibilitySettings();
+
+      Alert.alert(
+        '📱 Configuración de Accesibilidad',
+        'Pasos a seguir:\n\n' +
+        '1. Busca "SpamBlocker" o "SpamBlockerApp" en la lista\n' +
+        '2. Activa el servicio moviendo el interruptor\n' +
+        '3. Acepta el permiso cuando se solicite\n' +
+        '4. Regresa a esta pantalla\n\n' +
+        'Cuando regreses, la app verificará automáticamente el estado.',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              // Verificar después de 3 segundos para dar tiempo al usuario
+              setTimeout(() => {
+                checkAccessibilityService();
+              }, 3000);
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo abrir la configuración de Accesibilidad');
+    }
+  };
+
   const handleModeChange = async (newMode: 'HANGUP_IMMEDIATELY' | 'BACKEND_FIXED' | 'BACKEND_AI') => {
     try {
       // Mapear nuevos modos a los estados internos del servicio si es necesario
@@ -248,6 +307,50 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
         >
           <Text style={styles.diagnosticButtonText}>🔍 Verificar Permisos</Text>
         </TouchableOpacity>
+      )}
+
+      {/* ADVERTENCIA DE ACCESSIBILITY SERVICE */}
+      {isEnabled && (mode === 'BACKEND_FIXED' || mode === 'BACKEND_AI') && !isAccessibilityEnabled && (
+        <View style={styles.accessibilityWarning}>
+          <View style={styles.warningHeader}>
+            <Text style={styles.warningIcon}>⚠️</Text>
+            <Text style={styles.warningTitle}>Servicio de Accesibilidad Requerido</Text>
+          </View>
+
+          <Text style={styles.warningText}>
+            Para usar Modo 2 (IVR) o Modo 3 (IA), necesitas activar el Servicio de Accesibilidad de SpamBlocker.
+          </Text>
+
+          <Text style={styles.warningDescription}>
+            Este servicio permite que la app conteste automáticamente las llamadas spam.
+            NO recopila información personal y solo se activa cuando Answer+Hangup está habilitado.
+          </Text>
+
+          <TouchableOpacity
+            style={styles.accessibilityButton}
+            onPress={openAccessibilitySettings}
+          >
+            <Text style={styles.accessibilityButtonText}>♿ Abrir Configuración de Accesibilidad</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.recheckButton}
+            onPress={checkAccessibilityService}
+            disabled={checkingAccessibility}
+          >
+            <Text style={styles.recheckButtonText}>
+              {checkingAccessibility ? '🔄 Verificando...' : '🔄 Verificar de nuevo'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* CONFIRMACIÓN DE ACCESSIBILITY SERVICE */}
+      {isEnabled && (mode === 'BACKEND_FIXED' || mode === 'BACKEND_AI') && isAccessibilityEnabled && (
+        <View style={styles.accessibilitySuccess}>
+          <Text style={styles.successIcon}>✅</Text>
+          <Text style={styles.successText}>Servicio de Accesibilidad activado correctamente</Text>
+        </View>
       )}
 
       {/* ENABLE/DISABLE */}
@@ -601,6 +704,87 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#cccccc',
     lineHeight: 22,
+  },
+  accessibilityWarning: {
+    backgroundColor: '#3a2a1a',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: '#ff9900',
+  },
+  warningHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  warningIcon: {
+    fontSize: 24,
+    marginRight: 8,
+  },
+  warningTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#ff9900',
+    flex: 1,
+  },
+  warningText: {
+    fontSize: 14,
+    color: '#ffcc88',
+    marginBottom: 12,
+    lineHeight: 20,
+    fontWeight: '600',
+  },
+  warningDescription: {
+    fontSize: 13,
+    color: '#cccccc',
+    marginBottom: 16,
+    lineHeight: 19,
+  },
+  accessibilityButton: {
+    backgroundColor: '#ff9900',
+    padding: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  accessibilityButtonText: {
+    color: '#000000',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  recheckButton: {
+    backgroundColor: '#2a2a2a',
+    padding: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#555555',
+  },
+  recheckButtonText: {
+    color: '#aaaaaa',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  accessibilitySuccess: {
+    backgroundColor: '#1a3a2a',
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: '#00ff88',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  successIcon: {
+    fontSize: 24,
+    marginRight: 12,
+  },
+  successText: {
+    fontSize: 15,
+    color: '#00ff88',
+    fontWeight: '600',
+    flex: 1,
   },
   // Estilos para Editor de Mensaje Fijo
   fixedMessageEditor: {

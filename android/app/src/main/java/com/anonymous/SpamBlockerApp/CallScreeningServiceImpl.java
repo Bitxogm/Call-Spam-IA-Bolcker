@@ -91,7 +91,7 @@ public class CallScreeningServiceImpl extends CallScreeningService {
                     Log.d(TAG, "🔇 Answer+Hangup ACTIVO - Modo: " + mode.name());
                     
                     if (mode == AnswerHangupHelper.Mode.HANGUP_IMMEDIATELY) {
-                        // MODO 1: Permitir que suene para que CallStateReceiver lo conteste y cuelgue
+                        // MODO 1: Permitir que suene para que AccessibilityService/Receiver lo conteste y cuelgue
                         Log.d(TAG, "🔓 MODO 1: Permitir llamada para auto-contestación local");
                         showToast("🔇 Escudo 1: Se contestará pronto...");
                         
