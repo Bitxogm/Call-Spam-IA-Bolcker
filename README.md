@@ -28,7 +28,7 @@ MODO 2
   Llamada entrante
     └── Operador GSM aplica desvío USSD (*21*34919933065#)
           └── Zadarma (+34 919 93 30 65)
-                └── SIP INVITE → VPS Asterisk (157.180.35.161:5060)
+                └── SIP INVITE → VPS Asterisk (TU_VPS_IP:5060)
                       └── extensions.conf [from-zadarma] → Stasis(manolo-ari)
                             └── manolo_ari.py lee current_mode.json
                                   └── FIXED → Playback fixed_spam_message → Hangup
@@ -45,7 +45,7 @@ MODO 3 (migrado a ARI en septiembre 2026)
                   └── TTS: Edge TTS (es-ES-AlvaroNeural) → mulaw 8kHz → RTP de vuelta
 ```
 
-La app controla el modo activo (FIXED/AI) vía `BackendSyncService.ts` → `POST http://157.180.35.161:5000/set_mode`. `manolo_ari.py` lee ese mismo `current_mode.json`.
+La app controla el modo activo (FIXED/AI) vía `BackendSyncService.ts` → `POST http://TU_VPS_IP:5000/set_mode`. `manolo_ari.py` lee ese mismo `current_mode.json`.
 
 ### Estado por capa (importante)
 
@@ -69,7 +69,7 @@ La app controla el modo activo (FIXED/AI) vía `BackendSyncService.ts` → `POST
 | TTS en VPS (producción)        | Edge TTS voz `es-ES-AlvaroNeural` → mulaw 8kHz                              |
 | STT en VPS (producción)        | Deepgram Nova-2 (batch) — Whisper por socket Unix como fallback             |
 | API de control                 | Flask — `control_api.py` (puerto 5000)                                      |
-| Infraestructura                | VPS Hetzner Ubuntu 24.04 — `157.180.35.161`                                 |
+| Infraestructura                | VPS Hetzner Ubuntu 24.04                                                    |
 
 ---
 
@@ -85,7 +85,7 @@ La app controla el modo activo (FIXED/AI) vía `BackendSyncService.ts` → `POST
 
 - Número Zadarma activo con reenvío configurado al VPS vía SIP
 - VPS con Asterisk (ARI activo en `ari.conf`/`http.conf`), Python 3.12 y venv con dependencias instaladas
-- Fichero `/root/ai_bridge/.env` con `GROQ_API_KEY`, `DEEPGRAM_API_KEY` y `ARI_PASSWORD`
+- Fichero `.env` en el directorio de despliegue del VPS con `GROQ_API_KEY`, `DEEPGRAM_API_KEY` y `ARI_PASSWORD`
 
 ---
 
@@ -102,15 +102,23 @@ npm install
 Crear `.env` en la raíz del proyecto:
 
 ```env
-EXPO_PUBLIC_GEMINI_API_KEY=tu_api_key
-EXPO_PUBLIC_GEMINI_MODEL=gemini-2.5-flash
-EXPO_PUBLIC_ELEVENLABS_API_KEY=tu_api_key
-EXPO_PUBLIC_GROQ_API_KEY=tu_api_key
-EXPO_PUBLIC_VPS_IP=157.180.35.161
+EXPO_PUBLIC_VPS_IP=TU_VPS_IP
 EXPO_PUBLIC_VPS_PORT=5000
 ```
 
-> Nota: en producción Modo 3 del VPS se usa `GROQ_API_KEY` (server-side). Las variables `EXPO_PUBLIC_*` pertenecen a la app móvil y pueden no reflejar al 100% el pipeline AGI de Asterisk.
+> Las claves de IA (Groq, Deepgram) son server-side y viven en el `.env` del VPS. La app no lleva ninguna.
+
+### Keystore de debug
+
+`android/app/debug.keystore` no está en el repo. `build.gradle` lo necesita para firmar el
+APK de debug, así que en una máquina nueva hay que generarlo:
+
+```bash
+keytool -genkey -v -keystore android/app/debug.keystore \
+  -storepass android -alias androiddebugkey -keypass android \
+  -keyalg RSA -keysize 2048 -validity 10000 \
+  -dname "CN=Android Debug,O=Android,C=US"
+```
 
 Compilar e instalar:
 

@@ -15,7 +15,7 @@
 - **Nivel:** Junior Full-Stack Developer — recién graduado KeepCoding bootcamp 2025-2026
 - **Stack principal:** Next.js, React, TypeScript, Node.js/Express, Python, PostgreSQL, MongoDB, Docker, Prisma, TailwindCSS
 - **Intereses paralelos:** ciberseguridad y ethical hacking
-- **Infraestructura:** VPS Hetzner Ubuntu 24.04 (IP `157.180.35.161`, SSH puerto 2222)
+- **Infraestructura:** VPS Hetzner Ubuntu 24.04 — IP, puerto SSH y rutas en `CLAUDE.local.md`
 - **Estilo de trabajo:** directo, una tarea concreta a la vez con resultado verificable
 - **Dispositivos de desarrollo/testing:** Pixel 8 (GrapheneOS) — dispositivo principal; Samsung Galaxy Note 20 — dispositivo secundario/simulador de spammer
 
@@ -133,7 +133,7 @@ Sigue siendo deuda cosmética — el código muerto conviene borrarlo — pero y
 | Requiere Accessibility Service | ✅ **imprescindible**                     | ❌                                        | ❌                               |
 | Requiere VPS                   | ❌                                        | ✅                                        | ✅                               |
 | Requiere Zadarma config        | ❌                                        | ✅                                        | ✅                               |
-| Requiere puerto 5000 abierto   | ❌                                        | ✅ (sincronizar mensaje)                  | ✅ (cambiar de modo)             |
+| Sincroniza con la app          | ❌ no lo necesita                         | ⛔ no (5000 cerrado, ver lección 4)       | ⛔ no (5000 cerrado)             |
 | Estado actual                  | ✅ verificado en dispositivo (sept. 2026) | ✅ verificado en dispositivo (sept. 2026) | ✅ funcional (ARI)               |
 
 ⚠️ **Los códigos USSD reales no son `*21*`.** Desde `b41448d` (marzo 2026) `CallForwardingManager` usa el código **67** y el número **sin prefijo de país**: `*67*919933065#` / `##67#` / `*#67#`. La documentación anterior de este fichero decía `*21*34919933065#`, que no es lo que ejecuta la app. El código GSM estándar de desvío incondicional es `*21*` y `*67*` es desvío en ocupado, pero `*67*` es el que funciona con el operador de Víctor — no cambiarlo sin probar en dispositivo.
@@ -185,7 +185,7 @@ Asterisk [from-zadarma]
 - `POST /set_mode` — body `{"mode": "FIXED"|"AI"}` → escribe `current_mode.json`
 - `GET /get_mode` — devuelve el modo actual
 - `POST /set_message` — body `{"text": "..."}` (⚠️ la clave es `text`, no `message`) → gTTS + ffmpeg (8 kHz mono pcm_s16le) → `/usr/share/asterisk/sounds/es/custom_fixed_message.wav`
-- `GET /call_log` — últimas 50 llamadas atendidas por el servidor, ordenadas por `timestamp_inicio` desc. Las escribe `manolo_ari.py` en `/root/ai_bridge/call_log.json`; las consume `CallHistoryScreen` vía `BackendSyncService.getCallLog()`
+- `GET /call_log` — últimas 50 llamadas atendidas por el servidor, ordenadas por `timestamp_inicio` desc. Las escribe `manolo_ari.py` en `<BRIDGE_DIR>/call_log.json`; las consume `CallHistoryScreen` vía `BackendSyncService.getCallLog()`
 
 **Audio del mensaje fijo (Modo 2) — ruta crítica:**
 
@@ -211,9 +211,9 @@ Esta configuración no vive en el código. Si se pierde, el Modo 2 deja de funci
 
 | Servicio             | Número/URL         | Configuración                                                                                                                                                                                                                    |
 | -------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Zadarma**          | `+34919933065`     | Reenvío de entrantes → VPS. External Server: `34919933065@157.180.35.161:5060`, SIP Login `#719926` (detalle en sección 14)                                                                                                       |
-| **VPS — SIP**        | `157.180.35.161`   | Puerto 5060/udp abierto solo a las 6 subnets de Zadarma                                                                                                                                                                          |
-| **VPS — control API**| `157.180.35.161`   | Puerto **5000/tcp abierto en UFW** — sin esta regla la app no sincroniza ni el modo ni el mensaje fijo, y falla en silencio (ver lección 4, sección 15)                                                                           |
+| **Zadarma**          | ver `CLAUDE.local.md` | Reenvío de entrantes → VPS por SIP. Número, SIP Login y External Server en el fichero local                                                                                                                                    |
+| **VPS — SIP**        | ver `CLAUDE.local.md` | Puerto 5060/udp abierto solo a las 6 subnets de Zadarma                                                                                                                                                                       |
+| **VPS — control API**| ver `CLAUDE.local.md` | Puerto **5000/tcp CERRADO a propósito**. No abrirlo hasta que `control_api.py` autentique por token: `GET /call_log` expone números de terceros. Mientras tanto la app no sincroniza (ver lección 4, sección 15)               |
 | **Deepgram**         | `api.deepgram.com` | $200 crédito gratuito. **STT principal desde sept. 2026** (Nova-2, batch) en `manolo_ari.py` — verificado en prueba real sobre audio del ExternalMedia (RTP/mulaw 8 kHz). Whisper queda como fallback si Deepgram falla           |
 | **Groq**             | `api.groq.com`     | LLM de Manolo: `qwen/qwen3.8-27b`. Si la API falla, `manolo_ari.py` responde con un mensaje fijo de emergencia, no hay fallback a otro proveedor                                                                                  |
 | **Gemini**           | Google AI Studio   | Ya **no se usa**. Era el fallback de `manolo_agi.py` (20 req/día en free tier). `GeminiServices.ts` eliminado de la app                                                                                                           |
@@ -306,11 +306,11 @@ Call-Spam-IA-Blocker/
 
 ## 8. Variables de entorno
 
-Solo quedan dos. Las claves de IA (Groq, Deepgram) viven en `/root/ai_bridge/.env` **en el VPS**, nunca en la app.
+Solo quedan dos. Las claves de IA (Groq, Deepgram) viven en el `.env` **del VPS**, nunca en la app.
 
 ```env
 # VPS — control_api.py
-EXPO_PUBLIC_VPS_IP=157.180.35.161
+EXPO_PUBLIC_VPS_IP=TU_VPS_IP
 EXPO_PUBLIC_VPS_PORT=5000
 ```
 
@@ -416,7 +416,7 @@ asterisk -rx "dialplan reload"
 
 | Valor                                | Archivo        | Línea | Notas                                       |
 | ------------------------------------ | -------------- | ----- | ------------------------------------------- |
-| `/root/ai_bridge/current_mode.json`  | manolo_ari.py  | L63   | Estado del modo, lo escribe `control_api.py` |
+| `<BRIDGE_DIR>/current_mode.json`     | manolo_ari.py  | L63   | Estado del modo, lo escribe `control_api.py` |
 | `/usr/share/asterisk/sounds/es`      | manolo_ari.py  | L64   | Data directory de Asterisk                  |
 | `/usr/share/asterisk/sounds/es`      | control_api.py | L10   | Debe coincidir con la de `manolo_ari.py`    |
 | `custom_fixed_message`               | manolo_ari.py  | L65   | Mensaje fijo del usuario                    |
@@ -437,6 +437,8 @@ asterisk -rx "dialplan reload"
 
 ### Importante
 
+- [ ] **`control_api.py` sin autenticación.** Ningún endpoint valida nada. Por eso 5000/tcp sigue cerrado en UFW y la app no puede sincronizar: abrirlo hoy expondría `GET /call_log` —  números de terceros — a cualquiera. Prerequisito para que los Modos 2/3 se controlen desde el móvil. Ver lección 4 y el punto 1 del roadmap.
+
 - [ ] **Residuos IVR on-device:** `IVRAudioPlayer.java` (referenciado en `CallAccessibilityService` L44, L513) e `IVRMessageHelper.java` (referenciado en `CallStateReceiver` L213). Ya no pueden reproducir nada porque el MP3 no se genera, pero siguen compilando. Borrarlos exige limpiar esas 3 referencias primero.
 
 - [ ] **6 permisos residuales en `AndroidManifest.xml`:** `BIND_INCALL_SERVICE`, `BIND_TELECOM_CONNECTION_SERVICE`, `CONTROL_INCALL_EXPERIENCE`, `MODIFY_AUDIO_SETTINGS`, `MODIFY_PHONE_STATE`, `MODIFY_AUDIO_ROUTING`. Los services que los usaban (`SpamCallService`, `DialerActivity`, `InCallActivity`) ya están fuera del manifest — los permisos siguen asustando al usuario sin aportar nada.
@@ -454,7 +456,6 @@ asterisk -rx "dialplan reload"
 - [x] **Modo 2 reproducía a Manolo en lugar del mensaje fijo.** `manolo_ari.py` no leía `current_mode.json`: la rama FIXED nunca se había portado del AGI. Añadidos `get_current_mode()`, `elegir_sonido_fijo()` y `run_fixed()`.
 - [x] **El mensaje fijo no se encontraba** — ruta y idioma equivocados. Ver lección 1.
 - [x] **Modo FIXED no colgaba hasta el timeout** — interbloqueo del bucle de eventos ARI. Ver lección 3.
-- [x] **La app no sincronizaba con el VPS** — puerto 5000 cerrado en UFW. Ver lección 4.
 - [x] **Referencias a `IVRAudioPlayer` documentadas y acotadas** — dejan de ser un riesgo ciego para refactorizar.
 - [x] **Modo 3 funcional con ARI.** Groq `qwen/qwen3.8-27b` con historial real (antes no se enviaba a la API), Edge TTS `es-ES-AlvaroNeural`, Deepgram Nova-2 con Whisper de fallback, barge-in con 800 ms de gracia + 3 frames consecutivos.
 - [x] **Builds rotos por cachés CMake obsoletas.** `build-fresh.sh` borra los `.cxx` de `android/app` y de `node_modules/*/android/`.
@@ -469,101 +470,43 @@ asterisk -rx "dialplan reload"
 
 En orden de prioridad lógica:
 
-1. **Asignación dinámica de puertos UDP en `manolo_ari.py`.** Hoy puerto fijo 7000 + estado global = una sola llamada concurrente. Es el techo real del sistema.
+1. **Autenticar `control_api.py` con `X-API-Key`.** Es **prerequisito para que la app sincronice con el servidor**: hasta que exista, 5000/tcp se queda cerrado en UFW y los Modos 2/3 solo se controlan desde el propio VPS. Hoy ningún endpoint valida nada y `GET /call_log` devuelve números de terceros. Toca `control_api.py` (comparar la cabecera con una variable de entorno) y `BackendSyncService.ts` (enviarla). Solo después: `ufw allow 5000/tcp`.
 
-2. **Medir latencia por turno con timestamps reales.** Instrumentar recepción de audio → STT → LLM → TTS → primer paquete RTP de vuelta. Sin esto no se sabe si el cambio a streaming sirvió.
+2. **Asignación dinámica de puertos UDP en `manolo_ari.py`.** Hoy puerto fijo 7000 + estado global = una sola llamada concurrente. Es el techo real del sistema.
 
-3. **Unificar `ContactService.ts` y `ContactsService.ts`** y dejar una sola fuente para el Modo Radical.
+3. **Medir latencia por turno con timestamps reales.** Instrumentar recepción de audio → STT → LLM → TTS → primer paquete RTP de vuelta. Sin esto no se sabe si el cambio a streaming sirvió.
 
-4. **Limpiar residuos:** quitar las 3 referencias a `IVRAudioPlayer`/`IVRMessageHelper`, borrar los dos ficheros, y después los 6 permisos del manifest.
+4. **Unificar `ContactService.ts` y `ContactsService.ts`** y dejar una sola fuente para el Modo Radical.
 
-5. **Arreglar `scripts/check-secrets.sh`** o retirarlo: un gate que siempre avisa y nunca bloquea no es un gate.
+5. **Limpiar residuos:** quitar las 3 referencias a `IVRAudioPlayer`/`IVRMessageHelper`, borrar los dos ficheros, y después los 6 permisos del manifest.
 
-6. ~~**Modo 3 — Agente IA conversacional**~~ ✅ **Completado.** Primero con `manolo_agi.py`, y desde sept. 2026 con `manolo_ari.py` (ARI + ExternalMedia, streaming).
+6. **Arreglar `scripts/check-secrets.sh`** o retirarlo: un gate que siempre avisa y nunca bloquea no es un gate.
 
-7. ~~**Resolver coordinación Modo 2**~~ ✅ **Resuelto de facto** al eliminar `IVRGeneratorModule`: el teléfono ya no puede reproducir audio en Modo 2 (sección 4).
+7. ~~**Modo 3 — Agente IA conversacional**~~ ✅ **Completado.** Primero con `manolo_agi.py`, y desde sept. 2026 con `manolo_ari.py` (ARI + ExternalMedia, streaming).
 
-8. ~~**Documentar configuración Zadarma**~~ ✅ **Hecho** en la sección 14.
+8. ~~**Resolver coordinación Modo 2**~~ ✅ **Resuelto de facto** al eliminar `IVRGeneratorModule`: el teléfono ya no puede reproducir audio en Modo 2 (sección 4).
+
+9. ~~**Documentar configuración Zadarma**~~ ✅ **Hecho**, en `CLAUDE.local.md` (sección 14).
 
 ---
 
 ## 14. Infraestructura VPS — detalle técnico
 
-### Configuración Zadarma → Asterisk
+⚠️ **Los datos reales están en `CLAUDE.local.md`, que no se versiona.** El repositorio es
+público: IP del VPS, puerto SSH, login SIP de Zadarma, `pjsip.conf`, las subnets de UFW y
+las rutas de despliegue se quedan fuera de git a propósito.
 
-**Panel Zadarma:**
+`CLAUDE.local.md` contiene:
 
-```
-Número: +34 919 93 30 65
-SIP Login: #719926
-External Server: 34919933065@157.180.35.161:5060
-```
+- Configuración Zadarma → Asterisk (número, SIP Login, External Server)
+- `pjsip.conf` completo: endpoint, aor e identify con las 6 subnets
+- Reglas UFW: las 6 subnets en 5060/udp, y por qué 5000/tcp sigue cerrado
+- Los bugs de configuración resueltos, con rutas reales
+- Comandos de mantenimiento: logs, estado de servicios, cambio de modo
+- Rutas de despliegue en el VPS
 
-⚠️ Puerto crítico: debe ser `5060` (SIP), no `5000` (Flask).
-
-**pjsip.conf en el VPS (`/etc/asterisk/pjsip.conf`):**
-
-```ini
-[zadarma-endpoint]
-type=endpoint
-context=from-zadarma
-disallow=all
-allow=ulaw,alaw
-aors=zadarma-aor
-allow_subscribe=yes
-
-[zadarma-aor]
-type=aor
-contact=sip:sips.zadarma.com
-
-[zadarma-identify]
-type=identify
-endpoint=zadarma-endpoint
-match=185.45.152.0/24
-match=185.45.154.0/24
-match=185.45.155.0/24
-match=195.122.19.0/27
-match=31.31.222.192/27
-match=15.235.128.64/28
-```
-
-**Firewall UFW — las 6 subnets de Zadarma (todas necesarias):**
-
-```bash
-ufw allow from 185.45.152.0/24 to any port 5060 proto udp
-ufw allow from 185.45.154.0/24 to any port 5060 proto udp
-ufw allow from 185.45.155.0/24 to any port 5060 proto udp
-ufw allow from 195.122.19.0/27 to any port 5060 proto udp
-ufw allow from 31.31.222.192/27 to any port 5060 proto udp
-ufw allow from 15.235.128.64/28 to any port 5060 proto udp
-```
-
-Con solo 3 subnets las llamadas llegan intermitentemente. Deben estar las 6.
-
-**Firewall UFW — puerto de la API de control (imprescindible para la app):**
-
-```bash
-ufw allow 5000/tcp
-```
-
-Sin esta regla `control_api.py` está escuchando pero inalcanzable desde el móvil: la app no puede cambiar de modo ni sincronizar el mensaje fijo, y falla **en silencio**. Es la lección 4 de la sección 15.
-
----
-
-### Bugs de configuración resueltos (VPS)
-
-Estos bugs costaron horas — documentados para no repetirlos:
-
-| #   | Síntoma                               | Causa                                                                                     | Solución                                                            |
-| --- | ------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| 1   | Llamadas no llegan al VPS             | External Server con puerto `5000` en panel Zadarma                                        | Cambiar a `34919933065@157.180.35.161:5060`                         |
-| 2   | Llamadas llegan solo a veces          | Solo 3 subnets de Zadarma en UFW                                                          | Añadir las 6 subnets completas                                      |
-| 3   | AGI no encontrado por Asterisk        | Script en `/root/ai_bridge/`, Asterisk busca en `/usr/share/asterisk/agi-bin/`            | Copiar con `chmod +x` al directorio correcto                        |
-| 4   | Audio no encontrado por Asterisk      | Audio en `/root/ai_bridge/`, fuera del árbol que lee el usuario `asterisk`                | Copiar como `.wav` a `/usr/share/asterisk/sounds/es/`               |
-| 5   | Sub-AGI falla (Modo 3)                | `decision_agi.py` no leía el header AGI de Asterisk antes de enviar comandos              | Unificar en `manolo_agi.py` con `agi_read_headers()` al inicio      |
-| 6   | `sound:` da "File does not exist"     | Asterisk resuelve contra el **Data directory** (`/usr/share/asterisk`), no `/var/lib`     | `SOUNDS_DIR = '/usr/share/asterisk/sounds/es'` en los dos ficheros  |
-| 7   | Mismo error con la ruta ya correcta   | El canal de Zadarma llega con `language=en`, y `sound:` se resuelve por idioma de canal   | Pasar `lang='es'` explícito en `POST /channels/{id}/play`           |
-| 8   | La app no cambia de modo ni sincroniza| Puerto 5000/tcp cerrado en UFW — el servicio estaba arriba, el puerto no                  | `ufw allow 5000/tcp`                                                |
+Si no lo tienes en tu copia, pídeselo a Víctor: sin esos datos no se puede tocar el VPS, y
+no se reconstruyen leyendo el código.
 
 ---
 
@@ -576,50 +519,6 @@ Llamadas entrantes Zadarma:    €0.00 (gratis)
 ─────────────────────────────────────────
 TOTAL con VPS (Modos 2+3):     €6.21/mes
 Solo Modo 1 (sin VPS):         €0.00/mes
-```
-
----
-
-### Comandos de mantenimiento VPS
-
-```bash
-# Logs Asterisk en tiempo real
-tail -f /var/log/asterisk/full
-
-# Estado de la conexión SIP con Zadarma
-asterisk -rx "pjsip show endpoints"
-
-# Canales activos (llamadas en curso)
-asterisk -rx "core show channels"
-
-# Cambiar modo desde terminal (sin la app)
-curl -X POST http://157.180.35.161:5000/set_mode \
-     -H "Content-Type: application/json" \
-     -d '{"mode":"FIXED"}'
-
-# Consultar modo actual
-curl http://157.180.35.161:5000/get_mode
-
-# Estado de los servicios
-systemctl status asterisk-control-api
-systemctl status whisper_server
-systemctl status manolo_ari
-
-# Logs del motor Modo 3 en vivo
-journalctl -u manolo_ari -f
-
-# Reiniciar servicios
-systemctl restart asterisk
-systemctl restart asterisk-control-api
-systemctl restart manolo_ari
-
-# Comprobar que el puerto de la API está realmente abierto (lección 4)
-ufw status | grep 5000
-curl http://157.180.35.161:5000/get_mode   # desde fuera del VPS
-
-# Verificar que el mensaje fijo existe donde Asterisk lo busca (lección 1)
-ls -l /usr/share/asterisk/sounds/es/custom_fixed_message.wav
-ls -l /usr/share/asterisk/sounds/es/fixed_spam_message.wav
 ```
 
 ---
@@ -656,21 +555,33 @@ Cuatro fallos que costaron una sesión entera cada uno. Si algo de Modo 1 o Modo
 
 **Matiz importante:** **no** convertir todo el dispatcher a `create_task`. El `StasisStart` del canal `UnicastRTP/` lee `call_state.bridge_id` que escribe el `StasisStart` del canal entrante; hoy funciona porque los handlers corren en orden. Hacerlos todos concurrentes provocaría una carrera justo en el camino de Modo 3, que sí funciona.
 
-### Lección 4 — Puerto 5000 cerrado en UFW: la app falla en silencio
+### Lección 4 — Un servicio arriba no es un servicio alcanzable (y abrir el puerto no es la solución)
 
-**Síntoma:** `control_api.py` arriba y sano (`systemctl status` OK, `curl` local OK), pero la app no cambiaba de modo ni sincronizaba el mensaje fijo. Sin error visible.
+**Síntoma:** `control_api.py` sano — `systemctl status` OK, `curl` local OK — pero la app no cambia de modo ni sincroniza. Sin error visible en pantalla.
 
-**Causa:** el puerto 5000/tcp no estaba abierto en UFW. Las peticiones del móvil se descartaban antes de llegar a Flask, y `BackendSyncService` está escrito para degradar en silencio (timeout de 5 s, devuelve vacío en vez de lanzar) — lo cual es correcto para la UX, pero esconde el fallo.
+**Causa:** el puerto 5000/tcp no está abierto en UFW, así que las peticiones del móvil se descartan antes de llegar a Flask. Y `BackendSyncService` degrada en silencio a propósito (timeout de 5 s, devuelve `[]` en vez de lanzar), que es lo correcto para la UX pero esconde el fallo.
 
-**Solución:** `ufw allow 5000/tcp`.
+**Lo que NO hay que hacer: `ufw allow 5000/tcp`.** Ningún endpoint de `control_api.py` valida nada — ni token, ni IP de origen, ni cabecera. Abrir el puerto expone a Internet:
 
-**Regla de diagnóstico:** "el servicio está arriba" no significa "el servicio es alcanzable". Verificar siempre desde **fuera** del VPS:
+- `POST /set_mode` — cualquiera cambia el modo de operación
+- `POST /set_message` — cualquiera hace que el servidor genere audio arbitrario
+- `GET /call_log` — **los números de quien ha llamado**, datos personales de terceros
+
+**Estado actual (sept. 2026): el puerto sigue cerrado, deliberadamente.** Consecuencias que hay que conocer antes de diagnosticar nada:
+
+- El modo se cambia desde el propio VPS con `curl` a `127.0.0.1:5000`, no desde la app
+- `CallHistoryScreen` solo muestra el historial local del Modo 1; `getCallLog()` devuelve `[]` por timeout
+- **Los Modos 2 y 3 funcionan igual de bien:** la llamada entra por SIP en el 5060, que sí está abierto. El 5000 solo afecta al control desde la app
+
+**Solución real:** autenticar `control_api.py` con `X-API-Key` y solo entonces abrir el puerto. Es el punto 1 del roadmap.
+
+**Regla de diagnóstico que sí se generaliza:** "el servicio está arriba" no significa "el servicio es alcanzable". Comprobarlo desde **fuera** del host, no con un `curl` local:
 
 ```bash
-curl http://157.180.35.161:5000/get_mode
+curl http://TU_VPS_IP:5000/get_mode
 ```
 
-Si responde en local pero no desde fuera, es el firewall.
+Si responde en local pero no desde fuera, es el firewall — y antes de abrirlo, mirar qué queda expuesto.
 
 ---
 

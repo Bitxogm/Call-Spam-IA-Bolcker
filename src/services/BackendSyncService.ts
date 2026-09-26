@@ -1,8 +1,17 @@
 // src/services/BackendSyncService.ts
 import { Alert } from 'react-native';
 
-const VPS_IP = process.env.EXPO_PUBLIC_VPS_IP || '157.180.35.161';
+// Sin fallback a una IP real: el repo es público. Si falta la variable, las
+// peticiones fallan de forma legible en vez de apuntar a un host hardcodeado.
+const VPS_IP = process.env.EXPO_PUBLIC_VPS_IP;
 const API_PORT = process.env.EXPO_PUBLIC_VPS_PORT || '5000';
+
+if (!VPS_IP) {
+  console.warn(
+    '⚠️ EXPO_PUBLIC_VPS_IP no está definida: los Modos 2 y 3 no podrán ' +
+    'sincronizar con el servidor. Añádela al .env y recompila.'
+  );
+}
 
 /** Registro de llamada atendida por Manolo en el VPS (call_log.json) */
 export interface ServerCallRecord {

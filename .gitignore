@@ -40,3 +40,9 @@ yarn-error.*
 scripts/
 # bundle JS generado — lo regenera build-fresh.sh (pasos 4 y 5) en cada build
 android/app/src/main/assets/index.android.bundle
+
+# contexto local con los datos reales de infraestructura — el repo es público
+CLAUDE.local.md
+
+# keystore de debug: se regenera por máquina (ver README)
+android/app/debug.keystore
