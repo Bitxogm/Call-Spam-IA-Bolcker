@@ -287,67 +287,72 @@ export default function SpamNumbersScreen({ navigation }: SpamNumbersScreenProps
         </TouchableOpacity>
       </View>
 
-      {/* BOTÓN DE VERIFICACIÓN */}
-      <View style={styles.verifyContainer}>
+      {/* Herramientas de desarrollo: fuera de builds de release */}
+      {__DEV__ && (
+        <>
+        {/* BOTÓN DE VERIFICACIÓN */}
+        <View style={styles.verifyContainer}>
+          <TouchableOpacity
+            style={[styles.verifyButton, isVerifying && styles.verifyButtonDisabled]}
+            onPress={verifyAllPrefixes}
+            disabled={isVerifying || spamNumbers.length === 0}
+          >
+            <Text style={styles.buttonText}>
+              {isVerifying ? '⏳ Verificando...' : '🧪 Verificar Prefijos Bloqueados'}
+            </Text>
+          </TouchableOpacity>
+          <Text style={styles.verifyHint}>
+            Comprueba qué números están bloqueados por el sistema hardcoded (800, 900, etc.)
+          </Text>
+        </View>
+
+        {/* 🔍 SECCIÓN DEBUG */}
         <TouchableOpacity
-          style={[styles.verifyButton, isVerifying && styles.verifyButtonDisabled]}
-          onPress={verifyAllPrefixes}
-          disabled={isVerifying || spamNumbers.length === 0}
+          style={styles.debugToggle}
+          onPress={() => {
+            setShowDebug(!showDebug);
+            if (!showDebug && !debugInfo) loadDebugInfo();
+          }}
         >
-          <Text style={styles.buttonText}>
-            {isVerifying ? '⏳ Verificando...' : '🧪 Verificar Prefijos Bloqueados'}
+          <Text style={styles.debugToggleText}>
+            {showDebug ? '🔽' : '▶️'} DEBUG: Ver info de Base de Datos
           </Text>
         </TouchableOpacity>
-        <Text style={styles.verifyHint}>
-          Comprueba qué números están bloqueados por el sistema hardcoded (800, 900, etc.)
-        </Text>
-      </View>
 
-      {/* 🔍 SECCIÓN DEBUG */}
-      <TouchableOpacity
-        style={styles.debugToggle}
-        onPress={() => {
-          setShowDebug(!showDebug);
-          if (!showDebug && !debugInfo) loadDebugInfo();
-        }}
-      >
-        <Text style={styles.debugToggleText}>
-          {showDebug ? '🔽' : '▶️'} DEBUG: Ver info de Base de Datos
-        </Text>
-      </TouchableOpacity>
+        {showDebug && debugInfo && (
+          <View style={styles.debugContainer}>
+            <Text style={styles.debugTitle}>🔍 Información de Debug</Text>
 
-      {showDebug && debugInfo && (
-        <View style={styles.debugContainer}>
-          <Text style={styles.debugTitle}>🔍 Información de Debug</Text>
+            <View style={styles.debugSection}>
+              <Text style={styles.debugLabel}>📍 Ruta BD:</Text>
+              <Text style={styles.debugValue}>{debugInfo.dbPath}</Text>
+            </View>
 
-          <View style={styles.debugSection}>
-            <Text style={styles.debugLabel}>📍 Ruta BD:</Text>
-            <Text style={styles.debugValue}>{debugInfo.dbPath}</Text>
-          </View>
-
-          <View style={styles.debugSection}>
-            <Text style={styles.debugLabel}>📊 Total números:</Text>
-            <Text style={styles.debugValue}>
-              {debugInfo.totalNumbers} ({debugInfo.activeNumbers} activos, {debugInfo.inactiveNumbers} inactivos)
-            </Text>
-          </View>
-
-          <Text style={styles.debugSubtitle}>📋 Números en BD (con normalización):</Text>
-          {debugInfo.numbers.map((num: any, index: number) => (
-            <View key={index} style={styles.debugNumber}>
+            <View style={styles.debugSection}>
+              <Text style={styles.debugLabel}>📊 Total números:</Text>
               <Text style={styles.debugValue}>
-                {num.is_active ? '✅' : '❌'} {num.number} → {num.normalized}
+                {debugInfo.totalNumbers} ({debugInfo.activeNumbers} activos, {debugInfo.inactiveNumbers} inactivos)
               </Text>
             </View>
-          ))}
 
-          <TouchableOpacity
-            style={styles.debugRefreshButton}
-            onPress={loadDebugInfo}
-          >
-            <Text style={styles.buttonText}>🔄 Actualizar Debug Info</Text>
-          </TouchableOpacity>
-        </View>
+            <Text style={styles.debugSubtitle}>📋 Números en BD (con normalización):</Text>
+            {debugInfo.numbers.map((num: any, index: number) => (
+              <View key={index} style={styles.debugNumber}>
+                <Text style={styles.debugValue}>
+                  {num.is_active ? '✅' : '❌'} {num.number} → {num.normalized}
+                </Text>
+              </View>
+            ))}
+
+            <TouchableOpacity
+              style={styles.debugRefreshButton}
+              onPress={loadDebugInfo}
+            >
+              <Text style={styles.buttonText}>🔄 Actualizar Debug Info</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        </>
       )}
 
       {/* LISTA DE NÚMEROS SPAM */}

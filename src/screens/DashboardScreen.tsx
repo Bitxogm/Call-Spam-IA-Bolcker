@@ -1,6 +1,6 @@
 // src/screens/DashboardScreen.tsx
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Alert, NativeModules, Platform, ScrollView } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Alert, NativeModules, ScrollView } from 'react-native';
 import { databaseService } from '../services/DataBaseService';
 import { contactsService } from '../services/ContactService';
 
@@ -20,19 +20,10 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
   const [contactsPermission, setContactsPermission] = useState(false);
   const [radicalMode, setRadicalMode] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [isDefaultDialer, setIsDefaultDialer] = useState(false);
-  const [callPermissions, setCallPermissions] = useState({
-    hasPhonePermission: false,
-    hasCallPermission: false,
-    canInterceptCalls: false
-  });
 
   // Cargar datos desde la base de datos al iniciar
   useEffect(() => {
     loadDashboardData();
-    if (Platform.OS === 'android' && CallInterceptorModule) {
-      checkDialerPermissions();
-    }
   }, []);
 
   // Recargar datos cuando volvemos a esta pantalla
@@ -90,77 +81,6 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
       Alert.alert('Error', 'No se pudieron cargar las estadísticas');
     } finally {
       setLoading(false);
-    }
-  };
-
-  // Función para verificar permisos de llamadas
-  const checkDialerPermissions = async () => {
-    if (Platform.OS !== 'android' || !CallInterceptorModule) {
-      console.log('⚠️ CallInterceptorModule no disponible');
-      return;
-    }
-
-    try {
-      const permissions = await CallInterceptorModule.checkPermissions();
-      console.log('📞 Permisos de llamadas:', permissions);
-
-      setIsDefaultDialer(permissions.isDefaultDialer);
-      setCallPermissions({
-        hasPhonePermission: permissions.hasPhonePermission,
-        hasCallPermission: permissions.hasCallPermission,
-        canInterceptCalls: permissions.canInterceptCalls
-      });
-    } catch (error) {
-      console.log('❌ Error verificando permisos de llamadas:', error);
-    }
-  };
-
-  // Función para solicitar ser app de teléfono predeterminada
-  const requestDefaultDialerRole = async () => {
-    if (Platform.OS !== 'android') {
-      Alert.alert('Error', 'Esta función solo está disponible en Android');
-      return;
-    }
-
-    try {
-      Alert.alert(
-        "📞 App de Teléfono Predeterminada",
-        "SpamBlocker necesita ser tu app de teléfono predeterminada para:\n\n✅ Contestar llamadas automáticamente\n✅ Bloquear spam en tiempo real\n✅ Hacer que tu agente IA converse con spammers\n\n➡️ Ve a: Ajustes → Apps → Apps predeterminadas → App de teléfono\n\n¿Abrir configuración del sistema?",
-        [
-          { text: "Cancelar", style: "cancel" },
-          {
-            text: "Abrir Ajustes",
-            onPress: async () => {
-              try {
-                // Intentar con módulo nativo primero
-                if (CallInterceptorModule) {
-                  const result = await CallInterceptorModule.requestDefaultDialerRole();
-                  console.log('📞 Resultado módulo nativo:', result);
-                  setTimeout(() => checkDialerPermissions(), 1000);
-                } else {
-                  // Fallback: Abrir configuración de apps predeterminadas
-                  const { Linking } = require('react-native');
-                  await Linking.openSettings();
-                  console.log('📱 Abriendo configuración del sistema (fallback)');
-                  Alert.alert(
-                    'Configuración Manual',
-                    'Ve a:\nAjustes → Apps → Apps predeterminadas → App de teléfono → SpamBlocker'
-                  );
-                }
-              } catch (error) {
-                console.log('❌ Error:', error);
-                Alert.alert(
-                  'Configuración Manual',
-                  'Por favor ve manualmente a:\n\nAjustes → Aplicaciones → Apps predeterminadas → App de teléfono\n\nY selecciona "SpamBlocker"'
-                );
-              }
-            }
-          }
-        ]
-      );
-    } catch (error) {
-      console.log('❌ Error en requestDefaultDialerRole:', error);
-      Alert.alert('Error', 'No se pudo iniciar la configuración');
     }
   };
 
@@ -233,89 +153,6 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
     }
   };
 
-  // Función para toggle del modo radical
-  const toggleRadicalMode = async () => {
-    try {
-      const newRadicalMode = !radicalMode;
-
-      // Si se activa modo radical, verificar permisos de contactos
-      if (newRadicalMode && !contactsPermission) {
-        Alert.alert(
-          "🔴 Modo Radical",
-          "Para activar el modo radical necesitas dar permisos de contactos",
-          [
-            { text: "Cancelar", style: "cancel" },
-            {
-              text: "Dar Permisos",
-              onPress: () => requestContactsPermission()
-            }
-          ]
-        );
-        return;
-      }
-
-      // Guardar en base de datos
-      await databaseService.setSetting('radical_mode', newRadicalMode.toString());
-      setRadicalMode(newRadicalMode);
-
-      const message = newRadicalMode
-        ? `🔴 MODO RADICAL ACTIVADO\\n📞 Solo ${contactsCount} contactos permitidos\\n🚨 Todo lo demás será bloqueado\\n💾 Configuración guardada`
-        : "🟢 Modo Normal\\nSolo lista negra activa\\n💾 Configuración guardada";
-
-      Alert.alert("🛡️ Modo de Protección", message);
-
-      console.log(`🛡️ Modo radical ${newRadicalMode ? 'activado' : 'desactivado'}`);
-    } catch (error) {
-      console.log('❌ Error cambiando modo radical:', error);
-      Alert.alert('Error', 'No se pudo cambiar el modo de protección');
-    }
-  };
-
-  // Función para probar un número específico
-  const testNumber = () => {
-    Alert.prompt(
-      "🧪 Probar Número",
-      "Introduce un número para probar si sería bloqueado:",
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Probar",
-          onPress: async (inputNumber) => {
-            if (!inputNumber) return;
-
-            try {
-              // Verificar en lista negra
-              const isSpam = await databaseService.isSpamNumber(inputNumber);
-
-              if (isSpam) {
-                Alert.alert("🚫 BLOQUEADO", `${inputNumber}\\nRazón: En lista negra`);
-                return;
-              }
-
-              // Si modo radical, verificar contactos
-              if (radicalMode && contactsPermission) {
-                const { shouldBlock, reason } = await contactsService.shouldBlockInRadicalMode(inputNumber);
-
-                Alert.alert(
-                  shouldBlock ? "🚫 BLOQUEADO" : "✅ PERMITIDO",
-                  `${inputNumber}\\nRazón: ${reason}`
-                );
-              } else {
-                Alert.alert("✅ PERMITIDO", `${inputNumber}\\nRazón: No está en lista negra`);
-              }
-            } catch (error) {
-              Alert.alert("❌ Error", "No se pudo verificar el número");
-            }
-          }
-        }
-      ],
-      "plain-text",
-      "",
-      "phone-pad"
-    );
-
-  };
-
   // Función para probar notificación de spam
   const testSpamNotification = async () => {
     if (!CallInterceptorModule) {
@@ -362,11 +199,10 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
       <View style={styles.statsContainer}>
 
         {/* Llamadas bloqueadas */}
-        <TouchableOpacity style={styles.statCard} onPress={testNumber}>
+        <View style={styles.statCard}>
           <Text style={styles.statNumber}>{blockedCalls}</Text>
           <Text style={styles.statLabel}>📱 Llamadas Bloqueadas</Text>
-          <Text style={styles.statHint}>👆 Toca para probar número</Text>
-        </TouchableOpacity>
+        </View>
 
         {/* Números en lista negra */}
         <TouchableOpacity style={styles.statCard} onPress={navigateToSpamNumbers}>
@@ -410,49 +246,35 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.button, { backgroundColor: '#007bff' }]}
-          onPress={() => navigation.navigate('Logs')}
-        >
-          <Text style={styles.buttonText}>📋 Logs de Debug</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
           style={[styles.button, { backgroundColor: '#dc3545' }]}
           onPress={() => navigation.navigate('CallHistory')}
         >
           <Text style={styles.buttonText}>📞 Historial de Spam</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.buttonTest} onPress={simulateBlockCall}>
-          <Text style={styles.buttonText}>🧪 SIMULAR BLOQUEO</Text>
-        </TouchableOpacity>
+        {/* Herramientas de desarrollo: fuera de builds de release */}
+        {__DEV__ && (
+          <>
+            <TouchableOpacity
+              style={[styles.button, { backgroundColor: '#007bff' }]}
+              onPress={() => navigation.navigate('Logs')}
+            >
+              <Text style={styles.buttonText}>📋 Logs de Debug</Text>
+            </TouchableOpacity>
 
-        {/* BOTÓN TEST NOTIFICACIÓN */}
-        {Platform.OS === 'android' && CallInterceptorModule && (
-          <TouchableOpacity
-            style={[styles.button, { backgroundColor: '#ff9900' }]}
-            onPress={testSpamNotification}
-          >
-            <Text style={styles.buttonText}>🔔 TEST NOTIFICACIÓN</Text>
-            <Text style={styles.buttonSubtext}>Probar notificación con botones</Text>
-          </TouchableOpacity>
-        )}
+            <TouchableOpacity style={styles.buttonTest} onPress={simulateBlockCall}>
+              <Text style={styles.buttonText}>🧪 SIMULAR BLOQUEO</Text>
+            </TouchableOpacity>
 
-        {/* BOTÓN CRÍTICO: Configurar como app de teléfono */}
-        {Platform.OS === 'android' && (
-          <TouchableOpacity
-            style={[styles.button, isDefaultDialer ? styles.buttonSuccess : styles.buttonCritical]}
-            onPress={requestDefaultDialerRole}
-          >
-            <Text style={styles.buttonText}>
-              {isDefaultDialer
-                ? "✅ App de Teléfono Configurada"
-                : "📞 CONFIGURAR APP DE TELÉFONO"}
-            </Text>
-            {!isDefaultDialer && (
-              <Text style={styles.buttonSubtext}>¡REQUERIDO para auto-respuesta!</Text>
+            {CallInterceptorModule && (
+              <TouchableOpacity
+                style={[styles.button, { backgroundColor: '#ff9900' }]}
+                onPress={testSpamNotification}
+              >
+                <Text style={styles.buttonText}>🔔 TEST NOTIFICACIÓN</Text>
+              </TouchableOpacity>
             )}
-          </TouchableOpacity>
+          </>
         )}
 
       </View>
@@ -556,12 +378,6 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
   },
-  normalButton: {
-    backgroundColor: '#666666',
-  },
-  radicalButton: {
-    backgroundColor: '#ff4444',
-  },
   buttonTest: {
     backgroundColor: '#00aa44',
     paddingVertical: 14,
@@ -573,14 +389,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: 'white',
-  },
-  buttonCritical: {
-    backgroundColor: '#ff6600',  // Naranja llamativo para acción crítica
-    borderWidth: 2,
-    borderColor: '#ffaa00',
-  },
-  buttonSuccess: {
-    backgroundColor: '#00aa44',  // Verde para éxito
   },
   buttonSubtext: {
     fontSize: 12,

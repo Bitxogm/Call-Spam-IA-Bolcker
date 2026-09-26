@@ -21,7 +21,6 @@ public class CallInterceptorPackage implements ReactPackage {
         modules.add(new AnswerHangupModule(reactContext));       // ✅ Módulo de answer+hangup
         modules.add(new LogsModule(reactContext));               // ✅ Módulo de logs in-app
         modules.add(new CallHistoryModule(reactContext));        // ✅ Módulo de historial de llamadas
-        modules.add(new IVRGeneratorModule(reactContext));       // ✅ Módulo de generación IVR
 modules.add(new CallForwardingModule(reactContext));     // ✅ Módulo de desvío automático (*21*)
         return modules;
     }
