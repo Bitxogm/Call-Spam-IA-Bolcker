@@ -674,6 +674,35 @@ Si responde en local pero no desde fuera, es el firewall.
 
 ---
 
+## 16. Ramas del repositorio
+
+`dev` es la rama por defecto en GitHub (verificado con `git ls-remote --symref origin HEAD`, sept. 2026). `master` está abandonada desde agosto 2025 y contenida en `dev` — se conserva solo como archivo histórico.
+
+Limpieza de ramas (sept. 2026): borradas `refactor/ui-cleanup-sept-2026`, `refactor/cleanup-agosto-2026`, `claude/fix-call-permissions-…` y `claude/ivr-bcp-method-…`, todas mergeadas en `dev` y sin commits propios.
+
+### ⚠️ `claude/modo1-optimized-01KAWsdwPsM88H55dEWN8Xqf` — no borrar
+
+Última actividad: 31 diciembre 2025 (`aec0dd2`). **No está mergeada:** tiene 17 commits que nunca llegaron a `dev`, y `dev` le lleva 96. Se conserva porque hay trabajo aprovechable dentro.
+
+**Features rescatables vía cherry-pick** (verificado que no existen en `dev`: 0 ficheros con `CustomTabs`, 0 con `spamScore`):
+
+| Feature                                                     | Commits                  |
+| ----------------------------------------------------------- | ------------------------ |
+| Lookup del número en webs de spam con Chrome Custom Tabs    | `f095802`, `804edd5`     |
+| Detección local de spam para España (regulación 2025)       | `f697767`                |
+| Score y categoría de spam en historial y notificaciones     | `2bef944`, `b91e23f`     |
+| Almacenamiento dual al añadir a blacklist desde el historial | `40491d1`                |
+
+**Commits que NO hay que traer — son incorrectos a día de hoy:**
+
+- `86d0c32` "docs: Update README for v0.1 - Clarify Accessibility NOT required" — **falso**. La accesibilidad sí es imprescindible en Modo 1, ver lección 2 (sección 15).
+- `79ece8a` "refactor: Remove Modo 2/3 (IVR/AI) from CallStateReceiver" y `f9a5d9a` "Remove Modo 2/3 (IVR/AI) from Answer+Hangup UI" — la rama es de diciembre 2025, anterior a que Modo 2 y Modo 3 existieran de verdad. Arrancarían lo que hoy es producción.
+- `aec0dd2` "chore: Remove unused LogsService.ts" — en `dev` ese servicio sigue en uso.
+
+**Cómo rescatar:** rama nueva desde `dev` y cherry-pick commit a commit de la tabla de arriba. **Nunca `git merge`** de esta rama: toca `CallStateReceiver`, la UI de Answer+Hangup y borra ficheros vivos.
+
+---
+
 Limpieza agosto 2026: eliminados residuos de Twilio, DefaultDialer, IVR local y AGI scripts obsoletos. Stack del servidor en ese momento: manolo_agi.py único AGI.
 
 Migración septiembre 2026: `[from-zadarma]` pasa de `AGI(manolo_agi.py)` a `Stasis(manolo-ari)`. Motor Modo 3 en producción: `manolo_ari.py` (ARI + ExternalMedia) + Deepgram Nova-2 + Groq `qwen/qwen3.8-27b` + Edge TTS. `manolo_agi.py` y Whisper quedan como backup/fallback, no eliminados.
