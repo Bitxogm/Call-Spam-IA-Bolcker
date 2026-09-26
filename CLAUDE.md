@@ -525,8 +525,10 @@ las rutas de despliegue se quedan fuera de git a propósito.
 - Comandos de mantenimiento: logs, estado de servicios, cambio de modo
 - Rutas de despliegue en el VPS
 
-Si no lo tienes en tu copia, pídeselo a Víctor: sin esos datos no se puede tocar el VPS, y
-no se reconstruyen leyendo el código.
+**Copia de seguridad de `CLAUDE.local.md` en el repo privado `claude-config`, ruta
+`projects/call-spam-ia-blocker/`. Si falta en local, recuperarlo de ahí.**
+
+Sin esos datos no se puede tocar el VPS, y no se reconstruyen leyendo el código.
 
 ---
 
