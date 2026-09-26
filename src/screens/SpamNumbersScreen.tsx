@@ -172,52 +172,6 @@ export default function SpamNumbersScreen({ navigation }: SpamNumbersScreenProps
     }
   };
 
-  // Función para añadir prefijos automáticos
-  const addAutomaticPrefixes = async () => {
-    const prefixes = [
-      { prefix: '800', reason: 'Número gratuito comercial' },
-      { prefix: '900', reason: 'Tarificación especial' },
-      { prefix: '901', reason: 'Tarificación especial' },
-      { prefix: '902', reason: 'Tarificación especial' },
-      { prefix: '803', reason: 'Servicios de participación' },
-      { prefix: '806', reason: 'Servicios de entretenimiento' },
-      { prefix: '807', reason: 'Servicios de entretenimiento' },
-      { prefix: '905', reason: 'Servicios de valor añadido' }
-    ];
-
-    try {
-      let addedCount = 0;
-
-      for (const { prefix, reason } of prefixes) {
-        const numberPattern = `${prefix}XXXXXX`;
-
-        // Verificar si ya existe
-        const exists = await databaseService.isSpamNumber(numberPattern);
-
-        if (!exists) {
-          // ✅ DUAL STORAGE: Añadir a ambos lados
-          const [prefsSuccess, dbSuccess] = await Promise.all([
-            blacklistService.addNumber(numberPattern),
-            databaseService.addSpamNumber(numberPattern, reason, 'auto')
-          ]);
-          if (prefsSuccess && dbSuccess) addedCount++;
-        }
-      }
-
-      // Recargar la lista
-      await loadSpamNumbers();
-
-      if (addedCount > 0) {
-        Alert.alert("✅ Prefijos Añadidos", `${addedCount} prefijos comerciales añadidos`);
-      } else {
-        Alert.alert("ℹ️ Info", "Los prefijos automáticos ya están en la lista");
-      }
-    } catch (error) {
-      console.log('❌ Error añadiendo prefijos:', error);
-      Alert.alert("❌ Error", "Error añadiendo prefijos automáticos");
-    }
-  };
-
   // Renderizar cada elemento de la lista
   const renderSpamNumber = ({ item }: { item: SpamNumber }) => {
     const isHardcodeBlocked = verificationResults.get(item.number);
@@ -280,10 +234,6 @@ export default function SpamNumbersScreen({ navigation }: SpamNumbersScreenProps
       <View style={styles.actionsContainer}>
         <TouchableOpacity style={styles.addButton} onPress={() => setModalVisible(true)}>
           <Text style={styles.buttonText}>➕ Añadir Número</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.autoButton} onPress={addAutomaticPrefixes}>
-          <Text style={styles.buttonText}>🤖 Prefijos Automáticos</Text>
         </TouchableOpacity>
       </View>
 
@@ -453,13 +403,6 @@ const styles = StyleSheet.create({
   addButton: {
     flex: 1,
     backgroundColor: '#00aa44',
-    padding: 15,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  autoButton: {
-    flex: 1,
-    backgroundColor: '#4444ff',
     padding: 15,
     borderRadius: 10,
     alignItems: 'center',
