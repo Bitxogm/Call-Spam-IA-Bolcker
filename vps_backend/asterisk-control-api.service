@@ -7,6 +7,10 @@ Type=simple
 User=root
 WorkingDirectory=/root/ai_bridge
 Environment="PATH=/root/ai_bridge/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+# Sin esto CONTROL_API_TOKEN y CONTROL_API_BIND no llegan al proceso: Flask
+# arranca sin token (todo devuelve 401) y escuchando en 127.0.0.1, donde NPM
+# no lo alcanza. manolo_ari.service ya lo tenía; este no.
+EnvironmentFile=/root/ai_bridge/.env
 ExecStart=/root/ai_bridge/venv/bin/python3 /root/ai_bridge/control_api.py
 Restart=always
 RestartSec=10

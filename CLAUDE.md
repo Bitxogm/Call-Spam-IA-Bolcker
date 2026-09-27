@@ -133,8 +133,8 @@ Sigue siendo deuda cosmética — el código muerto conviene borrarlo — pero y
 | Requiere Accessibility Service | ✅ **imprescindible**                     | ❌                                        | ❌                               |
 | Requiere VPS                   | ❌                                        | ✅                                        | ✅                               |
 | Requiere Zadarma config        | ❌                                        | ✅                                        | ✅                               |
-| Sincroniza con la app          | ❌ no lo necesita                         | ⛔ no (5000 cerrado, ver lección 4)       | ⛔ no (5000 cerrado)             |
-| Estado actual                  | ✅ verificado en dispositivo (sept. 2026) | ✅ verificado en dispositivo (sept. 2026) | ✅ funcional (ARI)               |
+| Sincroniza con la app          | ❌ no lo necesita                         | ✅ vía HTTPS (sección 6)                  | ✅ vía HTTPS                     |
+| Estado actual                  | ✅ verificado en dispositivo               | ✅ verificado en dispositivo               | ✅ verificado, 200-400 ms/turno  |
 
 ⚠️ **Los códigos USSD reales no son `*21*`.** Desde `b41448d` (marzo 2026) `CallForwardingManager` usa el código **67** y el número **sin prefijo de país**: `*67*919933065#` / `##67#` / `*#67#`. La documentación anterior de este fichero decía `*21*34919933065#`, que no es lo que ejecuta la app. El código GSM estándar de desvío incondicional es `*21*` y `*67*` es desvío en ocupado, pero `*67*` es el que funciona con el operador de Víctor — no cambiarlo sin probar en dispositivo.
 
@@ -190,7 +190,20 @@ Asterisk [from-zadarma]
 
 **Eliminado (sept. 2026): `POST /set_message`.** Generaba `custom_fixed_message.wav` con gTTS para la UI de mensajes personalizados, que ya no existe. El Modo 2 reproduce siempre `fixed_spam_message`.
 
-**Dónde escucha Flask:** `CONTROL_API_BIND`, por defecto `127.0.0.1`. En producción es el gateway del bridge Docker al que está conectado Nginx Proxy Manager — NPM corre en contenedor y para él `127.0.0.1` es el propio contenedor. El puerto 5000 **no** se expone a Internet: el tráfico entra por 443 vía Cloudflare → NPM.
+**Cómo se expone (en producción desde el 27 sept. 2026):**
+
+```
+App → https://manolo.bitxodev.com
+        → Cloudflare (proxy naranja, rate limit)
+              → 443 del VPS → Nginx Proxy Manager (contenedor, cert Let's Encrypt)
+                    → http://172.18.0.1:5000 → Flask
+```
+
+- **Dónde escucha Flask:** `CONTROL_API_BIND`, por defecto `127.0.0.1`. En producción es el gateway del bridge Docker de NPM (`172.18.0.1`): NPM corre en contenedor y para él `127.0.0.1` es el propio contenedor
+- **El puerto 5000 no se expone a Internet.** Todo entra por 443
+- **Certificado: Let's Encrypt gestionado por NPM**, como el resto de las apps del VPS — no el Cloudflare Origin Certificate
+- Hace falta una regla UFW explícita para que el contenedor alcance el gateway (ver lección 5, caso A)
+- `asterisk-control-api.service` necesita `EnvironmentFile=/root/ai_bridge/.env`, o Flask arranca sin token y en loopback
 
 **Audio del mensaje fijo (Modo 2) — ruta crítica:**
 
@@ -441,13 +454,15 @@ asterisk -rx "dialplan reload"
 
 ### Crítica
 
+- [ ] **🔴 Rotar `CONTROL_API_TOKEN`.** El token en uso se expuso en un chat. Mientras no se rote, quien lo haya visto puede cambiar el modo de operación y leer `GET /call_log` — los números de quien ha llamado. Procedimiento: generar uno nuevo (`python3 -c "import secrets; print(secrets.token_urlsafe(32))"`), ponerlo en el `.env` del VPS, `systemctl restart asterisk-control-api`, ponerlo en el `.env` de la app, rebuild e instalar. **Y borrar los APK viejos de `~/Downloads`: llevan el token antiguo incrustado.**
+
+- [ ] **🔴 El panel de NPM (puerto 81) es accesible desde Internet.** Docker publica puertos insertando reglas en `nat/PREROUTING`, que se evalúan antes que `INPUT`, así que UFW no los filtra — `ufw status` dice que está cerrado y no lo está (lección 5, caso B). Un panel de administración de proxy expuesto es acceso a todos los vhosts del VPS. Arreglo: publicar el puerto solo en loopback (`127.0.0.1:81:81` en el compose) y llegar por túnel SSH, o meter reglas en la cadena `DOCKER-USER`. Afecta a todo el VPS, no solo a este proyecto.
+
 - [ ] **Una sola llamada concurrente en `manolo_ari.py`.** Puerto UDP fijo (7000) + estado global. Con dos llamadas simultáneas la segunda pisa a la primera. Es el bloqueante real para cualquier uso más allá del propio Víctor.
 
 - [ ] **Estado del Modo Radical leído de dos sitios distintos.** `WhitelistScreen` lo lee y escribe con `ContactsService.ts`; `DashboardScreen` usa `ContactService.ts`. La fuente autoritativa para la capa nativa es SharedPreferences, y el Dashboard puede mostrar un estado que no es el que aplica el servicio. Unificar en un único servicio.
 
 ### Importante
-
-- [ ] **Autenticación de `control_api.py`: implementada en el repo, sin desplegar.** El código ya exige `X-API-Key` en los tres endpoints, pero falta la infraestructura: registro DNS en Cloudflare, Proxy Host en NPM, `CONTROL_API_TOKEN` y `CONTROL_API_BIND` en el `.env` del VPS, y el token en el `.env` de la app. Hasta que eso esté, la app sigue sin sincronizar. Punto 1 del roadmap.
 
 - [ ] **Residuos IVR on-device:** `IVRAudioPlayer.java` (referenciado en `CallAccessibilityService` L44, L513) e `IVRMessageHelper.java` (referenciado en `CallStateReceiver` L213). Ya no pueden reproducir nada porque el MP3 no se genera, pero siguen compilando. Borrarlos exige limpiar esas 3 referencias primero.
 
@@ -463,6 +478,8 @@ asterisk -rx "dialplan reload"
 
 ### Resueltos en esta sesión (sept. 2026)
 
+- [x] **La app ya controla los tres modos desde el teléfono.** `control_api.py` con `X-API-Key` expuesto por HTTPS (Cloudflare → NPM → Flask en el bridge Docker), sin abrir el 5000. Verificado en dispositivo el 27 sept. 2026: cambio de modo, historial del servidor y Manolo conversando en 200-400 ms por turno.
+- [x] **`asterisk-control-api.service` no cargaba el `.env`.** Le faltaba `EnvironmentFile`, así que Flask arrancaba sin `CONTROL_API_TOKEN` (todo 401) y en `127.0.0.1` (NPM no lo alcanzaba). Corregido en el repo.
 - [x] **Modo 2 reproducía a Manolo en lugar del mensaje fijo.** `manolo_ari.py` no leía `current_mode.json`: la rama FIXED nunca se había portado del AGI. Añadidos `get_current_mode()`, `elegir_sonido_fijo()` y `run_fixed()`.
 - [x] **El mensaje fijo no se encontraba** — ruta y idioma equivocados. Ver lección 1.
 - [x] **Modo FIXED no colgaba hasta el timeout** — interbloqueo del bucle de eventos ARI. Ver lección 3.
@@ -480,15 +497,7 @@ asterisk -rx "dialplan reload"
 
 En orden de prioridad lógica:
 
-1. **Exponer `control_api.py` por HTTPS y desplegar la autenticación.** El código del repo ya está hecho (`X-API-Key` en los tres endpoints, `CONTROL_API_BIND`). Falta la infraestructura, y es **prerequisito para que la app sincronice**:
-
-   - Registro `A` en Cloudflare para el subdominio, con **proxy naranja activado** (así el origen no queda expuesto por DNS)
-   - Proxy Host en la UI de **Nginx Proxy Manager** — no un `.conf`: NPM corre en Docker. Scheme `http`, Forward a la IP del gateway del bridge Docker de NPM, puerto 5000, Force SSL on, certificado **Cloudflare Origin** (no Let's Encrypt), SSL/TLS de Cloudflare en **Full (strict)**
-   - `CONTROL_API_TOKEN` y `CONTROL_API_BIND` en el `.env` del VPS. El bind es el gateway del bridge, **no** `127.0.0.1`: para un contenedor, loopback es el propio contenedor
-   - Rate limiting en **Cloudflare**, no en Nginx: detrás del proxy, `$binary_remote_addr` son IPs de Cloudflare. Además `limit_req_zone` no cabe en la pestaña Advanced de NPM, que inyecta en el bloque `server` y no en `http`
-   - El token en el `.env` de la app, y rebuild
-
-   **`ufw allow 5000/tcp` no se ejecuta en ningún momento.** El tráfico entra por 443.
+1. **🔴 Rotar `CONTROL_API_TOKEN` y cerrar el panel de NPM.** Los dos puntos críticos de la sección 12. El token está comprometido y el panel de administración del proxy está en Internet; nada de lo demás importa hasta que eso esté resuelto.
 
 2. **Token fuera del APK (`EncryptedSharedPreferences`).** Hoy `EXPO_PUBLIC_CONTROL_API_TOKEN` se incrusta en el bundle y es extraíble de cualquier APK. La alternativa: un campo en Ajustes donde se pega el token una vez, guardado cifrado en el dispositivo vía módulo nativo. El token deja de estar en el APK y en el repo, y rotarlo no exige recompilar. Coste estimado: un `TextInput`, dos métodos en Java y leerlo desde `BackendSyncService`.
 
@@ -502,11 +511,13 @@ En orden de prioridad lógica:
 
 7. **Arreglar `scripts/check-secrets.sh`** o retirarlo: un gate que siempre avisa y nunca bloquea no es un gate.
 
-8. ~~**Modo 3 — Agente IA conversacional**~~ ✅ **Completado.** Primero con `manolo_agi.py`, y desde sept. 2026 con `manolo_ari.py` (ARI + ExternalMedia, streaming).
+8. ~~**Autenticar `control_api.py` y exponerlo por HTTPS**~~ ✅ **Completado (27 sept. 2026).** `X-API-Key` en los tres endpoints, `https://manolo.bitxodev.com` vía Cloudflare → NPM (Let's Encrypt) → Flask en `172.18.0.1:5000`. El 5000 nunca se abrió. Detalles en sección 6 y lección 5.
 
-9. ~~**Resolver coordinación Modo 2**~~ ✅ **Resuelto de facto** al eliminar `IVRGeneratorModule`: el teléfono ya no puede reproducir audio en Modo 2 (sección 4).
+9. ~~**Modo 3 — Agente IA conversacional**~~ ✅ **Completado.** Primero con `manolo_agi.py`, y desde sept. 2026 con `manolo_ari.py` (ARI + ExternalMedia, streaming).
 
-10. ~~**Documentar configuración Zadarma**~~ ✅ **Hecho**, en `CLAUDE.local.md` (sección 14).
+10. ~~**Resolver coordinación Modo 2**~~ ✅ **Resuelto de facto** al eliminar `IVRGeneratorModule`: el teléfono ya no puede reproducir audio en Modo 2 (sección 4).
+
+11. ~~**Documentar configuración Zadarma**~~ ✅ **Hecho**, en `CLAUDE.local.md` (sección 14).
 
 ---
 
@@ -547,7 +558,7 @@ Solo Modo 1 (sin VPS):         €0.00/mes
 
 ## 15. Lecciones aprendidas — trampas ya pisadas
 
-Cuatro fallos que costaron una sesión entera cada uno. Si algo de Modo 1 o Modo 2 se rompe, empezar por aquí.
+Cinco fallos que costaron una sesión entera cada uno. Si algo de Modo 1, Modo 2 o de la sincronización con el servidor se rompe, empezar por aquí.
 
 ### Lección 1 — Asterisk busca los sonidos en `/usr/share/asterisk`, no en `/var/lib/asterisk`
 
@@ -589,13 +600,9 @@ Cuatro fallos que costaron una sesión entera cada uno. Si algo de Modo 1 o Modo
 - `POST /set_message` — cualquiera hace que el servidor genere audio arbitrario
 - `GET /call_log` — **los números de quien ha llamado**, datos personales de terceros
 
-**Estado actual (sept. 2026): el puerto sigue cerrado, deliberadamente.** Consecuencias que hay que conocer antes de diagnosticar nada:
+**Resuelto (27 sept. 2026) sin abrir el puerto.** `control_api.py` exige `X-API-Key` y se expone por HTTPS: `https://manolo.bitxodev.com` → Cloudflare → Nginx Proxy Manager → Flask en el gateway del bridge Docker. El 5000 sigue cerrado al exterior y la app controla los tres modos. Verificado en dispositivo: cambio de modo e historial del servidor funcionando, Manolo respondiendo en 200-400 ms.
 
-- El modo se cambia desde el propio VPS con `curl` a `127.0.0.1:5000`, no desde la app
-- `CallHistoryScreen` solo muestra el historial local del Modo 1; `getCallLog()` devuelve `[]` por timeout
-- **Los Modos 2 y 3 funcionan igual de bien:** la llamada entra por SIP en el 5060, que sí está abierto. El 5000 solo afecta al control desde la app
-
-**Solución real:** autenticar `control_api.py` con `X-API-Key` y exponerlo por HTTPS — **sin abrir el 5000 nunca**. El tráfico entra por 443 vía Cloudflare → Nginx Proxy Manager → Flask en el bridge Docker. El código del repo ya lo exige; falta la infraestructura. Punto 1 del roadmap.
+Para que eso funcionara faltaban dos piezas que no eran evidentes — ver **lección 5**.
 
 **Y hay un segundo bloqueante, independiente del firewall:** la exención de tráfico en claro vive en `android/app/src/debug/AndroidManifest.xml`, solo en el source set de debug. Con `targetSdkVersion 34`, un build de release bloquea cualquier `http://`. Aunque el puerto estuviera abierto, la app en release no habría podido hablar con el servidor. Por eso la solución es HTTPS y no "abrir el puerto".
 
@@ -606,6 +613,30 @@ curl -H "X-API-Key: $TOKEN" https://tu-subdominio.tu-dominio.com/get_mode
 ```
 
 Si responde en local pero no desde fuera, es la red — y antes de abrir nada, mirar qué quedaría expuesto.
+
+### Lección 5 — UFW y Docker fallan en direcciones opuestas
+
+Dos problemas del mismo montaje (Nginx Proxy Manager en contenedor), que se comportan al revés uno del otro. Entender la asimetría es lo que ahorra la tarde.
+
+**Caso A — contenedor → host: UFW SÍ bloquea, y hay que abrirlo a mano.**
+
+*Síntoma:* Flask escuchando correctamente en el gateway del bridge (`172.18.0.1:5000`), pero el contenedor de NPM no lo alcanzaba: `502 Bad Gateway` en el navegador, y `curl` desde dentro del contenedor devolvía `000`.
+
+*Causa:* el tráfico de un contenedor hacia la IP del gateway va **al propio host**, así que entra por la cadena `INPUT` de iptables — donde UFW lo bloquea por política por defecto. No es tráfico *forward*, aunque lo parezca por venir de una red Docker.
+
+*Solución:*
+
+```bash
+ufw allow from 172.18.0.0/16 to 172.18.0.1 port 5000 proto tcp
+```
+
+⚠️ **`ufw route allow ...` NO sirve.** Las reglas `route` actúan sobre `FORWARD`, y este tráfico nunca pasa por ahí. Es el error natural cuando uno piensa "esto es tráfico entre redes".
+
+**Caso B — Internet → contenedor: UFW NO bloquea, aunque lo parezca.**
+
+Docker publica los puertos insertando reglas en `nat/PREROUTING` y en sus propias cadenas, que se evalúan **antes** que `INPUT`. Un `ufw deny` no toca ese tráfico: `ufw status` puede decir que un puerto está cerrado mientras está perfectamente accesible desde Internet. Es el origen del problema pendiente del panel de NPM (sección 12).
+
+**Regla:** en un VPS con Docker, `ufw status` no es una descripción de lo que está expuesto. Lo que manda es `iptables -t nat -L PREROUTING -n` y una comprobación real desde fuera del host.
 
 ---
 
