@@ -73,12 +73,14 @@ Asterisk [from-zadarma]
         └── manolo_ari.py (ARI 127.0.0.1:8088 + ExternalMedia UDP 127.0.0.1:7000)
               ├── Recibe RTP/mulaw por UDP, VAD por energía (barge-in: 800ms de
               │   gracia + 3 frames consecutivos antes de cortar la respuesta)
-              ├── STT: Deepgram Nova-2 (batch) — Whisper por socket (/tmp/whisper.sock) como fallback
+              ├── STT: Deepgram Nova-2 (batch). Sin fallback: si Deepgram falla, no hay STT
               ├── LLM: Groq `qwen/qwen3.8-27b`, con historial de conversación real
               └── TTS: Edge TTS `es-ES-AlvaroNeural` → mulaw 8kHz → RTP de vuelta
 ```
 
 `manolo_agi.py` es el AGI legacy: sigue en disco como backup, pero el dialplan ya no lo referencia.
+
+`whisper_server.py` está **parado y deshabilitado** en el VPS, y `manolo_ari.py` no lo referencia (cero menciones en el código): el fallback de STT por socket Unix solo existía en el AGI legacy. Los ficheros siguen en `vps_backend/` por si alguna vez se recablea.
 
 **Endpoints de `control_api.py` (todos con `X-API-Key`):** detalle en `.claude/rules/vps-backend.md`.
 
@@ -110,7 +112,7 @@ Esta configuración no vive en el código. Si se pierde, el Modo 2 deja de funci
 | **Zadarma**          | ver `CLAUDE.local.md` | Reenvío de entrantes → VPS por SIP. Número, SIP Login y External Server en el fichero local                                                                                                                                    |
 | **VPS — SIP**        | ver `CLAUDE.local.md` | Puerto 5060/udp abierto solo a las 6 subnets de Zadarma                                                                                                                                                                       |
 | **VPS — control API**| ver `CLAUDE.local.md` | `https://manolo.bitxodev.com` → Cloudflare → NPM → Flask en el bridge Docker. El 5000/tcp **sigue cerrado al exterior**: todo entra por 443. Los tres endpoints exigen `X-API-Key` (ver lección 4)          |
-| **Deepgram**         | `api.deepgram.com` | $200 crédito gratuito. **STT principal desde sept. 2026** (Nova-2, batch) en `manolo_ari.py` — verificado en prueba real sobre audio del ExternalMedia (RTP/mulaw 8 kHz). Whisper queda como fallback si Deepgram falla           |
+| **Deepgram**         | `api.deepgram.com` | $200 crédito gratuito. **Único STT** (Nova-2, batch) en `manolo_ari.py` — verificado en prueba real sobre audio del ExternalMedia (RTP/mulaw 8 kHz). Sin fallback: si falla, el Modo 3 se queda sin transcripción                |
 | **Groq**             | `api.groq.com`     | LLM de Manolo: `qwen/qwen3.8-27b`. Si la API falla, `manolo_ari.py` responde con un mensaje fijo de emergencia, no hay fallback a otro proveedor                                                                                  |
 
 ---
@@ -200,8 +202,6 @@ Los del VPS están en `.claude/rules/vps-backend.md`.
 
 ### Crítica
 
-- [ ] **🔴 Rotar `CONTROL_API_TOKEN`.** El token en uso se expuso en un chat. Mientras no se rote, quien lo haya visto puede cambiar el modo de operación y leer `GET /call_log` — los números de quien ha llamado. Procedimiento: generar uno nuevo (`python3 -c "import secrets; print(secrets.token_urlsafe(32))"`), ponerlo en el `.env` del VPS, `systemctl restart asterisk-control-api`, ponerlo en el `.env` de la app, rebuild e instalar. **Y borrar los APK viejos de `~/Downloads`: llevan el token antiguo incrustado.**
-
 - [ ] **🔴 Panel de NPM (puerto 81) accesible desde Internet.** Afecta a todo el VPS, no solo a este proyecto: detalle y arreglo en `~/claude-config/projects/bitxodev-vps/CLAUDE.md`.
 
 - [ ] **Una sola llamada concurrente en `manolo_ari.py`.** Puerto UDP fijo (7000) + estado global. Con dos llamadas simultáneas la segunda pisa a la primera. Es el bloqueante real para cualquier uso más allá del propio Víctor.
@@ -213,6 +213,13 @@ Los del VPS están en `.claude/rules/vps-backend.md`.
 - [ ] **Residuos IVR on-device:** `IVRAudioPlayer.java` (referenciado en `CallAccessibilityService`) e `IVRMessageHelper.java` (referenciado en `CallStateReceiver`). Ya no pueden reproducir nada porque el MP3 no se genera, pero siguen compilando. Borrarlos exige limpiar esas 3 referencias primero.
 
 - [ ] **6 permisos residuales en `AndroidManifest.xml`:** `BIND_INCALL_SERVICE`, `BIND_TELECOM_CONNECTION_SERVICE`, `CONTROL_INCALL_EXPERIENCE`, `MODIFY_AUDIO_SETTINGS`, `MODIFY_PHONE_STATE`, `MODIFY_AUDIO_ROUTING`. Los services que los usaban (`SpamCallService`, `DialerActivity`, `InCallActivity`) ya están fuera del manifest — los permisos siguen asustando al usuario sin aportar nada.
+
+- [ ] **`manolo_ari.py` depende de Deepgram (STT) y Groq (LLM) sin fallback.** Si cualquiera de los dos cae, el Modo 3 deja de funcionar. Lo que pasa hoy, verificado en código:
+
+  - **Deepgram caído:** `deepgram_stt()` devuelve `''` y `handle_turn_complete()` lo cuenta como silencio. A los `MAX_SILENCIO = 2` turnos seguidos, `despedida_y_cierre()`. O sea: Manolo se despide y cuelga a un spammer que está hablando, sin distinguirlo de una línea muda.
+  - **Groq caído:** `get_manolo_response()` devuelve siempre la misma frase de emergencia (*"Ay, hijo, no te he oído bien. ¿Puedes repetirlo?"*). Manolo la repite turno tras turno hasta `MAX_TURNOS = 8` y entonces cierra.
+
+  Ninguno de los dos deja la llamada colgada —los dos límites la acotan— pero el comportamiento no es una decisión, es lo que sale por accidente. **Pendiente de definir qué debería hacer:** ¿colgar en cuanto se detecte el fallo? ¿degradar a Modo 2 y reproducir `fixed_spam_message`? Lo segundo mantiene el efecto útil (el spammer oye algo y pierde el tiempo) sin fingir una conversación.
 
 - [ ] **Sin tests** en ninguna capa.
 
@@ -232,7 +239,7 @@ Los del VPS están en `.claude/rules/vps-backend.md`.
 
 En orden de prioridad; el detalle de cada punto está en la sección 9.
 
-1. **🔴 Rotar `CONTROL_API_TOKEN` y cerrar el panel de NPM** (este último en `bitxodev-vps`). Nada de lo demás importa hasta que eso esté resuelto.
+1. **🔴 Cerrar el panel de NPM** (detalle en `bitxodev-vps`). Nada de lo demás importa hasta que eso esté resuelto.
 2. **Token fuera del APK (`EncryptedSharedPreferences`).** Campo en Ajustes donde se pega el token una vez, guardado cifrado vía módulo nativo: deja de estar en el APK y en el repo, y rotarlo no exige recompilar. Coste: un `TextInput`, dos métodos en Java y leerlo desde `BackendSyncService`.
 3. **Asignación dinámica de puertos UDP en `manolo_ari.py`.**
 4. **Medir latencia por turno** (audio → STT → LLM → TTS → primer RTP de vuelta).
