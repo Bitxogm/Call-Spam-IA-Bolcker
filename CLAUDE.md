@@ -221,13 +221,11 @@ Los del VPS están en `.claude/rules/vps-backend.md`.
 
   Ninguno de los dos deja la llamada colgada —los dos límites la acotan— pero el comportamiento no es una decisión, es lo que sale por accidente. **Pendiente de definir qué debería hacer:** ¿colgar en cuanto se detecte el fallo? ¿degradar a Modo 2 y reproducir `fixed_spam_message`? Lo segundo mantiene el efecto útil (el spammer oye algo y pierde el tiempo) sin fingir una conversación.
 
-- [ ] **Sin tests** en ninguna capa.
+- [ ] **Cobertura de tests mínima y solo en TS.** Vitest cubre `src/utils/historial.ts` y `BackendSyncService` (23 casos, `npm test`). Sin cobertura: toda la capa de llamadas (Java), `manolo_ari.py` y `control_api.py`. Montar JUnit/Robolectric sobre Expo es caro y no habría cazado ninguno de los fallos reales del proyecto —lección 2, el deadlock ARI, el Modo 2 con Manolo— que salen en dispositivo. La regla 5 sigue siendo el gate.
 
 - [ ] **Latencia por turno sin instrumentar.** El paso de AGI a ARI se hizo para bajarla, pero nunca se midió con timestamps reales. Sin cifras no se puede afirmar que el streaming mejoró nada.
 
 - [ ] **`scripts/check-secrets.sh` no es fiable como gate.** Marca como "posible secreto" el propio texto de este CLAUDE.md que describe el problema, además de referencias a `process.env.EXPO_PUBLIC_*` y nombres de variable. Y falla con `/dev/tty: No such device or address` en entornos no interactivos (CI, agentes), cayendo a modo advertencia sin bloquear.
-
-- [ ] **"Borrar Todo" en `CallHistoryScreen` solo limpia el historial local.** Las llamadas del servidor (`call_log.json`) reaparecen al siguiente refresco, porque no hay endpoint para borrarlas.
 
 ### Menor
 
@@ -246,6 +244,17 @@ En orden de prioridad; el detalle de cada punto está en la sección 9.
 5. **Unificar `ContactService.ts` y `ContactsService.ts`.**
 6. **Limpiar residuos IVR** y después los 6 permisos del manifest.
 7. **Arreglar o retirar `scripts/check-secrets.sh`.**
+
+### Ideas valoradas y descartadas por riesgo (oct. 2026)
+
+Descartadas bajo el criterio "solo cambios que no puedan romper lo que ya funciona".
+Siguen siendo buenas ideas; lo que las frena es el riesgo, no el valor.
+
+- **Whitelist por número + toggle de números ocultos.** *Riesgo: medio.* Es el agujero real de la app: `shouldShowNotification()` bloquea todos los números ocultos sin excepción y no hay whitelist por número, solo contactos — una llamada legítima con número oculto se contesta y se cuelga sin remedio. Toca el núcleo de decisión de spam, así que exige prueba en dispositivo con número oculto real. **El de más valor de los descartados.**
+- **Bloquear desde la notificación.** *Riesgo: bajo-medio.* La notificación ya tiene `addAction`, así que es extender un patrón; el riesgo es el `PendingIntent` y el rebuild de `/android/`. El botón del historial ya cubre el caso principal.
+- **Degradar a Modo 2 si cae Deepgram o Groq.** *Riesgo: bajo-medio.* Detalle del comportamiento actual en la sección 9. Verificarlo exige simular el fallo y una llamada real por caso.
+- **Score de reputación** (`2bef944`, `b91e23f`, `f697767` de `claude/modo1-optimized`). *Riesgo: **alto**.* Los tres apilan cambios sobre `CallScreeningServiceImpl.java`, el fichero más caliente, con diez meses de divergencia. Es el único punto donde se puede romper la detección de spam. Si se quiere algo: coger solo `SpamPatternDetector.java` (fichero nuevo, 214 líneas, entra sin conflicto) y decidir la integración aparte.
+- **Tests de la capa de llamadas.** *Riesgo: nulo; coste alto.* Ver la deuda de cobertura en la sección 9.
 
 Completados: ver `HISTORIAL.md`.
 
