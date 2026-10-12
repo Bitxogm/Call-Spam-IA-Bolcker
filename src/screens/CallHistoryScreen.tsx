@@ -18,6 +18,25 @@ import backendSyncService from '../services/BackendSyncService';
 type HistoryRow = SpamCallRecord & {
   origen: 'local' | 'servidor';
   duracion?: number;
+  /** Instante real, para ordenar. `timestamp` es solo para mostrar. */
+  epoch: number;
+};
+
+/**
+ * El servidor manda ISO 8601 en UTC con offset. Los registros anteriores al
+ * cambio vienen sin offset: eran UTC igualmente, así que se les añade la Z
+ * antes de parsear — si no, JS los interpretaría como hora local.
+ */
+const parseServidor = (iso: string): Date => {
+  const conZona = /(Z|[+-]\d{2}:?\d{2})$/.test(iso) ? iso : `${iso}Z`;
+  return new Date(conZona);
+};
+
+/** "yyyy-MM-dd HH:mm:ss" en hora local, igual que CallHistoryHelper.java */
+const formatearLocal = (d: Date): string => {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ` +
+         `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 };
 
 const CallHistoryScreen: React.FC = () => {
@@ -42,22 +61,30 @@ const CallHistoryScreen: React.FC = () => {
       CallHistoryService.getTotalSpamCalls(),
     ]);
 
-    const locales: HistoryRow[] = localData.map(r => ({ ...r, origen: 'local' }));
-
-    // El historial local usa "yyyy-MM-dd HH:mm:ss" (CallHistoryHelper.java).
-    // Normalizo el ISO del servidor al mismo formato: así ordena por string
-    // y se muestra igual, sin microsegundos.
-    const servidor: HistoryRow[] = serverData.map(r => ({
-      number: r.numero,
-      timestamp: r.timestamp_inicio.replace('T', ' ').slice(0, 19),
-      reason: 'Manolo (Modo 2/3)',
-      action: r.estado === 'activa' ? 'En curso' : 'Atendida por Manolo',
-      origen: 'servidor',
-      duracion: r.duracion_segundos,
+    // El local ya viene en hora del dispositivo (CallHistoryHelper.java)
+    const locales: HistoryRow[] = localData.map(r => ({
+      ...r,
+      origen: 'local',
+      epoch: new Date(r.timestamp.replace(' ', 'T')).getTime(),
     }));
 
+    const servidor: HistoryRow[] = serverData.map(r => {
+      const d = parseServidor(r.timestamp_inicio);
+      return {
+        number: r.numero,
+        timestamp: formatearLocal(d),
+        reason: 'Manolo (Modo 2/3)',
+        action: r.estado === 'activa' ? 'En curso' : 'Atendida por Manolo',
+        origen: 'servidor' as const,
+        duracion: r.duracion_segundos,
+        epoch: d.getTime(),
+      };
+    });
+
     setHistory(
-      [...locales, ...servidor].sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+      // Por instante, no por cadena: las dos fuentes estaban en zonas distintas
+      // y comparar el texto mezclaba el orden
+      [...locales, ...servidor].sort((a, b) => b.epoch - a.epoch)
     );
     setTotalCalls(total + serverData.length);
   };
@@ -78,11 +105,25 @@ const CallHistoryScreen: React.FC = () => {
           text: 'Borrar',
           style: 'destructive',
           onPress: async () => {
-            const success = await CallHistoryService.clearHistory();
-            if (success) {
+            const [localOk, servidorOk] = await Promise.all([
+              CallHistoryService.clearHistory(),
+              backendSyncService.clearCallLog(),
+            ]);
+
+            if (localOk && servidorOk) {
               setHistory([]);
               setTotalCalls(0);
               Alert.alert('✅ Historial borrado');
+            } else if (localOk && !servidorOk) {
+              // Hay que decirlo: si no, las del servidor reaparecen al refrescar
+              // y parece que el borrado no funcionó.
+              await loadHistory();
+              Alert.alert(
+                '⚠️ Borrado parcial',
+                'Se borró el historial local, pero el servidor no respondió. Las llamadas de los Modos 2/3 siguen ahí.'
+              );
+            } else {
+              Alert.alert('❌ Error', 'No se pudo borrar el historial.');
             }
           },
         },

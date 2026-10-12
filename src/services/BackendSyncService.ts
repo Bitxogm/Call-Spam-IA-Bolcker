@@ -101,6 +101,35 @@ class BackendSyncService {
       return [];
     }
   };
+
+  /**
+   * Borra el historial de llamadas del servidor. Devuelve false si no se pudo:
+   * el llamante necesita saberlo para no decirle al usuario que se borró todo.
+   */
+  clearCallLog = async (): Promise<boolean> => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      const response = await fetch(`${BASE_URL}/call_log`, {
+        method: 'DELETE',
+        headers: headers(),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        avisarSi401(response.status, 'DELETE /call_log');
+        console.error('❌ DELETE /call_log respondió', response.status);
+        return false;
+      }
+      return true;
+    } catch (error: any) {
+      console.error('❌ Error borrando call_log:', error?.name ?? error);
+      return false;
+    }
+  };
 }
 
 export const backendSyncService = new BackendSyncService();

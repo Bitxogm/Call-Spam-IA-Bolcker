@@ -42,6 +42,13 @@ def load_call_log():
     except (FileNotFoundError, json.JSONDecodeError):
         return []
 
+def save_call_log(registros):
+    """Escritura atómica, igual que en manolo_ari.py: ese proceso lee en paralelo."""
+    tmp_path = CALL_LOG_FILE + '.tmp'
+    with open(tmp_path, 'w') as f:
+        json.dump(registros, f, ensure_ascii=False)
+    os.replace(tmp_path, CALL_LOG_FILE)
+
 def save_mode(mode):
     with open(STATE_FILE, 'w') as f:
         json.dump({'mode': mode}, f)
@@ -79,6 +86,19 @@ def call_log():
     # timestamp_inicio es ISO 8601: ordenar como string equivale a ordenar por fecha
     registros.sort(key=lambda r: r.get('timestamp_inicio') or '', reverse=True)
     return jsonify(registros[:50]), 200
+
+
+@app.route('/call_log', methods=['DELETE'])
+@requiere_token
+def borrar_call_log():
+    borradas = len(load_call_log())
+    try:
+        save_call_log([])
+    except Exception as e:
+        print(f"❌ Error borrando call_log: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+    print(f"🗑️  call_log borrado ({borradas} registros)")
+    return jsonify({'status': 'success', 'borradas': borradas}), 200
 
 
 if __name__ == '__main__':

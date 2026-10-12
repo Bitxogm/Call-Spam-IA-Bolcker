@@ -17,7 +17,7 @@ import random
 import struct
 import asyncio
 import audioop
-from datetime import datetime
+from datetime import datetime, timezone
 
 import httpx
 import websockets
@@ -560,7 +560,9 @@ async def on_stasis_start(event):
     log.append({
         'id': channel_id,
         'numero': numero,
-        'timestamp_inicio': datetime.now().isoformat(),
+        # UTC con offset explícito: el VPS corre en UTC y el cliente está en
+        # otra zona. Sin el offset, la app no puede saber qué hora es esta.
+        'timestamp_inicio': datetime.now(timezone.utc).isoformat(),
         'timestamp_fin': None,
         'duracion_segundos': 0,
         'estado': 'activa',
@@ -599,9 +601,13 @@ async def on_stasis_end(event):
         log = load_call_log()
         for entry in log:
             if entry.get('id') == channel_id and entry.get('estado') == 'activa':
-                fin = datetime.now()
+                fin = datetime.now(timezone.utc)
                 try:
                     inicio = datetime.fromisoformat(entry['timestamp_inicio'])
+                    # Los registros anteriores a este cambio son naive: eran UTC
+                    # sin decirlo. Sin esto, restar aware - naive es TypeError.
+                    if inicio.tzinfo is None:
+                        inicio = inicio.replace(tzinfo=timezone.utc)
                     entry['duracion_segundos'] = int((fin - inicio).total_seconds())
                 except Exception:
                     entry['duracion_segundos'] = 0
