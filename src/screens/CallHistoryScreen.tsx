@@ -11,35 +11,11 @@ import {
   Linking,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import CallHistoryService, { SpamCallRecord } from '../services/CallHistoryService';
+import CallHistoryService from '../services/CallHistoryService';
 import backendSyncService from '../services/BackendSyncService';
+import { fusionarHistorial, HistoryRow } from '../utils/historial';
 import { blacklistService } from '../services/BlacklistService';
 import { databaseService } from '../services/DataBaseService';
-
-/** Fila del historial, con el origen para diferenciarla visualmente */
-type HistoryRow = SpamCallRecord & {
-  origen: 'local' | 'servidor';
-  duracion?: number;
-  /** Instante real, para ordenar. `timestamp` es solo para mostrar. */
-  epoch: number;
-};
-
-/**
- * El servidor manda ISO 8601 en UTC con offset. Los registros anteriores al
- * cambio vienen sin offset: eran UTC igualmente, así que se les añade la Z
- * antes de parsear — si no, JS los interpretaría como hora local.
- */
-const parseServidor = (iso: string): Date => {
-  const conZona = /(Z|[+-]\d{2}:?\d{2})$/.test(iso) ? iso : `${iso}Z`;
-  return new Date(conZona);
-};
-
-/** "yyyy-MM-dd HH:mm:ss" en hora local, igual que CallHistoryHelper.java */
-const formatearLocal = (d: Date): string => {
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ` +
-         `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
-};
 
 const CallHistoryScreen: React.FC = () => {
   const [history, setHistory] = useState<HistoryRow[]>([]);
@@ -63,31 +39,7 @@ const CallHistoryScreen: React.FC = () => {
       CallHistoryService.getTotalSpamCalls(),
     ]);
 
-    // El local ya viene en hora del dispositivo (CallHistoryHelper.java)
-    const locales: HistoryRow[] = localData.map(r => ({
-      ...r,
-      origen: 'local',
-      epoch: new Date(r.timestamp.replace(' ', 'T')).getTime(),
-    }));
-
-    const servidor: HistoryRow[] = serverData.map(r => {
-      const d = parseServidor(r.timestamp_inicio);
-      return {
-        number: r.numero,
-        timestamp: formatearLocal(d),
-        reason: 'Manolo (Modo 2/3)',
-        action: r.estado === 'activa' ? 'En curso' : 'Atendida por Manolo',
-        origen: 'servidor' as const,
-        duracion: r.duracion_segundos,
-        epoch: d.getTime(),
-      };
-    });
-
-    setHistory(
-      // Por instante, no por cadena: las dos fuentes estaban en zonas distintas
-      // y comparar el texto mezclaba el orden
-      [...locales, ...servidor].sort((a, b) => b.epoch - a.epoch)
-    );
+    setHistory(fusionarHistorial(localData, serverData));
     setTotalCalls(total + serverData.length);
   };
 
