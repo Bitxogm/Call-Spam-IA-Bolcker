@@ -27,8 +27,6 @@ public class SpamNotificationManager {
     private static final int NOTIFICATION_ID = 1001;
 
     // Acción para contestar con IA
-    public static final String ACTION_ANSWER_WITH_AI = "com.anonymous.SpamBlockerApp.ANSWER_WITH_AI";
-    public static final String EXTRA_PHONE_NUMBER = "phone_number";
 
     /**
      * Muestra notificación de spam detectado con botón para contestar con IA
@@ -50,18 +48,6 @@ public class SpamNotificationManager {
         }
 
         String timestamp = new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date());
-
-        // Intent para contestar con IA
-        Intent answerIntent = new Intent(context, CallAnswerReceiver.class);
-        answerIntent.setAction(ACTION_ANSWER_WITH_AI);
-        answerIntent.putExtra(EXTRA_PHONE_NUMBER, phoneNumber);
-
-        PendingIntent answerPendingIntent = PendingIntent.getBroadcast(
-            context,
-            0,
-            answerIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
-        );
 
         // Intent para ignorar
         Intent dismissIntent = new Intent(context, CallAnswerReceiver.class);
@@ -86,11 +72,6 @@ public class SpamNotificationManager {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
             .setColor(Color.rgb(255, 102, 0))  // Naranja
-            .addAction(
-                android.R.drawable.ic_menu_call,
-                "🤖 Dejar que IA Conteste",
-                answerPendingIntent
-            )
             .addAction(
                 android.R.drawable.ic_menu_close_clear_cancel,
                 "Ignorar",
