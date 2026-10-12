@@ -13,6 +13,8 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import CallHistoryService, { SpamCallRecord } from '../services/CallHistoryService';
 import backendSyncService from '../services/BackendSyncService';
+import { blacklistService } from '../services/BlacklistService';
+import { databaseService } from '../services/DataBaseService';
 
 /** Fila del historial, con el origen para diferenciarla visualmente */
 type HistoryRow = SpamCallRecord & {
@@ -93,6 +95,52 @@ const CallHistoryScreen: React.FC = () => {
     setRefreshing(true);
     await loadHistory();
     setRefreshing(false);
+  };
+
+  /**
+   * Mismo camino dual que SpamNumbersScreen: SharedPreferences es lo que lee la
+   * capa nativa para bloquear, SQLite es lo que pinta la lista de la UI. Las dos
+   * o ninguna — si solo entra en una, la pantalla y el bloqueo real discrepan.
+   */
+  const handleBlock = (number: string) => {
+    if (!number || number === 'Desconocido') {
+      Alert.alert('⚠️ No se puede bloquear', 'Esta llamada no tiene un número asociado.');
+      return;
+    }
+
+    Alert.alert(
+      '🚫 Bloquear número',
+      `¿Añadir ${number} a la lista negra? Las próximas llamadas de este número se bloquearán.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Bloquear',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (await databaseService.isSpamNumber(number)) {
+                Alert.alert('ℹ️ Ya estaba', `${number} ya está en la lista negra.`);
+                return;
+              }
+
+              const [prefsOk, dbOk] = await Promise.all([
+                blacklistService.addNumber(number),
+                databaseService.addSpamNumber(number, 'Bloqueado desde el historial', 'manual'),
+              ]);
+
+              if (prefsOk && dbOk) {
+                Alert.alert('✅ Bloqueado', `${number} añadido a la lista negra.`);
+              } else {
+                Alert.alert('❌ Error', 'No se pudo bloquear el número.');
+              }
+            } catch (error) {
+              console.error('❌ Error bloqueando desde el historial:', error);
+              Alert.alert('❌ Error', 'No se pudo bloquear el número.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleClearHistory = () => {
@@ -245,12 +293,20 @@ const CallHistoryScreen: React.FC = () => {
                 </Text>
               </View>
 
-              <TouchableOpacity
-                style={styles.tellowsButton}
-                onPress={() => Linking.openURL('https://www.tellows.es/num/' + record.number)}
-              >
-                <Text style={styles.tellowsButtonText}>🔍 Consultar</Text>
-              </TouchableOpacity>
+              <View style={styles.rowActions}>
+                <TouchableOpacity
+                  style={[styles.tellowsButton, styles.rowAction]}
+                  onPress={() => Linking.openURL('https://www.tellows.es/num/' + record.number)}
+                >
+                  <Text style={styles.tellowsButtonText}>🔍 Consultar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.blockButton, styles.rowAction]}
+                  onPress={() => handleBlock(record.number)}
+                >
+                  <Text style={styles.blockButtonText}>🚫 Bloquear</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           ))
         )}
@@ -369,6 +425,28 @@ const styles = StyleSheet.create({
   callAction: {
     fontSize: 12,
     color: '#007bff',
+    fontWeight: '600',
+  },
+  rowActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  rowAction: {
+    flex: 1,
+    marginTop: 0,
+  },
+  blockButton: {
+    backgroundColor: '#fff0f0',
+    padding: 8,
+    borderRadius: 6,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#f6ccd6',
+  },
+  blockButtonText: {
+    fontSize: 12,
+    color: '#c73a5b',
     fontWeight: '600',
   },
   tellowsButton: {
