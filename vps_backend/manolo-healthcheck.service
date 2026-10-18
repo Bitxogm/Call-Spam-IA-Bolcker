@@ -1,0 +1,16 @@
+[Unit]
+Description=Healthcheck de Manolo (TTS, Groq, Deepgram y servicios)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/ai_bridge
+Environment="PATH=/root/ai_bridge/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+EnvironmentFile=/root/ai_bridge/.env
+ExecStart=/root/ai_bridge/venv/bin/python3 /root/ai_bridge/healthcheck.py
+# Red de seguridad sobre el timeout por comprobación del propio script
+TimeoutStartSec=300
+StandardOutput=journal
+StandardError=journal

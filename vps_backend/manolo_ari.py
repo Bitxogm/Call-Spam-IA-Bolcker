@@ -65,6 +65,10 @@ SOUNDS_DIR = '/usr/share/asterisk/sounds/es'   # Data directory de Asterisk, igu
 FIXED_SOUND = 'fixed_spam_message'            # único mensaje del Modo 2
 FIXED_PLAYBACK_TIMEOUT = 20     # segundos máximo esperando PlaybackFinished
 
+TTS_PROVIDER = 'edge'           # healthcheck.py lo usa para sugerir el arreglo adecuado
+TTS_VOICE = 'es-ES-AlvaroNeural'
+GROQ_MODEL = 'qwen/qwen3.8-27b'
+
 TTS_TIMEOUT = 10                # segundos máximo para Edge TTS + ffmpeg
 MAX_ERRORES_STT = 2             # errores reales seguidos de Deepgram antes del plan B
 FRASE_EMERGENCIA = 'Ay, hijo, no te he oído bien. ¿Puedes repetirlo?'
@@ -354,7 +358,7 @@ async def generate_manolo_reply(chat_history, text):
 
     try:
         response = await groq_client.chat.completions.create(
-            model='qwen/qwen3.8-27b',
+            model=GROQ_MODEL,
             messages=messages,
             max_tokens=100,
             temperature=0.8,
@@ -384,7 +388,7 @@ async def _synthesize_mulaw(texto, tmp_mp3):
     try:
         communicate = edge_tts.Communicate(
             text=texto,
-            voice='es-ES-AlvaroNeural',
+            voice=TTS_VOICE,
             rate='-8%',
             pitch='-4Hz'
         )

@@ -1,0 +1,11 @@
+[Unit]
+Description=Healthcheck de Manolo cada 6 horas
+
+[Timer]
+OnCalendar=*-*-* 00/6:00:00
+# Si el VPS estaba apagado a la hora, lo lanza al arrancar
+Persistent=true
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target
