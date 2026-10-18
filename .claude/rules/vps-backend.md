@@ -12,6 +12,21 @@ paths: ["vps_backend/**"]
 - `GET /get_mode` — devuelve el modo actual
 - `GET /call_log` — últimas 50 llamadas atendidas por el servidor, ordenadas por `timestamp_inicio` desc. Las escribe `manolo_ari.py` en `<BRIDGE_DIR>/call_log.json`; las consume `CallHistoryScreen` vía `BackendSyncService.getCallLog()`
 
+## Cómo se expone `control_api.py`
+
+```
+App → https://manolo.bitxodev.com
+        → Cloudflare (proxy naranja, rate limit)
+              → 443 del VPS → Nginx Proxy Manager (contenedor, cert Let's Encrypt)
+                    → http://172.18.0.1:5000 → Flask
+```
+
+- **Dónde escucha Flask:** `CONTROL_API_BIND`, por defecto `127.0.0.1`. En producción es el gateway del bridge Docker de NPM (`172.18.0.1`): NPM corre en contenedor y para él `127.0.0.1` es el propio contenedor
+- **El puerto 5000 no se expone a Internet.** Todo entra por 443
+- **Certificado: Let's Encrypt gestionado por NPM**, como el resto de las apps del VPS — no el Cloudflare Origin Certificate
+- Hace falta una regla UFW explícita para que el contenedor alcance el gateway: la regla exacta está en `CLAUDE.local.md`; el porqué, en la lección "UFW y Docker" (caso A) de `~/claude-config/projects/bitxodev-vps/CLAUDE.md`
+- `asterisk-control-api.service` necesita `EnvironmentFile=/root/ai_bridge/.env`, o Flask arranca sin token y en loopback
+
 ## Audio del mensaje fijo (Modo 2) — ruta crítica
 
 Asterisk resuelve `sound:` contra su **Data directory**, que en este VPS es `/usr/share/asterisk`, **no** `/var/lib/asterisk` (ver lección 1 más abajo):
@@ -53,6 +68,20 @@ Las funciones de cada pieza (`deepgram_stt`, `generate_manolo_reply`, `synthesiz
 **Solución:** lanzar `run_fixed()` con `asyncio.create_task()` y guardar una referencia fuerte contra el GC.
 
 **Matiz importante:** **no** convertir todo el dispatcher a `create_task`. El `StasisStart` del canal `UnicastRTP/` lee `call_state.bridge_id` que escribe el `StasisStart` del canal entrante; hoy funciona porque los handlers corren en orden. Hacerlos todos concurrentes provocaría una carrera justo en el camino de Modo 3, que sí funciona.
+
+## Lección 4 — Un servicio arriba no es un servicio alcanzable (y abrir el puerto no es la solución)
+
+**Síntoma:** `control_api.py` sano — `systemctl status` OK, `curl` local OK — pero la app no cambia de modo ni sincroniza. Sin error visible en pantalla: `BackendSyncService` degrada en silencio a propósito, que es lo correcto para la UX pero esconde el fallo.
+
+**Lo que NO hay que hacer: `ufw allow 5000/tcp`.** Antes de abrir un puerto, mirar qué quedaría expuesto. La solución fue HTTPS por NPM con `X-API-Key` (sección de exposición, arriba), con el 5000 cerrado.
+
+**Y hay un segundo bloqueante, independiente del firewall:** la exención de tráfico en claro vive en `android/app/src/debug/AndroidManifest.xml`, solo en el source set de debug. Con `targetSdkVersion 34`, un build de release bloquea cualquier `http://`. Aunque el puerto estuviera abierto, la app en release no habría podido hablar con el servidor.
+
+**Regla de diagnóstico:** "el servicio está arriba" no significa "el servicio es alcanzable". Comprobarlo desde **fuera** del host, no con un `curl` local:
+
+```bash
+curl -H "X-API-Key: $TOKEN" https://tu-subdominio.tu-dominio.com/get_mode
+```
 
 ## Valores hardcodeados
 

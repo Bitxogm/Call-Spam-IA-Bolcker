@@ -33,6 +33,17 @@ sección 15 de `CLAUDE.md`.
 
 **Sesión 27 septiembre 2026:** desplegada la autenticación de `control_api.py` por HTTPS.
 La app controla los tres modos desde el teléfono. Añadida la lección 5 (UFW y Docker).
+Desde esta fecha la API está en producción en `https://manolo.bitxodev.com`.
+
+**Sesión 18 octubre 2026:** plan B del Modo 3, healthcheck con email, voz por `.env`
+(`gl-ES-RoiNeural`) y arreglo de `CALL_PHONE`; detalle en "Roadmap completado". Poda de
+`CLAUDE.md` (324 → menos de 200 líneas): los procedimientos pasan a `docs/runbooks/`, la
+tabla de ramas y las ideas descartadas a `docs/`, y la exposición de la API y la lección 4
+a `.claude/rules/vps-backend.md`. Desde esta sesión la app se prueba en el Samsung Galaxy
+Note 20 y el Pixel 8 hace de spammer (antes era al revés).
+
+Sobre el origen de `CLAUDE.md`: llegar al Modo 2 funcional costó mucho trabajo, y el
+documento nació para que ese conocimiento no se perdiera.
 
 ---
 
