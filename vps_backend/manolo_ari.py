@@ -120,7 +120,7 @@ nunca cuelgues, nunca digas que no te interesa.
 FORMATO DE RESPUESTA (importante, se convierte directo a voz):
 - Solo lo que diría Manolo en voz alta — nada de acotaciones entre paréntesis,
   descripciones de tono, asteriscos ni emojis
-- Máximo 1 pregunta por turno, 2-3 frases como mucho"""
+- Máximo 1 pregunta por turno, 1-2 frases como mucho"""
 
 
 def ari_log(msg):
@@ -351,6 +351,23 @@ async def deepgram_stt(pcm_bytes):
 
 
 # ── Groq ──────────────────────────────────────────────────────
+# Margen holgado: el prompt pide 1-2 frases, pero el modelo se pasa a veces.
+MAX_TOKENS_RESPUESTA = 200
+_FIN_DE_FRASE = '.!?…'
+
+
+def recortar_ultima_frase(texto):
+    """Si la respuesta quedó cortada por max_tokens, la recorta en el último
+    signo de fin de frase. Si no hay ninguno, la devuelve tal cual."""
+    texto = texto.strip()
+    if not texto or texto[-1] in _FIN_DE_FRASE:
+        return texto
+    corte = max(texto.rfind(c) for c in _FIN_DE_FRASE)
+    if corte == -1:
+        return texto
+    return texto[:corte + 1].strip()
+
+
 async def generate_manolo_reply(chat_history, text):
     """Respuesta de Manolo. Lanza LLMError si Groq falla o devuelve vacío."""
     messages = [{'role': 'system', 'content': PROMPT_MANOLO}]
@@ -363,10 +380,13 @@ async def generate_manolo_reply(chat_history, text):
         response = await groq_client.chat.completions.create(
             model=GROQ_MODEL,
             messages=messages,
-            max_tokens=100,
+            max_tokens=MAX_TOKENS_RESPUESTA,
             temperature=0.8,
         )
-        respuesta = (response.choices[0].message.content or '').strip()
+        choice = response.choices[0]
+        respuesta = (choice.message.content or '').strip()
+        if getattr(choice, 'finish_reason', None) == 'length':
+            respuesta = recortar_ultima_frase(respuesta)
     except Exception as e:
         raise LLMError(f'{type(e).__name__}: {e}') from e
     if not respuesta:
