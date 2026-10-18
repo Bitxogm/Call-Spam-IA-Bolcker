@@ -65,6 +65,10 @@ SOUNDS_DIR = '/usr/share/asterisk/sounds/es'   # Data directory de Asterisk, igu
 FIXED_SOUND = 'fixed_spam_message'            # único mensaje del Modo 2
 FIXED_PLAYBACK_TIMEOUT = 20     # segundos máximo esperando PlaybackFinished
 
+TTS_TIMEOUT = 10                # segundos máximo para Edge TTS + ffmpeg
+MAX_ERRORES_STT = 2             # errores reales seguidos de Deepgram antes del plan B
+FRASE_EMERGENCIA = 'Ay, hijo, no te he oído bien. ¿Puedes repetirlo?'
+
 DEEPGRAM_KEY = os.getenv('DEEPGRAM_API_KEY')
 GROQ_KEY = os.getenv('GROQ_API_KEY')
 
@@ -116,6 +120,21 @@ def ari_log(msg):
     ts = datetime.now().strftime('%H:%M:%S.%f')[:-3]
     sys.stderr.write(f'[{ts}] MANOLO_ARI: {msg}\n')
     sys.stderr.flush()
+
+
+# Las funciones de STT/LLM/TTS lanzan estas excepciones en vez de tragarse el
+# error: así la llamada puede caer al plan B y healthcheck.py puede usar las
+# mismas funciones para saber si cada pieza funciona.
+class STTError(Exception):
+    pass
+
+
+class LLMError(Exception):
+    pass
+
+
+class TTSError(Exception):
+    pass
 
 
 # ── Cliente REST ARI ────────────────────────────────────────────
@@ -218,6 +237,8 @@ class CallState:
         self.chat_history = []
         self.turno = 0
         self.silencio_consecutivo = 0
+        self.errores_stt_consecutivos = 0
+        self.plan_b = False              # True = ya se está reproduciendo el mensaje fijo
 
         self.tts_task = None
         self.transport = None            # DatagramTransport para enviar RTP de vuelta
@@ -300,6 +321,7 @@ def _pcm16_to_wav_bytes(pcm_bytes):
 
 
 async def deepgram_stt(pcm_bytes):
+    """Devuelve la transcripción ('' si no hay voz). Lanza STTError si Deepgram falla."""
     wav_bytes = _pcm16_to_wav_bytes(pcm_bytes)
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -318,19 +340,19 @@ async def deepgram_stt(pcm_bytes):
             ari_log(f"STT Deepgram: '{text}'")
             return text
     except Exception as e:
-        ari_log(f'STT Deepgram falló: {e}')
-        return ''
+        raise STTError(f'{type(e).__name__}: {e}') from e
 
 
 # ── Groq ──────────────────────────────────────────────────────
-async def get_manolo_response(chat_history, text):
-    try:
-        messages = [{'role': 'system', 'content': PROMPT_MANOLO}]
-        for i, mensaje in enumerate(chat_history):
-            role = 'user' if i % 2 == 0 else 'assistant'
-            messages.append({'role': role, 'content': mensaje})
-        messages.append({'role': 'user', 'content': text})
+async def generate_manolo_reply(chat_history, text):
+    """Respuesta de Manolo. Lanza LLMError si Groq falla o devuelve vacío."""
+    messages = [{'role': 'system', 'content': PROMPT_MANOLO}]
+    for i, mensaje in enumerate(chat_history):
+        role = 'user' if i % 2 == 0 else 'assistant'
+        messages.append({'role': role, 'content': mensaje})
+    messages.append({'role': 'user', 'content': text})
 
+    try:
         response = await groq_client.chat.completions.create(
             model='qwen/qwen3.8-27b',
             messages=messages,
@@ -338,18 +360,27 @@ async def get_manolo_response(chat_history, text):
             temperature=0.8,
         )
         respuesta = (response.choices[0].message.content or '').strip()
-        chat_history.append(text)
-        chat_history.append(respuesta)
-        ari_log(f'Manolo (Groq): {respuesta}')
-        return respuesta
     except Exception as e:
-        ari_log(f'Groq error: {e}')
-        return 'Ay, hijo, no te he oído bien. ¿Puedes repetirlo?'
+        raise LLMError(f'{type(e).__name__}: {e}') from e
+    if not respuesta:
+        raise LLMError('respuesta vacía')
+    return respuesta
+
+
+async def get_manolo_response(chat_history, text):
+    try:
+        respuesta = await generate_manolo_reply(chat_history, text)
+    except LLMError as e:
+        ari_log(f'FALLBACK: Groq falló ({e}) → frase de emergencia')
+        return FRASE_EMERGENCIA
+    chat_history.append(text)
+    chat_history.append(respuesta)
+    ari_log(f'Manolo (Groq): {respuesta}')
+    return respuesta
 
 
 # ── TTS: Edge TTS (completo) -> ffmpeg -> mulaw -> RTP ──────────
-async def synthesize_mulaw(texto):
-    tmp_mp3 = f'/tmp/manolo_ari_{int(time.time()*1000)}.mp3'
+async def _synthesize_mulaw(texto, tmp_mp3):
     try:
         communicate = edge_tts.Communicate(
             text=texto,
@@ -358,18 +389,33 @@ async def synthesize_mulaw(texto):
             pitch='-4Hz'
         )
         await communicate.save(tmp_mp3)
+    except Exception as e:
+        raise TTSError(f'Edge TTS: {type(e).__name__}: {e}') from e
 
+    try:
         proc = await asyncio.create_subprocess_exec(
             'ffmpeg', '-y', '-i', tmp_mp3,
             '-ar', str(SAMPLE_RATE), '-ac', '1', '-f', 'mulaw', 'pipe:1',
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
         )
-        mulaw_bytes, _ = await proc.communicate()
-        return mulaw_bytes
+        mulaw_bytes, stderr = await proc.communicate()
     except Exception as e:
-        ari_log(f'TTS/ffmpeg error: {e}')
-        return b''
+        raise TTSError(f'ffmpeg: {type(e).__name__}: {e}') from e
+    if proc.returncode != 0 or not mulaw_bytes:
+        ultima_linea = (stderr or b'').decode(errors='replace').strip().splitlines()[-1:]
+        raise TTSError(f'ffmpeg: código {proc.returncode}, {len(mulaw_bytes)} bytes '
+                       f'{ultima_linea[0] if ultima_linea else ""}'.strip())
+    return mulaw_bytes
+
+
+async def synthesize_mulaw(texto):
+    """Texto -> mulaw 8 kHz. Lanza TTSError si Edge TTS o ffmpeg fallan o tardan."""
+    tmp_mp3 = f'/tmp/manolo_ari_{int(time.time()*1000)}.mp3'
+    try:
+        return await asyncio.wait_for(_synthesize_mulaw(texto, tmp_mp3), timeout=TTS_TIMEOUT)
+    except asyncio.TimeoutError as e:
+        raise TTSError(f'timeout de {TTS_TIMEOUT}s') from e
     finally:
         if os.path.exists(tmp_mp3):
             os.remove(tmp_mp3)
@@ -379,8 +425,10 @@ async def play_response(state, texto):
     state.tts_start_time = time.time()
     state.barge_in_frames = 0
     try:
-        mulaw_bytes = await synthesize_mulaw(texto)
-        if not mulaw_bytes:
+        try:
+            mulaw_bytes = await synthesize_mulaw(texto)
+        except TTSError as e:
+            activar_plan_b(state, 'TTS', e)
             return
 
         frame_size = FRAME_SAMPLES  # 160 bytes mulaw = 160 muestras (1 byte/muestra)
@@ -412,7 +460,20 @@ async def handle_turn_complete(state):
         await despedida_y_cierre(state)
         return
 
-    texto = await deepgram_stt(pcm_bytes)
+    try:
+        texto = await deepgram_stt(pcm_bytes)
+    except STTError as e:
+        # Un error real no es silencio: lleva su propio contador
+        state.errores_stt_consecutivos += 1
+        ari_log(f'STT Deepgram falló ({state.errores_stt_consecutivos}/{MAX_ERRORES_STT}): {e}')
+        if state.errores_stt_consecutivos >= MAX_ERRORES_STT:
+            activar_plan_b(state, 'Deepgram', e)
+        return
+    state.errores_stt_consecutivos = 0
+
+    if state.plan_b:
+        return
+
     if not texto:
         state.silencio_consecutivo += 1
         if state.silencio_consecutivo >= MAX_SILENCIO:
@@ -421,6 +482,8 @@ async def handle_turn_complete(state):
 
     state.silencio_consecutivo = 0
     respuesta = await get_manolo_response(state.chat_history, texto)
+    if state.plan_b:
+        return
 
     if state.tts_task and not state.tts_task.done():
         state.tts_task.cancel()
@@ -433,6 +496,8 @@ async def despedida_y_cierre(state):
         state.tts_task.cancel()
     state.tts_task = asyncio.create_task(play_response(state, despedida))
     await asyncio.sleep(4)
+    if state.plan_b:
+        return  # run_fixed ya cuelga al terminar el mensaje fijo
     await ari.hangup(state.channel_id)
 
 
@@ -445,7 +510,7 @@ class RTPProtocol(asyncio.DatagramProtocol):
 
     def datagram_received(self, data, addr):
         global call_state
-        if call_state is None:
+        if call_state is None or call_state.plan_b:
             return
 
         if call_state.remote_addr is None:
@@ -522,6 +587,20 @@ async def run_fixed(channel_id):
         ari_log(f'Error reproduciendo mensaje fijo: {e}')
 
     await ari.hangup(channel_id)
+
+
+def activar_plan_b(state, pieza, error):
+    """Modo 3 sin una de sus piezas: mensaje fijo del Modo 2 y colgar, en vez de quedarse mudo."""
+    global fixed_task
+    if state.plan_b:
+        return
+    state.plan_b = True
+    ari_log(f'FALLBACK: {pieza} falló ({error}) → mensaje fijo y colgar')
+    if (state.tts_task and not state.tts_task.done()
+            and state.tts_task is not asyncio.current_task()):
+        state.tts_task.cancel()
+    # Tarea aparte por el mismo motivo que en on_stasis_start (lección 3)
+    fixed_task = asyncio.create_task(run_fixed(state.channel_id))
 
 
 async def on_playback_finished(event):
