@@ -1,0 +1,42 @@
+name: Tests
+on:
+  pull_request:
+    branches: [dev]
+  push:
+    branches: [dev]
+
+permissions:
+  contents: read
+
+# Un push nuevo a la misma PR cancela la ejecución anterior
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend VPS (unittest)
+    # Versión fija, no ubuntu-latest: manolo_ari.py usa audioop, que desaparece en Python 3.13
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # Sin dependencias: tests/_stubs.py simula httpx, groq, edge_tts... si no están
+      - run: python3 -m unittest discover -s vps_backend/tests -v
+
+  app:
+    name: App (tsc + Vitest)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test
