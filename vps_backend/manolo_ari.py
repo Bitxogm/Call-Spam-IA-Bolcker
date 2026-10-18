@@ -66,7 +66,10 @@ FIXED_SOUND = 'fixed_spam_message'            # único mensaje del Modo 2
 FIXED_PLAYBACK_TIMEOUT = 20     # segundos máximo esperando PlaybackFinished
 
 TTS_PROVIDER = 'edge'           # healthcheck.py lo usa para sugerir el arreglo adecuado
-TTS_VOICE = 'es-ES-AlvaroNeural'
+# `or` en vez de default de getenv: una línea vacía en el .env (TTS_VOICE=) también cae al defecto
+TTS_VOICE = os.getenv('TTS_VOICE') or 'es-ES-AlvaroNeural'
+TTS_RATE = os.getenv('TTS_RATE') or '-8%'
+TTS_PITCH = os.getenv('TTS_PITCH') or '-4Hz'
 GROQ_MODEL = 'qwen/qwen3.8-27b'
 
 TTS_TIMEOUT = 10                # segundos máximo para Edge TTS + ffmpeg
@@ -389,8 +392,8 @@ async def _synthesize_mulaw(texto, tmp_mp3):
         communicate = edge_tts.Communicate(
             text=texto,
             voice=TTS_VOICE,
-            rate='-8%',
-            pitch='-4Hz'
+            rate=TTS_RATE,
+            pitch=TTS_PITCH
         )
         await communicate.save(tmp_mp3)
     except Exception as e:
