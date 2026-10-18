@@ -1,5 +1,5 @@
 // src/services/CallForwardingService.ts
-import { NativeModules } from 'react-native';
+import { NativeModules, PermissionsAndroid } from 'react-native';
 
 const { CallForwardingModule } = NativeModules;
 
@@ -72,6 +72,18 @@ class CallForwardingService {
   configureForMode = async (mode: Mode): Promise<boolean> => {
     try {
       console.log(`⚙️ Configurando desvío para modo: ${mode}`);
+
+      // El USSD sale por TelecomManager.placeCall(), que exige CALL_PHONE concedido
+      // en tiempo de ejecución. Ninguna otra pantalla lo pide.
+      const callPhone = PermissionsAndroid.PERMISSIONS.CALL_PHONE;
+      if (!(await PermissionsAndroid.check(callPhone))) {
+        const result = await PermissionsAndroid.request(callPhone);
+        if (result !== PermissionsAndroid.RESULTS.GRANTED) {
+          console.warn(`⚠️ CALL_PHONE no concedido (${result}), no se puede ejecutar el USSD`);
+          return false;
+        }
+      }
+
       const success = await CallForwardingModule.configureForMode(mode);
 
       if (success) {
