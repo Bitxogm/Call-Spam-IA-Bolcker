@@ -20,6 +20,20 @@ Asterisk resuelve `sound:` contra su **Data directory**, que en este VPS es `/us
 - `manolo_ari.py` reproduce siempre `FIXED_SOUND = 'fixed_spam_message'`. El fallback a `custom_fixed_message` se eliminó con la UI de mensajes personalizados: si queda un WAV viejo en el servidor, se ignora
 - La llamada a ARI pasa `lang='es'` explícito (`ARIClient.play`). Sin él Asterisk resuelve contra el idioma del canal, que llega como `en` desde Zadarma, y busca en `sounds/en/` — donde el fichero no está
 
+## Plan B del Modo 3 y healthcheck
+
+**Plan B del Modo 3** (`activar_plan_b`, una vez por llamada, log `FALLBACK: <pieza> falló`):
+
+| Falla | Qué oye el spammer |
+| --- | --- |
+| TTS (Edge, ffmpeg o > 10 s) | `fixed_spam_message` y cuelga (`run_fixed`) |
+| Groq (error o respuesta vacía) | la frase de emergencia; si el TTS también falla, el mensaje fijo |
+| Deepgram, 2 errores reales seguidos | `fixed_spam_message` y cuelga. Una transcripción vacía es silencio, no error |
+
+Las funciones de cada pieza (`deepgram_stt`, `generate_manolo_reply`, `synthesize_mulaw`) lanzan `STTError`/`LLMError`/`TTSError`: no tragarse el error ahí, o se rompen el plan B y el healthcheck.
+
+**Healthcheck** (`healthcheck.py` + `manolo-healthcheck.timer`, a las 00/06/12/18 h): prueba TTS, Groq y Deepgram llamando a esas mismas funciones, con la muestra `healthcheck_sample.wav`, y comprueba que `asterisk`, `manolo_ari` y `asterisk-control-api` están `active`. Cada comprobación tiene 30 s como máximo. Manda email por Gmail SMTP **solo cuando cambia el conjunto de piezas caídas** (uno al fallar, otro al recuperarse). El estado se guarda en `<BRIDGE_DIR>/healthcheck_state.json`. Si cambias de proveedor de voz, actualiza `TTS_PROVIDER`: el email solo sugiere `pip install -U edge-tts` cuando vale `'edge'`.
+
 ## Lección 1 — Asterisk busca los sonidos en `/usr/share/asterisk`, no en `/var/lib/asterisk`
 
 **Síntoma:** `sound:fixed_spam_message` daba "File does not exist" aunque el WAV estaba en `/var/lib/asterisk/sounds/es/`.
@@ -50,3 +64,9 @@ Asterisk resuelve `sound:` contra su **Data directory**, que en este VPS es `/us
 | `20` (s)                         | manolo_ari.py | Timeout esperando `PlaybackFinished`         |
 | `1500`                           | manolo_ari.py | Umbral RMS del VAD (barge-in)                |
 | `7000`                           | manolo_ari.py | Puerto UDP de ExternalMedia, fijo            |
+| `TTS_TIMEOUT = 10` (s)           | manolo_ari.py | Edge TTS + ffmpeg; pasado, plan B            |
+| `MAX_ERRORES_STT = 2`            | manolo_ari.py | Errores de Deepgram seguidos antes del plan B |
+| `TTS_PROVIDER = 'edge'`          | manolo_ari.py | Decide si el email sugiere `pip install -U edge-tts` |
+| `GROQ_MODEL`                     | manolo_ari.py | `qwen/qwen3.8-27b`                           |
+| `CHECK_TIMEOUT = 30` (s)         | healthcheck.py | Máximo por comprobación                     |
+| `<BRIDGE_DIR>/healthcheck_state.json` | healthcheck.py | Último estado; decide si se manda email |

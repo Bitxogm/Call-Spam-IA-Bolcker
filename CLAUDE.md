@@ -73,10 +73,12 @@ Asterisk [from-zadarma]
         └── manolo_ari.py (ARI 127.0.0.1:8088 + ExternalMedia UDP 127.0.0.1:7000)
               ├── Recibe RTP/mulaw por UDP, VAD por energía (barge-in: 800ms de
               │   gracia + 3 frames consecutivos antes de cortar la respuesta)
-              ├── STT: Deepgram Nova-2 (batch). Sin fallback: si Deepgram falla, no hay STT
+              ├── STT: Deepgram Nova-2 (batch)
               ├── LLM: Groq `qwen/qwen3.8-27b`, con historial de conversación real
-              └── TTS: Edge TTS `es-ES-AlvaroNeural` → mulaw 8kHz → RTP de vuelta
+              └── TTS: Edge TTS (voz `TTS_VOICE` del .env) → mulaw 8kHz → RTP de vuelta
 ```
+
+**Plan B del Modo 3** (si cae TTS, Groq o Deepgram) y **healthcheck** cada 6 h con aviso por email: detalle en `.claude/rules/vps-backend.md`.
 
 `manolo_agi.py` es el AGI legacy: sigue en disco como backup, pero el dialplan ya no lo referencia.
 
@@ -112,8 +114,9 @@ Esta configuración no vive en el código. Si se pierde, el Modo 2 deja de funci
 | **Zadarma**          | ver `CLAUDE.local.md` | Reenvío de entrantes → VPS por SIP. Número, SIP Login y External Server en el fichero local                                                                                                                                    |
 | **VPS — SIP**        | ver `CLAUDE.local.md` | Puerto 5060/udp abierto solo a las 6 subnets de Zadarma                                                                                                                                                                       |
 | **VPS — control API**| ver `CLAUDE.local.md` | `https://manolo.bitxodev.com` → Cloudflare → NPM → Flask en el bridge Docker. El 5000/tcp **sigue cerrado al exterior**: todo entra por 443. Los tres endpoints exigen `X-API-Key` (ver lección 4)          |
-| **Deepgram**         | `api.deepgram.com` | $200 crédito gratuito. **Único STT** (Nova-2, batch) en `manolo_ari.py` — verificado en prueba real sobre audio del ExternalMedia (RTP/mulaw 8 kHz). Sin fallback: si falla, el Modo 3 se queda sin transcripción                |
-| **Groq**             | `api.groq.com`     | LLM de Manolo: `qwen/qwen3.8-27b`. Si la API falla, `manolo_ari.py` responde con un mensaje fijo de emergencia, no hay fallback a otro proveedor                                                                                  |
+| **Deepgram**         | `api.deepgram.com` | $200 crédito gratuito. **Único STT** (Nova-2, batch) en `manolo_ari.py` — verificado en prueba real sobre audio del ExternalMedia (RTP/mulaw 8 kHz). Sin proveedor alternativo: si falla 2 veces seguidas, plan B (mensaje fijo) |
+| **Edge TTS**         | `speech.platform.bing.com` | Voz de Manolo, sin clave. Se rompe cuando Microsoft cambia el protocolo (403 el 17/10/2026): `pip install -U edge-tts` en el venv. Plan B: mensaje fijo |
+| **Groq**             | `api.groq.com`     | LLM de Manolo: `qwen/qwen3.8-27b`. Si la API falla, `manolo_ari.py` dice la frase de emergencia (plan B, ver `.claude/rules/vps-backend.md`). Sin proveedor alternativo |
 
 ---
 
@@ -130,7 +133,16 @@ EXPO_PUBLIC_VPS_URL=https://tu-subdominio.tu-dominio.com
 EXPO_PUBLIC_CONTROL_API_TOKEN=
 ```
 
-En el `.env` **del VPS** hacen falta además `CONTROL_API_TOKEN` y `CONTROL_API_BIND`.
+En el `.env` **del VPS** (`<BRIDGE_DIR>/.env`, `chmod 600`) hacen falta además:
+
+| Variable | Para qué | Si falta |
+| --- | --- | --- |
+| `CONTROL_API_TOKEN`, `CONTROL_API_BIND` | `control_api.py` | todo 401 / Flask en loopback |
+| `TTS_VOICE`, `TTS_RATE`, `TTS_PITCH` | voz de Manolo (Edge TTS) | `es-ES-AlvaroNeural`, `-8%`, `-4Hz` |
+| `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO` | remitente y destino del healthcheck | no hay email (el estado no se guarda y reintenta) |
+| `ALERT_EMAIL_PASSWORD` | contraseña de aplicación de Google, sin espacios | ídem |
+
+Un `TTS_VOICE` mal escrito hace caer **todas** las llamadas del Modo 3 al mensaje fijo, y el email sugiere actualizar `edge-tts` aunque el fallo sea el nombre: revisar la variable primero.
 
 ⚠️ **El token acaba dentro del APK.** `EXPO_PUBLIC_*` se incrusta en el bundle en tiempo de compilación, así que cualquiera con el APK puede extraerlo — es el mismo mecanismo por el que las claves de Gemini y ElevenLabs acabaron en el historial de git. Aceptable mientras la app no se distribuya: protege contra escaneo de Internet, no contra quien tenga el APK. La solución definitiva está en el punto 2 del roadmap.
 
@@ -155,6 +167,9 @@ adb install android/app/build/outputs/apk/debug/app-debug.apk
 
 # Verificar tipos TypeScript — ejecutar tras CADA cambio TS
 npx tsc --noEmit
+
+# Tests del backend VPS (unittest, sin dependencias del VPS: las simula si faltan)
+python3 -m unittest discover -s vps_backend/tests -v
 
 # Logs del dispositivo en tiempo real
 adb logcat | grep -E "SpamBlocker|CallAccessibility|AnswerHangup|CallForwarding|CallStateReceiver|CallScreening"
@@ -214,14 +229,7 @@ Los del VPS están en `.claude/rules/vps-backend.md`.
 
 - [ ] **6 permisos residuales en `AndroidManifest.xml`:** `BIND_INCALL_SERVICE`, `BIND_TELECOM_CONNECTION_SERVICE`, `CONTROL_INCALL_EXPERIENCE`, `MODIFY_AUDIO_SETTINGS`, `MODIFY_PHONE_STATE`, `MODIFY_AUDIO_ROUTING`. Los services que los usaban (`SpamCallService`, `DialerActivity`, `InCallActivity`) ya están fuera del manifest — los permisos siguen asustando al usuario sin aportar nada.
 
-- [ ] **`manolo_ari.py` depende de Deepgram (STT) y Groq (LLM) sin fallback.** Si cualquiera de los dos cae, el Modo 3 deja de funcionar. Lo que pasa hoy, verificado en código:
-
-  - **Deepgram caído:** `deepgram_stt()` devuelve `''` y `handle_turn_complete()` lo cuenta como silencio. A los `MAX_SILENCIO = 2` turnos seguidos, `despedida_y_cierre()`. O sea: Manolo se despide y cuelga a un spammer que está hablando, sin distinguirlo de una línea muda.
-  - **Groq caído:** `get_manolo_response()` devuelve siempre la misma frase de emergencia (*"Ay, hijo, no te he oído bien. ¿Puedes repetirlo?"*). Manolo la repite turno tras turno hasta `MAX_TURNOS = 8` y entonces cierra.
-
-  Ninguno de los dos deja la llamada colgada —los dos límites la acotan— pero el comportamiento no es una decisión, es lo que sale por accidente. **Pendiente de definir qué debería hacer:** ¿colgar en cuanto se detecte el fallo? ¿degradar a Modo 2 y reproducir `fixed_spam_message`? Lo segundo mantiene el efecto útil (el spammer oye algo y pierde el tiempo) sin fingir una conversación.
-
-- [ ] **Cobertura de tests mínima y solo en TS.** Vitest cubre `src/utils/historial.ts` y `BackendSyncService` (23 casos, `npm test`). Sin cobertura: toda la capa de llamadas (Java), `manolo_ari.py` y `control_api.py`. Montar JUnit/Robolectric sobre Expo es caro y no habría cazado ninguno de los fallos reales del proyecto —lección 2, el deadlock ARI, el Modo 2 con Manolo— que salen en dispositivo. La regla 5 sigue siendo el gate.
+- [ ] **Cobertura de tests mínima.** Vitest cubre `src/utils/historial.ts`, `BackendSyncService` y el permiso `CALL_PHONE` de `CallForwardingService` (28 casos, `npm test`). `unittest` cubre el plan B de `manolo_ari.py`, el healthcheck y la configuración de voz (38 casos). Sin cobertura: toda la capa de llamadas (Java), el resto de `manolo_ari.py` y `control_api.py`. Montar JUnit/Robolectric sobre Expo es caro y no habría cazado ninguno de los fallos reales del proyecto —lección 2, el deadlock ARI, el Modo 2 con Manolo— que salen en dispositivo. La regla 5 sigue siendo el gate.
 
 - [ ] **Latencia por turno sin instrumentar.** El paso de AGI a ARI se hizo para bajarla, pero nunca se midió con timestamps reales. Sin cifras no se puede afirmar que el streaming mejoró nada.
 
@@ -245,6 +253,14 @@ En orden de prioridad; el detalle de cada punto está en la sección 9.
 6. **Limpiar residuos IVR** y después los 6 permisos del manifest.
 7. **Arreglar o retirar `scripts/check-secrets.sh`.**
 
+### Próxima ronda — Manolo (lo visto en las pruebas del 18/10/2026)
+
+- [ ] **El plan B de Deepgram saltó en la primera frase, no en la segunda.** Hipótesis por verificar en el log: una pausa de más de `SILENCE_MS_TO_CLOSE_TURN` (600 ms) dentro de la frase la parte en dos turnos, y cada uno cuenta un error. Mirar si los `STT Deepgram falló (1/2)` y `(2/2)` llegan con milisegundos de diferencia.
+- [ ] **`MAX_TURNOS = 8` corta conversaciones que van bien.** Subirlo o limitar por tiempo (unos 5 minutos de llamada).
+- [ ] **Respuestas de 1 o 2 frases.** El prompt pide "2-3 frases" y `max_tokens=100` corta alguna a medias. Bajar a 1-2 en el prompt y no dejar frases cortadas (más margen de tokens o recortar en el último punto).
+- [ ] **No repetir expresiones dentro de la llamada.** "Fibra de los chinos" salió 3 veces: el ejemplo del prompt se usa como muletilla. Prohibir repetir expresiones ya dichas en el historial.
+- [ ] **Coherencia del personaje.** Está sordo del oído derecho: que lo mantenga durante toda la llamada.
+
 ### Ideas valoradas y descartadas por riesgo (oct. 2026)
 
 Descartadas bajo el criterio "solo cambios que no puedan romper lo que ya funciona".
@@ -252,7 +268,6 @@ Siguen siendo buenas ideas; lo que las frena es el riesgo, no el valor.
 
 - **Whitelist por número + toggle de números ocultos.** *Riesgo: medio.* Es el agujero real de la app: `shouldShowNotification()` bloquea todos los números ocultos sin excepción y no hay whitelist por número, solo contactos — una llamada legítima con número oculto se contesta y se cuelga sin remedio. Toca el núcleo de decisión de spam, así que exige prueba en dispositivo con número oculto real. **El de más valor de los descartados.**
 - **Bloquear desde la notificación.** *Riesgo: bajo-medio.* La notificación ya tiene `addAction`, así que es extender un patrón; el riesgo es el `PendingIntent` y el rebuild de `/android/`. El botón del historial ya cubre el caso principal.
-- **Degradar a Modo 2 si cae Deepgram o Groq.** *Riesgo: bajo-medio.* Detalle del comportamiento actual en la sección 9. Verificarlo exige simular el fallo y una llamada real por caso.
 - **Score de reputación** (`2bef944`, `b91e23f`, `f697767` de `claude/modo1-optimized`). *Riesgo: **alto**.* Los tres apilan cambios sobre `CallScreeningServiceImpl.java`, el fichero más caliente, con diez meses de divergencia. Es el único punto donde se puede romper la detección de spam. Si se quiere algo: coger solo `SpamPatternDetector.java` (fichero nuevo, 214 líneas, entra sin conflicto) y decidir la integración aparte.
 - **Tests de la capa de llamadas.** *Riesgo: nulo; coste alto.* Ver la deuda de cobertura en la sección 9.
 

@@ -51,6 +51,10 @@ La app controla los tres modos desde el teléfono. Añadida la lección 5 (UFW y
 
 ## Roadmap completado
 
+- ~~**Plan B del Modo 3 y healthcheck**~~ ✅ **18 oct. 2026.** Origen: el 17/10 Edge TTS devolvió 403 y Manolo contestó mudo sin que nada avisara (se arregló con `pip install -U edge-tts`). TTS caído → mensaje fijo; Groq caído → frase de emergencia; Deepgram con 2 errores seguidos → mensaje fijo. `healthcheck.py` cada 6 h con email solo al cambiar de estado. Voz configurable por `.env` (en producción `gl-ES-RoiNeural`). Probado en producción provocando cada fallo con `/etc/hosts`. Era la idea "Degradar a Modo 2 si cae Deepgram o Groq", descartada antes por riesgo. Commits `c1b421a`, `6aba46a`, `2e922bd`.
+
+- ~~**"Permiso de llamadas requerido" en Modo 2/3**~~ ✅ **18 oct. 2026** (`a4dd8ba`). `CALL_PHONE` estaba en el manifest pero ninguna pantalla lo pedía en tiempo de ejecución; una reinstalación lo dejó denegado y `placeCall()` lanzaba `SecurityException`. Ahora lo pide `CallForwardingService.configureForMode()`.
+
 - ~~**Autenticar `control_api.py` y exponerlo por HTTPS**~~ ✅ **27 sept. 2026.** `X-API-Key` en los tres endpoints, `https://manolo.bitxodev.com` vía Cloudflare → NPM (Let's Encrypt) → Flask en `172.18.0.1:5000`. El 5000 nunca se abrió. Detalles en la sección 6 y la lección 5 de `CLAUDE.md`.
 
 - ~~**Modo 3 — Agente IA conversacional**~~ ✅ **15 sept. 2026.** Primero con `manolo_agi.py`, y desde esa fecha con `manolo_ari.py` (ARI + ExternalMedia, streaming).
