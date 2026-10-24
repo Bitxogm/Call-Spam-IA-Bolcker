@@ -217,7 +217,7 @@ const CallHistoryScreen: React.FC = () => {
               { borderLeftColor: record.origen === 'servidor' ? '#007bff' : '#dc3545' }
             ]}>
               <View style={styles.callHeader}>
-                <View>
+                <View style={styles.callInfo}>
                   <Text style={styles.callNumber}>{record.number}</Text>
                   <Text style={styles.origenBadge}>
                     {record.origen === 'servidor' ? '☁️ Servidor' : '📱 Local'}
@@ -344,6 +344,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
+  // flexShrink en los dos lados: sin él, el número y la etiqueta piden su ancho
+  // natural y la etiqueta acaba fuera de la tarjeta en vez de partir línea
+  callInfo: {
+    flexShrink: 1,
+    marginRight: 8,
+  },
   callNumber: {
     fontSize: 18,
     fontWeight: 'bold',
@@ -359,6 +365,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 5,
+    flexShrink: 1,
+    maxWidth: '55%',
   },
   reasonText: {
     color: '#fff',
@@ -367,8 +375,10 @@ const styles = StyleSheet.create({
   },
   callDetails: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 4,
   },
   callTimestamp: {
     fontSize: 12,
@@ -378,6 +388,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#007bff',
     fontWeight: '600',
+    flexShrink: 1,
   },
   rowActions: {
     flexDirection: 'row',
