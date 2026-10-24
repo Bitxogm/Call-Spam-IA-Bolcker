@@ -62,6 +62,8 @@ documento nació para que ese conocimiento no se perdiera.
 
 ## Roadmap completado
 
+- ~~**Cartesia, modo en el historial y prefijo 400**~~ ✅ **24 oct. 2026.** Cartesia como voz principal con Roi (Edge) de reserva y el mensaje fijo al final; un intento por llamada, 3 s de espera, sin créditos hasta el día de renovación. Probado en producción: ~800 ms por respuesta con Cartesia, 67 ms en saltar a Roi con Cartesia caído. El call log guarda `modo` y `plan_b`, y el historial ya no dice siempre "Modo 2" (era "Modo 2/3" cortado por la tarjeta). La app bloquea el prefijo 400 de las llamadas comerciales. Commits `a027b7c`, `79b86ac`, `da6e72f`, `b7cbd7b`.
+
 - ~~**Plan B del Modo 3 y healthcheck**~~ ✅ **18 oct. 2026.** Origen: el 17/10 Edge TTS devolvió 403 y Manolo contestó mudo sin que nada avisara (se arregló con `pip install -U edge-tts`). TTS caído → mensaje fijo; Groq caído → frase de emergencia; Deepgram con 2 errores seguidos → mensaje fijo. `healthcheck.py` cada 6 h con email solo al cambiar de estado. Voz configurable por `.env` (en producción `gl-ES-RoiNeural`). Probado en producción provocando cada fallo con `/etc/hosts`. Era la idea "Degradar a Modo 2 si cae Deepgram o Groq", descartada antes por riesgo. Commits `c1b421a`, `6aba46a`, `2e922bd`.
 
 - ~~**"Permiso de llamadas requerido" en Modo 2/3**~~ ✅ **18 oct. 2026** (`a4dd8ba`). `CALL_PHONE` estaba en el manifest pero ninguna pantalla lo pedía en tiempo de ejecución; una reinstalación lo dejó denegado y `placeCall()` lanzaba `SecurityException`. Ahora lo pide `CallForwardingService.configureForMode()`.

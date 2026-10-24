@@ -41,13 +41,16 @@ Asterisk resuelve `sound:` contra su **Data directory**, que en este VPS es `/us
 
 | Falla | Qué oye el spammer |
 | --- | --- |
-| TTS (Edge, ffmpeg o > 10 s) | `fixed_spam_message` y cuelga (`run_fixed`) |
+| Cartesia (error, > 3 s o sin créditos), con `TTS_PROVIDER=cartesia` | Manolo sigue con Edge (`TTS_VOICE`). Un solo intento por llamada: el resto va directo a Edge |
+| Edge (TTS, ffmpeg o > 10 s) | `fixed_spam_message` y cuelga (`run_fixed`) |
 | Groq (error o respuesta vacía) | la frase de emergencia; si el TTS también falla, el mensaje fijo |
 | Deepgram, 2 errores reales seguidos | `fixed_spam_message` y cuelga. Una transcripción vacía es silencio, no error |
 
 Las funciones de cada pieza (`deepgram_stt`, `generate_manolo_reply`, `synthesize_mulaw`) lanzan `STTError`/`LLMError`/`TTSError`: no tragarse el error ahí, o se rompen el plan B y el healthcheck.
 
-**Healthcheck** (`healthcheck.py` + `manolo-healthcheck.timer`, a las 00/06/12/18 h): prueba TTS, Groq y Deepgram llamando a esas mismas funciones, con la muestra `healthcheck_sample.wav`, y comprueba que `asterisk`, `manolo_ari` y `asterisk-control-api` están `active`. Cada comprobación tiene 30 s como máximo. Manda email por Gmail SMTP **solo cuando cambia el conjunto de piezas caídas** (uno al fallar, otro al recuperarse). El estado se guarda en `<BRIDGE_DIR>/healthcheck_state.json`. Si cambias de proveedor de voz, actualiza `TTS_PROVIDER`: el email solo sugiere `pip install -U edge-tts` cuando vale `'edge'`.
+Cada salto queda en el call log: `plan_b` acumula las piezas (`"Cartesia"`, `"Cartesia → TTS"`), y la app lo muestra como "voz de reserva" o "mensaje fijo". **Sin créditos** (402, o un 4xx que lo diga; la API no lo documenta) se escribe `<BRIDGE_DIR>/cartesia_state.json` y Cartesia se salta hasta `CARTESIA_DIA_RENOVACION`. Cada síntesis deja su latencia en el log (`TTS Cartesia: N ms`).
+
+**Healthcheck** (`healthcheck.py` + `manolo-healthcheck.timer`, a las 00/06/12/18 h): prueba Edge, Groq y Deepgram llamando a esas mismas funciones, con la muestra `healthcheck_sample.wav`, y comprueba que `asterisk`, `manolo_ari` y `asterisk-control-api` están `active`. **Nunca sintetiza con Cartesia** (gastaría créditos): comprueba la clave y la voz con `GET /voices/{id}` y si está marcada sin créditos. El aviso de saldo (< 20 %) solo existe con `CARTESIA_ADMIN_API_KEY` y `CARTESIA_CREDITOS_MES`. Cada comprobación tiene 30 s como máximo. Manda email por Gmail SMTP **solo cuando cambia el conjunto de piezas caídas** (uno al fallar, otro al recuperarse). El estado se guarda en `<BRIDGE_DIR>/healthcheck_state.json`.
 
 ## Lección 1 — Asterisk busca los sonidos en `/usr/share/asterisk`, no en `/var/lib/asterisk`
 
@@ -94,8 +97,10 @@ curl -H "X-API-Key: $TOKEN" https://tu-subdominio.tu-dominio.com/get_mode
 | `1500`                           | manolo_ari.py | Umbral RMS del VAD (barge-in)                |
 | `7000`                           | manolo_ari.py | Puerto UDP de ExternalMedia, fijo            |
 | `TTS_TIMEOUT = 10` (s)           | manolo_ari.py | Edge TTS + ffmpeg; pasado, plan B            |
+| `CARTESIA_TIMEOUT = 3` (s)       | manolo_ari.py | Cartesia; pasado, Edge                       |
+| `CARTESIA_MODEL = 'sonic-3.6'`   | manolo_ari.py | Con `Cartesia-Version: 2026-08-14`           |
 | `MAX_ERRORES_STT = 2`            | manolo_ari.py | Errores de Deepgram seguidos antes del plan B |
-| `TTS_PROVIDER = 'edge'`          | manolo_ari.py | Decide si el email sugiere `pip install -U edge-tts` |
+| `<BRIDGE_DIR>/cartesia_state.json` | manolo_ari.py | `agotado_hasta`: Cartesia sin créditos hasta esa fecha |
 | `GROQ_MODEL`                     | manolo_ari.py | `qwen/qwen3.8-27b`                           |
 | `CHECK_TIMEOUT = 30` (s)         | healthcheck.py | Máximo por comprobación                     |
 | `<BRIDGE_DIR>/healthcheck_state.json` | healthcheck.py | Último estado; decide si se manda email |
