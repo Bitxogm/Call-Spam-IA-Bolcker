@@ -73,6 +73,33 @@ class ContactsService {
   };
 
   /**
+   * Activa o desactiva el bloqueo del prefijo 400 (llamadas comerciales, España)
+   */
+  setBloquearPrefijo400 = async (enabled: boolean): Promise<boolean> => {
+    try {
+      await ContactsModule.setBloquearPrefijo400(enabled);
+      console.log(`📣 Bloqueo prefijo 400 ${enabled ? 'ACTIVADO' : 'DESACTIVADO'}`);
+      return true;
+    } catch (error) {
+      console.error('❌ Error configurando bloqueo del prefijo 400:', error);
+      return false;
+    }
+  };
+
+  /**
+   * Lee el bloqueo del prefijo 400. Si falla la lectura, asume activado,
+   * que es el valor por defecto en la capa nativa.
+   */
+  isBloquearPrefijo400Enabled = async (): Promise<boolean> => {
+    try {
+      return await ContactsModule.isBloquearPrefijo400Enabled();
+    } catch (error) {
+      console.error('❌ Error leyendo bloqueo del prefijo 400:', error);
+      return true;
+    }
+  };
+
+  /**
    * Cuenta total de contactos (para estadísticas)
    */
   getContactsCount = async (): Promise<number> => {

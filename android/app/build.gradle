@@ -174,4 +174,7 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+
+    // Tests de JVM para la lógica Java pura (src/test), sin emulador
+    testImplementation("junit:junit:4.13.2")
 }

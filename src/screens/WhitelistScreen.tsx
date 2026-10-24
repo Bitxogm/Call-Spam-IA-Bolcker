@@ -13,12 +13,15 @@ import {
 import { check, request, PERMISSIONS, RESULTS } from 'react-native-permissions';
 import ContactsService from '../services/ContactsService';
 
+const NUMEROS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣'];
+
 type WhitelistScreenProps = {
   navigation: any;
 };
 
 export default function WhitelistScreen({ navigation }: WhitelistScreenProps) {
   const [modoRadical, setModoRadical] = useState(false);
+  const [bloquear400, setBloquear400] = useState(true);
   const [hasContactsPermission, setHasContactsPermission] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -33,8 +36,10 @@ export default function WhitelistScreen({ navigation }: WhitelistScreenProps) {
   const loadSettings = async () => {
     try {
       const radicalEnabled = await ContactsService.isModoRadicalEnabled();
+      const prefijo400Enabled = await ContactsService.isBloquearPrefijo400Enabled();
 
       setModoRadical(radicalEnabled);
+      setBloquear400(prefijo400Enabled);
 
       console.log(`🔧 Modo Radical: ${radicalEnabled ? 'ON' : 'OFF'}`);
     } catch (error) {
@@ -109,6 +114,21 @@ export default function WhitelistScreen({ navigation }: WhitelistScreenProps) {
       Alert.alert('❌ Error', 'No se pudo cambiar el modo');
     }
   };
+
+  /**
+   * Activa/desactiva el bloqueo del prefijo 400
+   */
+  const toggleBloquear400 = async (value: boolean) => {
+    setBloquear400(value);
+    const success = await ContactsService.setBloquearPrefijo400(value);
+    if (!success) {
+      setBloquear400(!value);
+      Alert.alert('❌ Error', 'No se pudo cambiar el bloqueo del prefijo 400');
+    }
+  };
+
+  // Los pasos después de contactos se corren uno cuando el 400 está activo
+  const paso = (n: number) => NUMEROS[n - 1 + (bloquear400 ? 1 : 0)];
 
   if (loading) {
     return (
@@ -187,6 +207,25 @@ export default function WhitelistScreen({ navigation }: WhitelistScreenProps) {
           )}
         </View>
 
+        {/* Prefijo 400 */}
+        <View style={styles.card}>
+          <View style={styles.modoRadicalHeader}>
+            <View style={styles.modoRadicalInfo}>
+              <Text style={styles.cardTitle}>📣 Prefijo 400</Text>
+              <Text style={styles.cardText}>
+                Bloquear llamadas comerciales: desde el 17/10/2026 deben llegar desde números 400. Tus contactos con 400 siguen entrando.
+              </Text>
+            </View>
+            <Switch
+              trackColor={{ false: '#767577', true: '#ff4444' }}
+              thumbColor={bloquear400 ? '#f44336' : '#f4f3f4'}
+              ios_backgroundColor="#3e3e3e"
+              onValueChange={toggleBloquear400}
+              value={bloquear400}
+            />
+          </View>
+        </View>
+
         {/* Flujo de Verificación */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>📊 Flujo de Verificación</Text>
@@ -199,27 +238,33 @@ export default function WhitelistScreen({ navigation }: WhitelistScreenProps) {
               <Text style={styles.flowNumber}>2️⃣</Text>
               <Text style={styles.flowText}>¿Está en contactos? → PERMITIR</Text>
             </View>
-            {modoRadical ? (
+            {bloquear400 && (
               <View style={styles.flowStep}>
                 <Text style={styles.flowNumber}>3️⃣</Text>
+                <Text style={styles.flowText}>¿Empieza por 400 (llamada comercial)? → BLOQUEAR</Text>
+              </View>
+            )}
+            {modoRadical ? (
+              <View style={styles.flowStep}>
+                <Text style={styles.flowNumber}>{paso(3)}</Text>
                 <Text style={styles.flowText}>¿Modo Radical activo? → BLOQUEAR TODO LO DEMÁS</Text>
               </View>
             ) : (
               <>
                 <View style={styles.flowStep}>
-                  <Text style={styles.flowNumber}>3️⃣</Text>
+                  <Text style={styles.flowNumber}>{paso(3)}</Text>
                   <Text style={styles.flowText}>¿Está en blacklist? → BLOQUEAR</Text>
                 </View>
                 <View style={styles.flowStep}>
-                  <Text style={styles.flowNumber}>4️⃣</Text>
+                  <Text style={styles.flowNumber}>{paso(4)}</Text>
                   <Text style={styles.flowText}>¿Es número premium (900, 902, etc.)? → BLOQUEAR</Text>
                 </View>
                 <View style={styles.flowStep}>
-                  <Text style={styles.flowNumber}>5️⃣</Text>
+                  <Text style={styles.flowNumber}>{paso(5)}</Text>
                   <Text style={styles.flowText}>¿Es desconocido/privado? → BLOQUEAR</Text>
                 </View>
                 <View style={styles.flowStep}>
-                  <Text style={styles.flowNumber}>6️⃣</Text>
+                  <Text style={styles.flowNumber}>{paso(6)}</Text>
                   <Text style={styles.flowText}>Todo lo demás → PERMITIR</Text>
                 </View>
               </>

@@ -250,6 +250,9 @@ public class CallScreeningServiceImpl extends CallScreeningService {
      * 3. Modo Radical (si NO es contacto)
      * 4. Números desconocidos/privados
      * 5. Números premium (900, 902, etc.)
+     *
+     * (Lista antigua: el orden real es el del código de abajo. El prefijo 400
+     * va justo después de contactos.)
      */
     private boolean shouldShowNotification(String number) {
         // 🚫 PRIORIDAD 1: BLACKLIST (incluso si es contacto) - TIEMPO: < 5ms
@@ -320,7 +323,13 @@ public class CallScreeningServiceImpl extends CallScreeningService {
         }
         Log.d(TAG, "🔍 Búsqueda contactos completada en " + (System.currentTimeMillis() - startTime) + "ms");
 
-        // 📵 PRIORIDAD 5: MODO RADICAL (solo si NO es contacto)
+        // 📣 PRIORIDAD 5: PREFIJO 400 (comercial) - después de contactos, que siempre ganan
+        if (CommercialPrefixRule.shouldBlock(number, isContact, isPrefix400Enabled())) {
+            Log.d(TAG, "📣 Prefijo 400 (llamada comercial) - BLOQUEAR");
+            return true;
+        }
+
+        // 📵 PRIORIDAD 6: MODO RADICAL (solo si NO es contacto)
         boolean modoRadical = isModoRadicalEnabled();
         if (modoRadical && !isContact) {
             Log.d(TAG, "🚫 MODO RADICAL ACTIVO - NO es contacto → BLOQUEAR");
@@ -344,6 +353,19 @@ public class CallScreeningServiceImpl extends CallScreeningService {
         } catch (Exception e) {
             Log.e(TAG, "Error leyendo modo_radical: " + e.getMessage());
             return false;
+        }
+    }
+
+    /**
+     * Bloqueo del prefijo 400, activado por defecto.
+     */
+    private boolean isPrefix400Enabled() {
+        try {
+            return getSharedPreferences("spam_blocker_settings", MODE_PRIVATE)
+                .getBoolean(CommercialPrefixRule.PREFS_KEY, CommercialPrefixRule.DEFAULT_ENABLED);
+        } catch (Exception e) {
+            Log.e(TAG, "Error leyendo " + CommercialPrefixRule.PREFS_KEY + ": " + e.getMessage());
+            return CommercialPrefixRule.DEFAULT_ENABLED;
         }
     }
 }

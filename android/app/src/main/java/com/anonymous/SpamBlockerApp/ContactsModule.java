@@ -105,6 +105,42 @@ public class ContactsModule extends ReactContextBaseJavaModule {
     }
 
     /**
+     * Activa o desactiva el bloqueo del prefijo 400 (llamadas comerciales)
+     */
+    @ReactMethod
+    public void setBloquearPrefijo400(boolean enabled, Promise promise) {
+        try {
+            SharedPreferences prefs = getReactApplicationContext()
+                .getSharedPreferences(PREFS_NAME, ReactApplicationContext.MODE_PRIVATE);
+
+            prefs.edit()
+                .putBoolean(CommercialPrefixRule.PREFS_KEY, enabled)
+                .apply();
+
+            promise.resolve(enabled);
+        } catch (Exception e) {
+            promise.reject("SET_BLOQUEAR_PREFIJO_400_ERROR", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Lee el estado del bloqueo del prefijo 400 (activado por defecto)
+     */
+    @ReactMethod
+    public void isBloquearPrefijo400Enabled(Promise promise) {
+        try {
+            SharedPreferences prefs = getReactApplicationContext()
+                .getSharedPreferences(PREFS_NAME, ReactApplicationContext.MODE_PRIVATE);
+
+            boolean enabled = prefs.getBoolean(
+                CommercialPrefixRule.PREFS_KEY, CommercialPrefixRule.DEFAULT_ENABLED);
+            promise.resolve(enabled);
+        } catch (Exception e) {
+            promise.reject("IS_BLOQUEAR_PREFIJO_400_ENABLED_ERROR", e.getMessage(), e);
+        }
+    }
+
+    /**
      * Cuenta total de contactos (para stats)
      */
     @ReactMethod
