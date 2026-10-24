@@ -38,7 +38,7 @@ export interface ServerCallRecord {
   estado: 'activa' | 'finalizada';
   /** Desde el 24/10/2026. Los registros anteriores no lo traen. */
   modo?: 'FIXED' | 'AI';
-  /** Pieza que mandó la llamada al mensaje fijo (TTS, Deepgram), o null. */
+  /** Piezas que fallaron, en orden: "Cartesia" (siguió con Edge), "Cartesia → TTS", "Deepgram"… o null. */
   plan_b?: string | null;
 }
 

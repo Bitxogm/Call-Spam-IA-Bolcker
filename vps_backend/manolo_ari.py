@@ -10,14 +10,16 @@ llamada concurrente. Para producción hace falta asignación dinámica de puerto
 import sys
 import os
 import io
+import re
 import json
 import time
 import wave
 import random
 import struct
 import asyncio
+import calendar
 import audioop
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import httpx
 import websockets
@@ -65,7 +67,8 @@ SOUNDS_DIR = '/usr/share/asterisk/sounds/es'   # Data directory de Asterisk, igu
 FIXED_SOUND = 'fixed_spam_message'            # único mensaje del Modo 2
 FIXED_PLAYBACK_TIMEOUT = 20     # segundos máximo esperando PlaybackFinished
 
-TTS_PROVIDER = 'edge'           # healthcheck.py lo usa para sugerir el arreglo adecuado
+# cartesia = voz principal de Cartesia con Edge (TTS_VOICE) de reserva; edge = solo Edge
+TTS_PROVIDER = (os.getenv('TTS_PROVIDER') or 'edge').strip().lower()
 # `or` en vez de default de getenv: una línea vacía en el .env (TTS_VOICE=) también cae al defecto
 TTS_VOICE = os.getenv('TTS_VOICE') or 'es-ES-AlvaroNeural'
 TTS_RATE = os.getenv('TTS_RATE') or '-8%'
@@ -147,6 +150,60 @@ class LLMError(Exception):
 
 class TTSError(Exception):
     pass
+
+
+class CartesiaSinCreditos(TTSError):
+    pass
+
+
+# ── Cartesia ───────────────────────────────────────────────────
+CARTESIA_URL = 'https://api.cartesia.ai'
+CARTESIA_VERSION = '2026-08-14'     # único valor que admite la API hoy
+CARTESIA_MODEL = 'sonic-3.6'
+CARTESIA_API_KEY = os.getenv('CARTESIA_API_KEY')
+CARTESIA_VOICE_ID = os.getenv('CARTESIA_VOICE_ID')
+CARTESIA_STATE_PATH = '/root/ai_bridge/cartesia_state.json'
+# Corto a propósito: si Cartesia tarda, el spammer espera en silencio y aún queda
+# Edge por detrás. Los 10 s de TTS_TIMEOUT son para el último escalón.
+CARTESIA_TIMEOUT = 3
+CARTESIA_SPEED_MIN, CARTESIA_SPEED_MAX = 0.6, 1.5   # generation_config.speed, 1 = normal
+
+
+def _leer_velocidad(valor):
+    if not valor:
+        return 1.0
+    try:
+        velocidad = float(valor)
+    except ValueError:
+        velocidad = None
+    if velocidad is None or not CARTESIA_SPEED_MIN <= velocidad <= CARTESIA_SPEED_MAX:
+        ari_log(f'CARTESIA_SPEED={valor!r} fuera de {CARTESIA_SPEED_MIN}-{CARTESIA_SPEED_MAX}, uso 1.0')
+        return 1.0
+    return velocidad
+
+
+CARTESIA_SPEED = _leer_velocidad(os.getenv('CARTESIA_SPEED'))
+
+
+def _leer_dia_renovacion(valor):
+    if not valor:
+        return 1
+    try:
+        dia = int(valor)
+    except ValueError:
+        dia = None
+    if dia is None or not 1 <= dia <= 31:
+        ari_log(f'CARTESIA_DIA_RENOVACION={valor!r} no es un día del mes (1-31), uso 1')
+        return 1
+    return dia
+
+
+# Día del mes en que Cartesia renueva los créditos del plan
+CARTESIA_DIA_RENOVACION = _leer_dia_renovacion(os.getenv('CARTESIA_DIA_RENOVACION'))
+
+if TTS_PROVIDER not in ('cartesia', 'edge'):
+    ari_log(f'TTS_PROVIDER={TTS_PROVIDER!r} no válido, uso edge')
+    TTS_PROVIDER = 'edge'
 
 
 # ── Cliente REST ARI ────────────────────────────────────────────
@@ -251,6 +308,7 @@ class CallState:
         self.silencio_consecutivo = 0
         self.errores_stt_consecutivos = 0
         self.plan_b = False              # True = ya se está reproduciendo el mensaje fijo
+        self.saltos = set()              # escalones de TTS ya bajados en esta llamada
 
         self.tts_task = None
         self.transport = None            # DatagramTransport para enviar RTP de vuelta
@@ -411,8 +469,114 @@ async def get_manolo_response(chat_history, text):
     return respuesta
 
 
-# ── TTS: Edge TTS (completo) -> ffmpeg -> mulaw -> RTP ──────────
-async def _synthesize_mulaw(texto, tmp_mp3):
+# ── TTS: Cartesia -> Edge (TTS_VOICE) -> mensaje fijo ─────────────
+def cartesia_headers(api_key=None):
+    return {
+        'Authorization': f'Bearer {api_key or CARTESIA_API_KEY}',
+        'Cartesia-Version': CARTESIA_VERSION,
+    }
+
+
+def es_sin_creditos(status, cuerpo):
+    """La API no documenta el código de 'sin créditos': 402, o un 4xx que lo diga."""
+    if status == 402:
+        return True
+    return 400 <= status < 500 and bool(
+        re.search(r'credit|insufficient|quota|balance|payment', cuerpo or '', re.I))
+
+
+async def _synthesize_cartesia(texto):
+    if not (CARTESIA_API_KEY and CARTESIA_VOICE_ID):
+        raise TTSError('Cartesia: faltan CARTESIA_API_KEY o CARTESIA_VOICE_ID')
+    try:
+        async with httpx.AsyncClient(timeout=CARTESIA_TIMEOUT) as client:
+            r = await client.post(
+                f'{CARTESIA_URL}/tts/bytes',
+                headers=cartesia_headers(),
+                json={
+                    'model_id': CARTESIA_MODEL,
+                    'transcript': texto,
+                    'voice': {'id': CARTESIA_VOICE_ID},
+                    'language': 'es',
+                    # µ-law 8 kHz en crudo: lo que va al RTP, sin pasar por ffmpeg
+                    'output_format': {'container': 'raw', 'encoding': 'pcm_mulaw',
+                                      'sample_rate': SAMPLE_RATE},
+                    'generation_config': {'speed': CARTESIA_SPEED},
+                },
+            )
+    except Exception as e:
+        raise TTSError(f'Cartesia: {type(e).__name__}: {e}') from e
+    if r.status_code != 200:
+        cuerpo = ' '.join((r.text or '').split())[:300]
+        error = f'Cartesia {r.status_code}: {cuerpo}'
+        if es_sin_creditos(r.status_code, cuerpo):
+            raise CartesiaSinCreditos(error)
+        raise TTSError(error)
+    if not r.content:
+        raise TTSError('Cartesia: audio vacío')
+    return r.content
+
+
+async def synthesize_cartesia(texto):
+    """Texto -> mulaw 8 kHz con Cartesia. CartesiaSinCreditos si no quedan créditos."""
+    try:
+        return await asyncio.wait_for(_synthesize_cartesia(texto), timeout=CARTESIA_TIMEOUT)
+    except asyncio.TimeoutError as e:
+        raise TTSError(f'Cartesia: timeout de {CARTESIA_TIMEOUT}s') from e
+
+
+async def cartesia_verificar_voz():
+    """Comprueba clave y voz con una lectura (GET /voices/{id}), sin gastar créditos."""
+    if not (CARTESIA_API_KEY and CARTESIA_VOICE_ID):
+        raise TTSError('Cartesia: faltan CARTESIA_API_KEY o CARTESIA_VOICE_ID')
+    async with httpx.AsyncClient(timeout=TTS_TIMEOUT) as client:
+        r = await client.get(f'{CARTESIA_URL}/voices/{CARTESIA_VOICE_ID}',
+                             headers=cartesia_headers())
+    if r.status_code != 200:
+        raise TTSError(f'Cartesia {r.status_code}: {" ".join((r.text or "").split())[:300]}')
+    return r.json()
+
+
+def _dia_en_mes(anio, mes, dia):
+    # Un 31 en noviembre es el 30: el último día que tenga el mes
+    return date(anio, mes, min(dia, calendar.monthrange(anio, mes)[1]))
+
+
+def proxima_renovacion(hoy, dia):
+    """La próxima vez que llega el día de renovación, estrictamente después de hoy."""
+    este_mes = _dia_en_mes(hoy.year, hoy.month, dia)
+    if este_mes > hoy:
+        return este_mes
+    anio, mes = (hoy.year + 1, 1) if hoy.month == 12 else (hoy.year, hoy.month + 1)
+    return _dia_en_mes(anio, mes, dia)
+
+
+def cartesia_agotado_hasta(hoy=None):
+    """Fecha hasta la que Cartesia se salta por falta de créditos, o None."""
+    hoy = hoy or date.today()
+    try:
+        with open(CARTESIA_STATE_PATH) as f:
+            hasta = date.fromisoformat(json.load(f)['agotado_hasta'])
+    except (FileNotFoundError, KeyError, ValueError, TypeError, json.JSONDecodeError):
+        return None
+    return hasta if hoy < hasta else None
+
+
+def marcar_cartesia_agotado(hoy=None):
+    """Sin créditos: Edge (TTS_VOICE) directamente hasta que Cartesia renueve."""
+    hoy = hoy or date.today()
+    hasta = proxima_renovacion(hoy, CARTESIA_DIA_RENOVACION)
+    tmp_path = CARTESIA_STATE_PATH + '.tmp'
+    try:
+        with open(tmp_path, 'w') as f:
+            json.dump({'agotado_hasta': hasta.isoformat(), 'desde': hoy.isoformat()}, f)
+        os.replace(tmp_path, CARTESIA_STATE_PATH)
+    except Exception as e:
+        ari_log(f'cartesia_state write error: {e}')
+    return hasta
+
+
+async def _synthesize_edge(texto, tmp_mp3):
     try:
         communicate = edge_tts.Communicate(
             text=texto,
@@ -441,11 +605,11 @@ async def _synthesize_mulaw(texto, tmp_mp3):
     return mulaw_bytes
 
 
-async def synthesize_mulaw(texto):
-    """Texto -> mulaw 8 kHz. Lanza TTSError si Edge TTS o ffmpeg fallan o tardan."""
+async def synthesize_edge(texto):
+    """Texto -> mulaw 8 kHz con Edge (TTS_VOICE). Lanza TTSError si Edge o ffmpeg fallan o tardan."""
     tmp_mp3 = f'/tmp/manolo_ari_{int(time.time()*1000)}.mp3'
     try:
-        return await asyncio.wait_for(_synthesize_mulaw(texto, tmp_mp3), timeout=TTS_TIMEOUT)
+        return await asyncio.wait_for(_synthesize_edge(texto, tmp_mp3), timeout=TTS_TIMEOUT)
     except asyncio.TimeoutError as e:
         raise TTSError(f'timeout de {TTS_TIMEOUT}s') from e
     finally:
@@ -453,12 +617,65 @@ async def synthesize_mulaw(texto):
             os.remove(tmp_mp3)
 
 
+async def synthesize_mulaw(texto, al_saltar=None, probar_cartesia=True):
+    """Texto -> mulaw 8 kHz por la escalera Cartesia -> Edge.
+
+    `al_saltar(pieza, error)` se llama cada vez que se baja un escalón. Con
+    `probar_cartesia=False` va directo a Edge (Cartesia ya falló en esta llamada).
+    Si falla también Edge, TTSError: el que llama decide (en una llamada, mensaje fijo).
+    """
+    if TTS_PROVIDER == 'cartesia' and probar_cartesia:
+        hasta = cartesia_agotado_hasta()
+        if hasta:
+            _saltar(al_saltar, 'Cartesia', f'sin créditos hasta {hasta.isoformat()}')
+        else:
+            try:
+                return await _cronometrar('Cartesia', synthesize_cartesia(texto))
+            except CartesiaSinCreditos as e:
+                hasta = marcar_cartesia_agotado()
+                _saltar(al_saltar, 'Cartesia', f'{e} — sin créditos, Edge hasta {hasta.isoformat()}')
+            except TTSError as e:
+                _saltar(al_saltar, 'Cartesia', e)
+    return await _cronometrar('Edge', synthesize_edge(texto))
+
+
+async def _cronometrar(proveedor, sintesis):
+    """Log de latencia: hasta tener el audio listo (las dos síntesis devuelven el audio entero)."""
+    inicio = time.monotonic()
+    try:
+        audio = await sintesis
+    except Exception:
+        ari_log(f'TTS {proveedor}: falló tras {(time.monotonic() - inicio) * 1000:.0f} ms')
+        raise
+    ari_log(f'TTS {proveedor}: {(time.monotonic() - inicio) * 1000:.0f} ms ({len(audio)} bytes)')
+    return audio
+
+
+def _saltar(al_saltar, pieza, error):
+    if al_saltar:
+        al_saltar(pieza, error)
+
+
+def registrar_salto(state, pieza, error):
+    """Un salto de escalón por pieza y llamada: al log y al call log."""
+    if pieza in state.saltos:
+        return
+    state.saltos.add(pieza)
+    ari_log(f'FALLBACK: {pieza} falló ({error}) → Edge ({TTS_VOICE})')
+    marcar_plan_b(state.channel_id, pieza)
+
+
 async def play_response(state, texto):
     state.tts_start_time = time.time()
     state.barge_in_frames = 0
     try:
         try:
-            mulaw_bytes = await synthesize_mulaw(texto)
+            # Si Cartesia ya falló en esta llamada, el resto va directo a Edge:
+            # reintentarlo costaría hasta CARTESIA_TIMEOUT de silencio en cada respuesta
+            mulaw_bytes = await synthesize_mulaw(
+                texto,
+                al_saltar=lambda pieza, error: registrar_salto(state, pieza, error),
+                probar_cartesia='Cartesia' not in state.saltos)
         except TTSError as e:
             activar_plan_b(state, 'TTS', e)
             return
@@ -622,11 +839,13 @@ async def run_fixed(channel_id):
 
 
 def marcar_plan_b(channel_id, pieza):
-    """Apunta en el call log qué pieza mandó la llamada al mensaje fijo."""
+    """Apunta en el call log cada pieza que falló en la llamada."""
     log = load_call_log()
     for entry in log:
         if entry.get('id') == channel_id:
-            entry['plan_b'] = pieza
+            # Acumula los saltos de la llamada: "Cartesia", "Cartesia → TTS"...
+            previo = entry.get('plan_b')
+            entry['plan_b'] = f'{previo} → {pieza}' if previo else pieza
             break
     save_call_log(log)
 

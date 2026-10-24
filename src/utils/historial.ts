@@ -40,7 +40,13 @@ export const formatearLocal = (d: Date): string => {
  */
 export const etiquetaServidor = (r: ServerCallRecord): string => {
   if (r.modo === 'FIXED') return 'Manolo (Modo 2)';
-  if (r.modo === 'AI') return r.plan_b ? 'Manolo (Modo 3 → mensaje fijo)' : 'Manolo (Modo 3)';
+  if (r.modo === 'AI') {
+    // plan_b acumula los saltos: "Cartesia", "Cartesia → TTS", "Deepgram"...
+    const saltos = r.plan_b ? r.plan_b.split(' → ') : [];
+    if (saltos.some(p => p !== 'Cartesia')) return 'Manolo (Modo 3 → mensaje fijo)';
+    if (saltos.length > 0) return 'Manolo (Modo 3 · voz de reserva)';
+    return 'Manolo (Modo 3)';
+  }
   return 'Manolo (Modo 2/3)';
 };
 

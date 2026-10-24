@@ -92,6 +92,14 @@ describe('etiquetaServidor', () => {
     expect(etiquetaServidor(servidorRec({ modo: 'AI', plan_b: 'Deepgram' }))).toBe('Manolo (Modo 3 → mensaje fijo)');
   });
 
+  it('si solo cayó Cartesia, siguió conversando con la voz de reserva', () => {
+    expect(etiquetaServidor(servidorRec({ modo: 'AI', plan_b: 'Cartesia' }))).toBe('Manolo (Modo 3 · voz de reserva)');
+  });
+
+  it('Cartesia y después Edge caídos: mensaje fijo', () => {
+    expect(etiquetaServidor(servidorRec({ modo: 'AI', plan_b: 'Cartesia → TTS' }))).toBe('Manolo (Modo 3 → mensaje fijo)');
+  });
+
   it('los registros anteriores al 24/10/2026, sin modo, siguen como Modo 2/3', () => {
     expect(etiquetaServidor(servidorRec())).toBe('Manolo (Modo 2/3)');
   });

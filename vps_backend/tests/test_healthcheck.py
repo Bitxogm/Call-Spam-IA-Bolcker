@@ -34,11 +34,15 @@ class Comprobaciones(unittest.IsolatedAsyncioTestCase):
         p.start()
         self.addCleanup(p.stop)
 
-    async def test_tts_usa_la_funcion_de_manolo(self):
+    async def test_tts_usa_la_funcion_de_edge_de_manolo(self):
         tts = AsyncMock(side_effect=m.TTSError('Edge TTS: 403'))
-        with patch.object(m, 'synthesize_mulaw', tts):
+        cartesia = AsyncMock()
+        with patch.object(m, 'synthesize_edge', tts), \
+             patch.object(m, 'synthesize_cartesia', cartesia), \
+             patch.object(m, 'TTS_PROVIDER', 'cartesia'):
             resultado = await hc.run_checks({'TTS': hc.check_tts})
         tts.assert_awaited_once()
+        cartesia.assert_not_called()   # sintetizar con Cartesia gastaría créditos
         self.assertEqual(resultado, {'TTS': 'Edge TTS: 403'})
 
     async def test_groq_usa_la_funcion_de_manolo(self):
@@ -88,10 +92,11 @@ class Comprobaciones(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resultado, {'lenta': 'sin respuesta en 0.05s', 'rápida': None})
 
     def test_estan_todas_las_comprobaciones(self):
-        self.assertEqual(set(hc.CHECKS), {
-            'TTS', 'Groq', 'Deepgram', 'servicio asterisk',
-            'servicio manolo_ari', 'servicio asterisk-control-api',
-        })
+        with patch.object(m, 'TTS_PROVIDER', 'edge'):
+            self.assertEqual(set(hc.construir_checks()), {
+                'TTS', 'Groq', 'Deepgram', 'servicio asterisk',
+                'servicio manolo_ari', 'servicio asterisk-control-api',
+            })
 
 
 class Emails(unittest.TestCase):
@@ -116,14 +121,15 @@ class Emails(unittest.TestCase):
         asuntos = [a for a, _ in hc.build_emails({'Groq': 'x'}, {'TTS': 'y'})]
         self.assertEqual(len(asuntos), 2)
 
-    def test_tts_con_edge_sugiere_actualizar(self):
-        with patch.object(m, 'TTS_PROVIDER', 'edge'):
-            _, cuerpo = hc.build_emails({}, {'TTS': 'Edge TTS: 403'})[0]
-        self.assertIn('sudo /root/ai_bridge/venv/bin/pip install -U edge-tts', cuerpo)
+    def test_tts_sugiere_actualizar_edge_con_cualquier_proveedor(self):
+        # Edge es la voz (edge) o la reserva (cartesia): su arreglo vale en los dos
+        for proveedor in ('edge', 'cartesia'):
+            with patch.object(m, 'TTS_PROVIDER', proveedor):
+                _, cuerpo = hc.build_emails({}, {'TTS': 'Edge TTS: 403'})[0]
+            self.assertIn('sudo /root/ai_bridge/venv/bin/pip install -U edge-tts', cuerpo)
 
-    def test_tts_con_otro_proveedor_no_sugiere_edge(self):
-        with patch.object(m, 'TTS_PROVIDER', 'azure'):
-            _, cuerpo = hc.build_emails({}, {'TTS': 'error'})[0]
+    def test_si_solo_cae_cartesia_no_sugiere_edge(self):
+        _, cuerpo = hc.build_emails({}, {'Cartesia': 'Cartesia 401: invalid key'})[0]
         self.assertNotIn('edge-tts', cuerpo)
 
     def test_envio_por_gmail_con_starttls(self):

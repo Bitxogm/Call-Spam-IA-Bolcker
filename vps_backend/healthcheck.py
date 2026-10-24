@@ -15,7 +15,7 @@ import json
 import wave
 import asyncio
 import smtplib
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from email.message import EmailMessage
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -33,6 +33,12 @@ SMTP_TIMEOUT = 30
 
 EDGE_FIX = 'sudo /root/ai_bridge/venv/bin/pip install -U edge-tts'
 
+# Cartesia no tiene endpoint de saldo: se calcula con el consumo del mes
+# (GET /usage/credits, que exige clave de administrador) y los créditos del plan
+CARTESIA_ADMIN_API_KEY = os.getenv('CARTESIA_ADMIN_API_KEY')
+CARTESIA_CREDITOS_MES = os.getenv('CARTESIA_CREDITOS_MES')
+CARTESIA_AVISO_SALDO = 0.20
+
 
 def log(msg):
     sys.stderr.write(f'HEALTHCHECK: {msg}\n')
@@ -41,7 +47,49 @@ def log(msg):
 
 # ── Comprobaciones ───────────────────────────────────────────────
 async def check_tts():
-    await manolo_ari.synthesize_mulaw('Hola, soy Manolo.')
+    # Edge es gratis y es el escalón de reserva con cualquier TTS_PROVIDER.
+    # Cartesia no se sintetiza aquí: gastaría créditos cada 6 horas.
+    await manolo_ari.synthesize_edge('Hola, soy Manolo.')
+
+
+async def check_cartesia():
+    await manolo_ari.cartesia_verificar_voz()
+
+
+async def cartesia_creditos_usados_mes(hoy=None):
+    hoy = hoy or date.today()
+    async with manolo_ari.httpx.AsyncClient(timeout=CHECK_TIMEOUT) as client:
+        r = await client.get(
+            f'{manolo_ari.CARTESIA_URL}/usage/credits',
+            headers=manolo_ari.cartesia_headers(CARTESIA_ADMIN_API_KEY),
+            params={'start_ts': f'{hoy:%Y-%m}-01T00:00:00Z'},
+        )
+    if r.status_code != 200:
+        raise RuntimeError(f'Cartesia /usage/credits {r.status_code}: {" ".join((r.text or "").split())[:200]}')
+    return sum(b.get('credits', 0) for b in r.json().get('data', []))
+
+
+def check_cartesia_saldo(estado):
+    async def check():
+        total = int(CARTESIA_CREDITOS_MES)
+        usados = await cartesia_creditos_usados_mes()
+        restante = 1 - usados / total
+        estado['restante'] = restante
+        if restante < CARTESIA_AVISO_SALDO:
+            raise RuntimeError(f'quedan {max(restante, 0):.0%} '
+                               f'({max(total - usados, 0)} de {total} créditos este mes)')
+    return check
+
+
+def check_cartesia_creditos(estado):
+    async def check():
+        hasta = manolo_ari.cartesia_agotado_hasta()
+        if hasta:
+            raise RuntimeError(f'sin créditos: Manolo usa Edge ({manolo_ari.TTS_VOICE}) '
+                               f'hasta el {hasta.isoformat()}')
+        if estado.get('restante') is not None and estado['restante'] <= 0:
+            raise RuntimeError('sin créditos según el consumo del mes')
+    return check
 
 
 async def check_groq():
@@ -73,17 +121,27 @@ def check_service(nombre):
     return check
 
 
-CHECKS = {
-    'TTS': check_tts,
-    'Groq': check_groq,
-    'Deepgram': check_deepgram,
-    **{f'servicio {s}': check_service(s) for s in SERVICES},
-}
+def construir_checks():
+    checks = {
+        'TTS': check_tts,
+        'Groq': check_groq,
+        'Deepgram': check_deepgram,
+    }
+    if manolo_ari.TTS_PROVIDER == 'cartesia':
+        estado = {}     # el saldo lo calcula una comprobación y lo usa la siguiente
+        checks['Cartesia'] = check_cartesia
+        if CARTESIA_ADMIN_API_KEY and CARTESIA_CREDITOS_MES:
+            checks['Cartesia: saldo bajo'] = check_cartesia_saldo(estado)
+        else:
+            log('sin CARTESIA_ADMIN_API_KEY o CARTESIA_CREDITOS_MES: no se comprueba el saldo')
+        checks['Cartesia: sin créditos'] = check_cartesia_creditos(estado)
+    checks.update({f'servicio {s}': check_service(s) for s in SERVICES})
+    return checks
 
 
 async def run_checks(checks=None, timeout=None):
     """{nombre: None si va bien, o el error resumido}."""
-    checks = checks or CHECKS
+    checks = checks or construir_checks()
     timeout = timeout or CHECK_TIMEOUT
     resultados = {}
     for nombre, check in checks.items():
@@ -131,11 +189,12 @@ def build_emails(antes, ahora):
     if nuevos:
         lineas = [f'Ha dejado de funcionar: {", ".join(nuevos)}.', '']
         lineas += [f'- {n}: {ahora[n]}' for n in ahora]
-        if 'TTS' in nuevos and manolo_ari.TTS_PROVIDER == 'edge':
+        # Edge está en la escalera con cualquier TTS_PROVIDER: o es la voz o es la reserva
+        if 'TTS' in nuevos:
             lineas += ['', 'Edge TTS suele romperse cuando Microsoft cambia el protocolo. '
                            'Prueba a actualizarlo y reiniciar manolo_ari:', f'  {EDGE_FIX}']
-        lineas += ['', 'Mientras tanto, el Modo 3 cae al mensaje fijo si la pieza caída '
-                       'es TTS o Deepgram.']
+        lineas += ['', 'Mientras tanto: si cae Cartesia, Manolo sigue con la voz de Edge; '
+                       'si cae Edge (TTS) o Deepgram, el Modo 3 pasa al mensaje fijo.']
         emails.append((f'[Manolo] Falla: {", ".join(nuevos)}', '\n'.join(lineas)))
 
     if recuperados:

@@ -151,7 +151,8 @@ class FalloGroq(Base):
             await m.handle_turn_complete(state)
             await self.esperar_tareas()
 
-        sintetizado.assert_awaited_once_with(m.FRASE_EMERGENCIA)
+        sintetizado.assert_awaited_once()
+        self.assertEqual(sintetizado.await_args.args[0], m.FRASE_EMERGENCIA)
         self.assertEqual(state.chat_history, [])
         self.run_fixed.assert_not_called()
         self.assertEqual(len(self.fallbacks()), 1)
