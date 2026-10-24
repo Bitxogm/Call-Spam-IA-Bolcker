@@ -88,6 +88,7 @@ Asterisk [from-zadarma]
 | `CARTESIA_DIA_RENOVACION` | día en que Cartesia renueva los créditos; sin créditos, Edge hasta ese día | `1` |
 | `CARTESIA_ADMIN_API_KEY`, `CARTESIA_CREDITOS_MES` | aviso de saldo por debajo del 20 % en el healthcheck (opcional) | sin aviso de saldo; el de "agotado" sigue |
 | `TTS_VOICE`, `TTS_RATE`, `TTS_PITCH` | voz de Edge: la de reserva con Cartesia, o la única | `es-ES-AlvaroNeural`, `-8%`, `-4Hz` |
+| `MAX_CHARS_RESPUESTA` | límite duro por respuesta de Manolo; corta en el último `.?!` | `180` |
 | `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO` | remitente y destino del healthcheck | no hay email (no guarda el estado y reintenta) |
 | `ALERT_EMAIL_PASSWORD` | contraseña de aplicación de Google, sin espacios (`docs/runbooks/healthcheck-email.md`) | ídem |
 
@@ -184,7 +185,7 @@ En orden de prioridad; el detalle está en la sección 7.
 
 ### Próxima ronda — Manolo
 
-- [ ] **Sistema de personajes.** Elegir el personaje al empezar cada llamada: Manolo con Roi (Edge) y Roberto con Cartesia. El prompt de Roberto, "El Indeciso Eterno", está en el historial: `git show 1a6dd0b^:src/services/GeminiServices.ts` (clave `indeciso`).
+- [ ] **Sistema de personajes.** Elegir el personaje al empezar cada llamada: Manolo con Roi (Edge), Roberto con Cartesia y Paquita con ElevenLabs (plan gratis, **API key nueva**: la antigua acabó en el historial de git; va en el `.env` del VPS, nunca en la app). Los prompts de Roberto ("El Indeciso Eterno") y Paquita están en el historial: `git show 1a6dd0b^:src/services/GeminiServices.ts` (claves `indeciso` y la de Paquita).
 - [ ] **Saludo pregrabado en caché.** El saludo es siempre el mismo: sintetizarlo una vez y guardarlo quita la latencia del primer turno y no gasta créditos de Cartesia en cada llamada.
 - [ ] **TTS en streaming.** Hoy se espera al audio completo antes de mandar el primer RTP. Con streaming (Cartesia por WebSocket) Manolo empezaría a hablar antes.
 
