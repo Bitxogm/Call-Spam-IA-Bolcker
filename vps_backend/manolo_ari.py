@@ -431,6 +431,40 @@ def recortar_ultima_frase(texto):
     return texto[:corte + 1].strip()
 
 
+def _leer_max_chars(valor):
+    if not valor:
+        return 180
+    try:
+        maximo = int(valor)
+    except ValueError:
+        maximo = None
+    if maximo is None or maximo < 20:
+        ari_log(f'MAX_CHARS_RESPUESTA={valor!r} no válido (entero de 20 o más), uso 180')
+        return 180
+    return maximo
+
+
+# Límite duro: el prompt pide 1-2 frases, pero alguna respuesta llegó a 400 caracteres
+MAX_CHARS_RESPUESTA = _leer_max_chars(os.getenv('MAX_CHARS_RESPUESTA'))
+
+
+def limitar_longitud(texto, maximo=None):
+    """Corta en el último . ? ! antes del límite, nunca a mitad de frase. Sin ninguno,
+    en la última coma o espacio, con "…". El resultado nunca pasa de `maximo`."""
+    maximo = maximo or MAX_CHARS_RESPUESTA
+    if len(texto) <= maximo:
+        return texto
+    trozo = texto[:maximo]
+    corte = max(trozo.rfind(c) for c in '.?!')
+    if corte > 0:
+        return trozo[:corte + 1].strip()
+    trozo = trozo[:maximo - 1]          # sitio para el "…"
+    corte = max(trozo.rfind(','), trozo.rfind(' '))
+    if corte > 0:
+        trozo = trozo[:corte]
+    return trozo.rstrip(' ,;:') + '…'
+
+
 async def generate_manolo_reply(chat_history, text):
     """Respuesta de Manolo. Lanza LLMError si Groq falla o devuelve vacío."""
     messages = [{'role': 'system', 'content': PROMPT_MANOLO}]
@@ -454,7 +488,10 @@ async def generate_manolo_reply(chat_history, text):
         raise LLMError(f'{type(e).__name__}: {e}') from e
     if not respuesta:
         raise LLMError('respuesta vacía')
-    return respuesta
+    limitada = limitar_longitud(respuesta)
+    if limitada != respuesta:
+        ari_log(f'Respuesta recortada: {len(respuesta)} → {len(limitada)} caracteres')
+    return limitada
 
 
 async def get_manolo_response(chat_history, text):
