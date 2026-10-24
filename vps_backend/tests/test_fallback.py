@@ -3,6 +3,8 @@
 python3 -m unittest discover -s vps_backend/tests -v
 """
 import asyncio
+import os
+import tempfile
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -22,7 +24,11 @@ class Base(unittest.IsolatedAsyncioTestCase):
         self.logs = []
         self.run_fixed = AsyncMock()
         self.hangup = AsyncMock()
+        # activar_plan_b escribe en el call log: nunca en el real del VPS
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
         for p in (
+            patch.object(m, 'CALL_LOG_PATH', os.path.join(self.tmp.name, 'call_log.json')),
             patch.object(m, 'ari_log', side_effect=self.logs.append),
             patch.object(m, 'run_fixed', self.run_fixed),
             patch.object(m.ari, 'hangup', self.hangup),

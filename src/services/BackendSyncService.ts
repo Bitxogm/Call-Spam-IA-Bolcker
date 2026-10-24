@@ -36,6 +36,10 @@ export interface ServerCallRecord {
   timestamp_fin: string | null;
   duracion_segundos: number;
   estado: 'activa' | 'finalizada';
+  /** Desde el 24/10/2026. Los registros anteriores no lo traen. */
+  modo?: 'FIXED' | 'AI';
+  /** Pieza que mandó la llamada al mensaje fijo (TTS, Deepgram), o null. */
+  plan_b?: string | null;
 }
 
 class BackendSyncService {

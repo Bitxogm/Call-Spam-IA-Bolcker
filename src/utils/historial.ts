@@ -35,6 +35,16 @@ export const formatearLocal = (d: Date): string => {
 };
 
 /**
+ * Qué modo atendió la llamada. Los registros escritos antes del 24/10/2026
+ * no traen `modo`, y para esos se mantiene la etiqueta genérica.
+ */
+export const etiquetaServidor = (r: ServerCallRecord): string => {
+  if (r.modo === 'FIXED') return 'Manolo (Modo 2)';
+  if (r.modo === 'AI') return r.plan_b ? 'Manolo (Modo 3 → mensaje fijo)' : 'Manolo (Modo 3)';
+  return 'Manolo (Modo 2/3)';
+};
+
+/**
  * Une el historial local (Modo 1, ya en hora del dispositivo) con el del
  * servidor (Modos 2/3, UTC) y ordena por instante, no por cadena: las dos
  * fuentes venían en zonas distintas y comparar el texto mezclaba el orden.
@@ -54,7 +64,7 @@ export const fusionarHistorial = (
     return {
       number: r.numero,
       timestamp: formatearLocal(d),
-      reason: 'Manolo (Modo 2/3)',
+      reason: etiquetaServidor(r),
       action: r.estado === 'activa' ? 'En curso' : 'Atendida por Manolo',
       origen: 'servidor' as const,
       duracion: r.duracion_segundos,

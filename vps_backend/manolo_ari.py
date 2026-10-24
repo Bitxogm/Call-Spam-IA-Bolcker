@@ -621,6 +621,16 @@ async def run_fixed(channel_id):
     await ari.hangup(channel_id)
 
 
+def marcar_plan_b(channel_id, pieza):
+    """Apunta en el call log qué pieza mandó la llamada al mensaje fijo."""
+    log = load_call_log()
+    for entry in log:
+        if entry.get('id') == channel_id:
+            entry['plan_b'] = pieza
+            break
+    save_call_log(log)
+
+
 def activar_plan_b(state, pieza, error):
     """Modo 3 sin una de sus piezas: mensaje fijo del Modo 2 y colgar, en vez de quedarse mudo."""
     global fixed_task
@@ -628,6 +638,7 @@ def activar_plan_b(state, pieza, error):
         return
     state.plan_b = True
     ari_log(f'FALLBACK: {pieza} falló ({error}) → mensaje fijo y colgar')
+    marcar_plan_b(state.channel_id, pieza)
     if (state.tts_task and not state.tts_task.done()
             and state.tts_task is not asyncio.current_task()):
         state.tts_task.cancel()
@@ -667,6 +678,10 @@ async def on_stasis_start(event):
     numero = extraer_numero(channel)
     ari_log(f'Número del llamante: {numero}')
 
+    # Se lee una sola vez y antes del registro: el modo que queda en el log es
+    # el mismo que decide el camino de esta llamada.
+    modo = get_current_mode()
+
     log = load_call_log()
     log.append({
         'id': channel_id,
@@ -677,6 +692,8 @@ async def on_stasis_start(event):
         'timestamp_fin': None,
         'duracion_segundos': 0,
         'estado': 'activa',
+        'modo': modo,
+        'plan_b': None,           # pieza que falló si la llamada cayó al mensaje fijo
     })
     save_call_log(log)
 
@@ -684,7 +701,7 @@ async def on_stasis_start(event):
 
     # Modo FIXED: mensaje fijo y colgar. No hace falta bridge, externalMedia
     # ni Deepgram: el pipeline de conversación no interviene aquí.
-    if get_current_mode() == 'FIXED':
+    if modo == 'FIXED':
         # En tarea aparte, NO con await: run_fixed espera PlaybackFinished, y
         # run_ari_events despacha los handlers con await dentro del bucle que
         # lee el WebSocket. Si bloqueamos aquí, ese evento no se lee nunca y

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { parseServidor, formatearLocal, fusionarHistorial } from './historial';
+import { parseServidor, formatearLocal, fusionarHistorial, etiquetaServidor } from './historial';
 import type { SpamCallRecord } from '../services/CallHistoryService';
 import type { ServerCallRecord } from '../services/BackendSyncService';
 
@@ -75,6 +75,30 @@ describe('formatearLocal', () => {
     expect(formatearLocal(parseServidor('2026-10-12T06:33:00+00:00'))).toBe(
       '2026-10-12 08:33:00'
     );
+  });
+});
+
+describe('etiquetaServidor', () => {
+  it('Modo 2: el servidor guarda FIXED', () => {
+    expect(etiquetaServidor(servidorRec({ modo: 'FIXED', plan_b: null }))).toBe('Manolo (Modo 2)');
+  });
+
+  it('Modo 3 sin incidencias', () => {
+    expect(etiquetaServidor(servidorRec({ modo: 'AI', plan_b: null }))).toBe('Manolo (Modo 3)');
+  });
+
+  it('Modo 3 que cayó al plan B', () => {
+    expect(etiquetaServidor(servidorRec({ modo: 'AI', plan_b: 'TTS' }))).toBe('Manolo (Modo 3 → mensaje fijo)');
+    expect(etiquetaServidor(servidorRec({ modo: 'AI', plan_b: 'Deepgram' }))).toBe('Manolo (Modo 3 → mensaje fijo)');
+  });
+
+  it('los registros anteriores al 24/10/2026, sin modo, siguen como Modo 2/3', () => {
+    expect(etiquetaServidor(servidorRec())).toBe('Manolo (Modo 2/3)');
+  });
+
+  it('fusionarHistorial usa la etiqueta como reason', () => {
+    const [fila] = fusionarHistorial([], [servidorRec({ modo: 'AI', plan_b: null })]);
+    expect(fila.reason).toBe('Manolo (Modo 3)');
   });
 });
 
