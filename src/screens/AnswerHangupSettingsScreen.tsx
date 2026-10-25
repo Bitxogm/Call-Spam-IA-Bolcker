@@ -4,6 +4,7 @@ import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, Switch, Pe
 import { answerHangupService } from '../services/AnswerHangupService';
 import backendSyncService from '../services/BackendSyncService';
 import callForwardingService from '../services/CallForwardingService';
+import { pedirPermisoNotificaciones } from '../utils/permisoNotificaciones';
 
 type AnswerHangupSettingsScreenProps = {
   navigation: any;
@@ -232,6 +233,9 @@ export default function AnswerHangupSettingsScreen({ navigation }: AnswerHangupS
       // O simplemente actualizar el servicio para soportar estos nuevos strings
       await answerHangupService.setMode(newMode as any);
       setMode(newMode);
+
+      // Android 13+: sin este permiso no se ve ninguna notificación de spam
+      await pedirPermisoNotificaciones();
 
       // 🔑 CONFIGURAR DESVÍO AUTOMÁTICO SEGÚN MODO
       console.log('⚙️ Configurando desvío de llamadas para modo:', newMode);

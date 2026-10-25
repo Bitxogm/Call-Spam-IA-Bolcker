@@ -122,6 +122,13 @@ public class CallScreeningServiceImpl extends CallScreeningService {
                         // Esto envía señal "Busy" real y activa el desvío condicional (*67*...)
                         Log.d(TAG, "🔒 MODO BACKEND: Rechazando con TelecomManager.endCall()...");
                         showToast("🛡️ Desviando a Víctor...");
+                        try {
+                            SpamNotificationManager.showBackendCallNotification(
+                                this, callerNumber, mode == AnswerHangupHelper.Mode.BACKEND_AI);
+                        } catch (Exception e) {
+                            // Un fallo del aviso no puede impedir el desvío
+                            Log.e(TAG, "❌ Error en la notificación de desvío: " + e.getMessage());
+                        }
                         
                         // Usar TelecomManager para enviar señal BUSY
                         try {

@@ -1,6 +1,6 @@
 // Importaciones de React Native y navegación
 import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, LinkingOptions } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 
 // Importar nuestras pantallas (las vamos a crear)
@@ -13,11 +13,32 @@ import AnswerHangupSettingsScreen from './src/screens/AnswerHangupSettingsScreen
 // Crear el navegador tipo Stack (pantallas apiladas)
 const Stack = createStackNavigator();
 
+// La notificación de los modos 2 y 3 abre spamblocker://historial (SpamNotificationManager).
+// initialRouteName deja el Dashboard debajo: Atrás vuelve a la app en vez de cerrarla.
+type Rutas = {
+  Dashboard: undefined;
+  SpamNumbers: undefined;
+  Whitelist: undefined;
+  Logs: undefined;
+  CallHistory: undefined;
+  AnswerHangupSettings: undefined;
+};
+
+const linking: LinkingOptions<Rutas> = {
+  prefixes: ['spamblocker://'],
+  config: {
+    initialRouteName: 'Dashboard',
+    screens: {
+      CallHistory: 'historial',
+    },
+  },
+};
+
 // Componente principal de la app
 export default function App() {
   return (
     // NavigationContainer = contenedor de todas las pantallas
-    <NavigationContainer>
+    <NavigationContainer linking={linking}>
       {/* Stack.Navigator = navegador de pantallas apiladas */}
       <Stack.Navigator 
         initialRouteName="Dashboard" // Pantalla inicial
