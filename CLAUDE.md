@@ -47,6 +47,7 @@ Asterisk [from-zadarma]
 
 - **Plan B del Modo 3** (si cae TTS, Groq o Deepgram) y **healthcheck** cada 6 h con aviso por email: `.claude/rules/vps-backend.md`.
 - **API de control:** `control_api.py` en `https://manolo.bitxodev.com` (Cloudflare → NPM → Flask en el bridge Docker). El 5000 **no** se abre a Internet. Endpoints, exposición y lección 4: `.claude/rules/vps-backend.md`.
+- ⚠️ **Problema conocido, LaLiga:** durante los partidos los operadores bloquean IPs de Cloudflare y el móvil no llega a la API (el Historial avisa "Servidor: sin respuesta en 5 s"). **Los cambios de modo tampoco llegan**, y fallan sin avisar. Se usa VPN esos días. Cloudflare se queda: oculta la IP del VPS y aplica el rate limit, también a las otras apps del dominio.
 - **Mensaje fijo:** `/usr/share/asterisk/sounds/es` y `lang='es'` explícito: `.claude/rules/vps-backend.md`.
 - **Legacy en disco, sin uso:** `manolo_agi.py` (el dialplan ya no lo referencia) y `whisper_server.py` (parado y deshabilitado; `manolo_ari.py` no lo menciona). Se conservan por si se recablean.
 - ⚠️ Degradación silenciosa de `BackendSyncService.ts` y el lío `ContactService.ts`/`ContactsService.ts`: `.claude/rules/services.md`.
@@ -185,7 +186,6 @@ En orden de prioridad; el detalle está en la sección 7.
 6. **Limpiar residuos IVR** y después los 6 permisos del manifest.
 7. **Arreglar o retirar `scripts/check-secrets.sh`.**
 8. **Orden del flujo de verificación: que los contactos ganen a los premium.** En `CallScreeningServiceImpl.shouldShowNotification()` el orden real es blacklist → oculto/privado → prefijos premium y call center → contactos → prefijo 400 → Modo Radical, así que un contacto con un 900 se bloquea. La pantalla "Flujo de Verificación" (`WhitelistScreen`) dibuja otro orden. Mover los premium detrás de contactos y corregir la pantalla; toca el núcleo de decisión de spam, así que prueba en dispositivo.
-9. **Valorar sacar `manolo.bitxodev.com` de Cloudflare (DNS only).** Durante los partidos de LaLiga los operadores bloquean IPs de Cloudflare: el móvil no llega a la API (el Historial avisa "Servidor: sin respuesta en 5 s", 25/10/2026) y **tampoco llegan los cambios de modo**, que fallan sin avisar. Con DNS only se publica la IP del VPS y se pierde el rate limit de Cloudflare (10 req/min): habría que moverlo a NPM o a UFW antes.
 
 ### Próxima ronda — Manolo
 
