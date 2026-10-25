@@ -92,11 +92,22 @@ class Comprobaciones(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resultado, {'lenta': 'sin respuesta en 0.05s', 'rápida': None})
 
     def test_estan_todas_las_comprobaciones(self):
-        with patch.object(m, 'TTS_PROVIDER', 'edge'):
+        with patch.object(m, 'TTS_PROVIDER', 'edge'), patch.object(m, 'PERSONAJE', 'manolo'):
             self.assertEqual(set(hc.construir_checks()), {
                 'TTS', 'Groq', 'Deepgram', 'servicio asterisk',
                 'servicio manolo_ari', 'servicio asterisk-control-api',
             })
+
+    def test_con_paquita_tambien_se_prueba_su_voz_de_reserva(self):
+        with patch.object(m, 'TTS_PROVIDER', 'edge'), patch.object(m, 'PERSONAJE', 'aleatorio'):
+            self.assertIn('TTS Paquita', hc.construir_checks())
+
+    async def test_tts_paquita_usa_su_voz(self):
+        edge = AsyncMock()
+        with patch.object(m, 'synthesize_edge', edge):
+            resultado = await hc.run_checks({'TTS Paquita': hc.check_tts_voz('es-ES-ElviraNeural')})
+        self.assertEqual(resultado, {'TTS Paquita': None})
+        self.assertEqual(edge.await_args.args[1], 'es-ES-ElviraNeural')
 
 
 class Emails(unittest.TestCase):

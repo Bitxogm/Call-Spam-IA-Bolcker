@@ -40,6 +40,8 @@ export interface ServerCallRecord {
   modo?: 'FIXED' | 'AI';
   /** Piezas que fallaron, en orden: "Cartesia" (siguió con Edge), "Cartesia → TTS", "Deepgram"… o null. */
   plan_b?: string | null;
+  /** Desde el 25/10/2026: 'manolo', 'paquita'… null en el Modo 2. */
+  personaje?: string | null;
 }
 
 class BackendSyncService {

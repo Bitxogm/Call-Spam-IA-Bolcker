@@ -100,6 +100,22 @@ describe('etiquetaServidor', () => {
     expect(etiquetaServidor(servidorRec({ modo: 'AI', plan_b: 'Cartesia → TTS' }))).toBe('Manolo (Modo 3 → mensaje fijo)');
   });
 
+  it('el personaje que atendió', () => {
+    expect(etiquetaServidor(servidorRec({ modo: 'AI', plan_b: null, personaje: 'paquita' }))).toBe('Paquita (Modo 3)');
+    expect(etiquetaServidor(servidorRec({ modo: 'AI', plan_b: null, personaje: 'manolo' }))).toBe('Manolo (Modo 3)');
+  });
+
+  it('Paquita con ElevenLabs caído sigue con la voz de reserva', () => {
+    expect(etiquetaServidor(servidorRec({ modo: 'AI', plan_b: 'ElevenLabs', personaje: 'paquita' })))
+      .toBe('Paquita (Modo 3 · voz de reserva)');
+    expect(etiquetaServidor(servidorRec({ modo: 'AI', plan_b: 'ElevenLabs → TTS', personaje: 'paquita' })))
+      .toBe('Paquita (Modo 3 → mensaje fijo)');
+  });
+
+  it('registros sin personaje (anteriores al 25/10/2026) son de Manolo', () => {
+    expect(etiquetaServidor(servidorRec({ modo: 'AI', plan_b: null }))).toBe('Manolo (Modo 3)');
+  });
+
   it('los registros anteriores al 24/10/2026, sin modo, siguen como Modo 2/3', () => {
     expect(etiquetaServidor(servidorRec())).toBe('Manolo (Modo 2/3)');
   });

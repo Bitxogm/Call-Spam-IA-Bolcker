@@ -38,6 +38,7 @@ EDGE_FIX = 'sudo /root/ai_bridge/venv/bin/pip install -U edge-tts'
 CARTESIA_ADMIN_API_KEY = os.getenv('CARTESIA_ADMIN_API_KEY')
 CARTESIA_CREDITOS_MES = os.getenv('CARTESIA_CREDITOS_MES')
 CARTESIA_AVISO_SALDO = 0.20
+AVISO_SALDO = CARTESIA_AVISO_SALDO   # el mismo umbral para ElevenLabs
 
 
 def log(msg):
@@ -50,6 +51,13 @@ async def check_tts():
     # Edge es gratis y es el escalón de reserva con cualquier TTS_PROVIDER.
     # Cartesia no se sintetiza aquí: gastaría créditos cada 6 horas.
     await manolo_ari.synthesize_edge('Hola, soy Manolo.')
+
+
+def check_tts_voz(voz):
+    """La reserva de un personaje con voz de Edge propia: si el nombre está mal, falla aquí."""
+    async def check():
+        await manolo_ari.synthesize_edge('Hola, ¿quién es?', voz)
+    return check
 
 
 async def check_cartesia():
@@ -121,13 +129,48 @@ def check_service(nombre):
     return check
 
 
+def check_elevenlabs_cuenta(estado):
+    """Clave, voz y caracteres del periodo, todo con lecturas: no sintetiza nada."""
+    async def check():
+        await manolo_ari.elevenlabs_verificar_voz()
+        sub = await manolo_ari.elevenlabs_suscripcion()
+        limite = sub.get('character_limit') or 0
+        usados = sub.get('character_count') or 0
+        if limite > 0:
+            estado['restante'] = 1 - usados / limite
+            estado['detalle'] = f'{max(limite - usados, 0)} de {limite} caracteres'
+    return check
+
+
+def check_elevenlabs_saldo(estado):
+    async def check():
+        restante = estado.get('restante')
+        if restante is not None and restante < AVISO_SALDO:
+            raise RuntimeError(f'quedan {max(restante, 0):.0%} ({estado["detalle"]})')
+    return check
+
+
+def check_elevenlabs_creditos(estado):
+    async def check():
+        hasta = manolo_ari.elevenlabs_agotado_hasta()
+        if hasta:
+            raise RuntimeError(f'sin caracteres: Paquita usa Edge ({manolo_ari.voz_edge("paquita")}) '
+                               f'hasta el {hasta.isoformat()}')
+        if estado.get('restante') is not None and estado['restante'] <= 0:
+            raise RuntimeError('sin caracteres según la suscripción')
+    return check
+
+
 def construir_checks():
     checks = {
         'TTS': check_tts,
+        **({'TTS Paquita': check_tts_voz(manolo_ari.voz_edge('paquita'))}
+           if 'paquita' in manolo_ari.personajes_activos() else {}),
         'Groq': check_groq,
         'Deepgram': check_deepgram,
     }
-    if manolo_ari.TTS_PROVIDER == 'cartesia':
+    voces = manolo_ari.voces_en_uso()
+    if 'cartesia' in voces:
         estado = {}     # el saldo lo calcula una comprobación y lo usa la siguiente
         checks['Cartesia'] = check_cartesia
         if CARTESIA_ADMIN_API_KEY and CARTESIA_CREDITOS_MES:
@@ -135,6 +178,11 @@ def construir_checks():
         else:
             log('sin CARTESIA_ADMIN_API_KEY o CARTESIA_CREDITOS_MES: no se comprueba el saldo')
         checks['Cartesia: sin créditos'] = check_cartesia_creditos(estado)
+    if 'elevenlabs' in voces:
+        estado_el = {}  # ElevenLabs sí dice lo que queda: /v1/user/subscription
+        checks['ElevenLabs'] = check_elevenlabs_cuenta(estado_el)
+        checks['ElevenLabs: saldo bajo'] = check_elevenlabs_saldo(estado_el)
+        checks['ElevenLabs: sin créditos'] = check_elevenlabs_creditos(estado_el)
     checks.update({f'servicio {s}': check_service(s) for s in SERVICES})
     return checks
 
@@ -193,8 +241,9 @@ def build_emails(antes, ahora):
         if 'TTS' in nuevos:
             lineas += ['', 'Edge TTS suele romperse cuando Microsoft cambia el protocolo. '
                            'Prueba a actualizarlo y reiniciar manolo_ari:', f'  {EDGE_FIX}']
-        lineas += ['', 'Mientras tanto: si cae Cartesia, Manolo sigue con la voz de Edge; '
-                       'si cae Edge (TTS) o Deepgram, el Modo 3 pasa al mensaje fijo.']
+        lineas += ['', 'Mientras tanto: si cae Cartesia o ElevenLabs, el personaje sigue con '
+                       'la voz de Edge; si cae Edge (TTS) o Deepgram, el Modo 3 pasa al '
+                       'mensaje fijo.']
         emails.append((f'[Manolo] Falla: {", ".join(nuevos)}', '\n'.join(lineas)))
 
     if recuperados:

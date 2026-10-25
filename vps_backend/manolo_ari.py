@@ -84,52 +84,6 @@ GROQ_KEY = os.getenv('GROQ_API_KEY')
 
 groq_client = AsyncGroq(api_key=GROQ_KEY)
 
-PROMPT_MANOLO = """Eres Manolo Ferreiro, 79 años, jubilado de la mina de Pontevedra.
-Vives en Cerdedo con tu mujer Carmen, tu gato Manoliño y unas gallinas en el corral.
-
-PERSONALIDAD:
-- Sordo del oído derecho — de vez en cuando pides que te repitan lo que no has oído
-- Entusiasta con todo lo que te ofrecen, pero siempre le ves un "pero"
-- Confundes los términos modernos con cosas de tu mundo (el campo, la mina, el pueblo,
-  los entierros, los juegos de azar, lo que oyes en la tele). Inventa la confusión en el
-  momento con tus propias palabras, distinta para cada término; nunca uses una frase hecha
-- Usas alguna muletilla gallega suave de vez en cuando: "anda", "mira tú", "fíjate", "que si"
-
-CÓMO LLEVAS LA CONVERSACIÓN (repartido a lo largo de VARIOS turnos, no todo de golpe):
-Alternas entre mostrar interés genuino, pedir que te aclaren algo, desviarte con una
-historia personal, y volver al tema con una pregunta. No sigas siempre el mismo orden
-ni el mismo patrón — que no se note que es una fórmula.
-
-HISTORIAS QUE PUEDES CONTAR (usa una distinta cada vez, no repitas la misma dos veces):
-- Carmen tuvo un disgusto con la vecina por las gallinas
-- El médico le dijo que tiene el colesterol "un poco altillo"
-- El gato Manoliño rompió el jarrón de la abuela
-- La pensión llegó tarde este mes y Carmen se enfadó
-- El vecino Paco se compró un coche eléctrico y no sabe usarlo
-- Tiene una hernia que le molesta cuando llueve
-- Su hijo en Alemania no llama lo suficiente
-- El precio del butano "es un robo"
-
-MEMORIA — esto manda sobre cualquier otra cosa que digas sobre "olvidar":
-- Tienes el historial completo de esta llamada. Úsalo siempre para no repetirte:
-  ni la misma pregunta, ni la misma historia, ni la misma confusión de término
-- REGLA ESTRICTA: cada expresión, confusión o historia se usa como mucho UNA vez por
-  llamada. Antes de responder, revisa el historial y descarta cualquiera que ya hayas
-  dicho (también si la cambias solo un poco). Excepción: las muletillas cortas ("anda",
-  "mira tú", "fíjate", "que si") no cuentan como expresión de uso único; basta con que
-  no uses la misma en dos respuestas seguidas
-- Si el interlocutor te dijo su nombre o algo sobre él, recuérdalo y menciónalo
-- "Se me ha ido de la cabeza" es solo una frase de personaje que puedes soltar de vez
-  en cuando — nunca es excusa real para repetir algo que ya dijiste
-
-SI EL SPAMMER SE ENFADA O INSISTE: redobla el entusiasmo confuso, nunca te ofendas,
-nunca cuelgues, nunca digas que no te interesa.
-
-FORMATO DE RESPUESTA (importante, se convierte directo a voz):
-- Solo lo que diría Manolo en voz alta — nada de acotaciones entre paréntesis,
-  descripciones de tono, asteriscos ni emojis
-- Máximo 1 pregunta por turno, 1-2 frases como mucho"""
-
 
 def ari_log(msg):
     ts = datetime.now().strftime('%H:%M:%S.%f')[:-3]
@@ -152,7 +106,15 @@ class TTSError(Exception):
     pass
 
 
-class CartesiaSinCreditos(TTSError):
+class SinCreditos(TTSError):
+    pass
+
+
+class CartesiaSinCreditos(SinCreditos):
+    pass
+
+
+class ElevenLabsSinCreditos(SinCreditos):
     pass
 
 
@@ -185,7 +147,7 @@ def _leer_velocidad(valor):
 CARTESIA_SPEED = _leer_velocidad(os.getenv('CARTESIA_SPEED'))
 
 
-def _leer_dia_renovacion(valor):
+def _leer_dia_renovacion(valor, variable='CARTESIA_DIA_RENOVACION'):
     if not valor:
         return 1
     try:
@@ -193,7 +155,7 @@ def _leer_dia_renovacion(valor):
     except ValueError:
         dia = None
     if dia is None or not 1 <= dia <= 31:
-        ari_log(f'CARTESIA_DIA_RENOVACION={valor!r} no es un día del mes (1-31), uso 1')
+        ari_log(f'{variable}={valor!r} no es un día del mes (1-31), uso 1')
         return 1
     return dia
 
@@ -201,6 +163,94 @@ def _leer_dia_renovacion(valor):
 # Día del mes en que Cartesia renueva los créditos del plan
 CARTESIA_DIA_RENOVACION = _leer_dia_renovacion(os.getenv('CARTESIA_DIA_RENOVACION'))
 
+# ── ElevenLabs ────────────────────────────────────────────────
+ELEVENLABS_URL = 'https://api.elevenlabs.io'
+ELEVENLABS_MODEL = 'eleven_flash_v2_5'      # el más rápido y barato, con español
+ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
+ELEVENLABS_VOICE_ID = os.getenv('ELEVENLABS_VOICE_ID')
+ELEVENLABS_STATE_PATH = '/root/ai_bridge/elevenlabs_state.json'
+ELEVENLABS_TIMEOUT = 3          # mismo criterio que CARTESIA_TIMEOUT: Edge sigue detrás
+ELEVENLABS_DIA_RENOVACION = _leer_dia_renovacion(os.getenv('ELEVENLABS_DIA_RENOVACION'),
+                                                 'ELEVENLABS_DIA_RENOVACION')
+
+# ── Personajes ──────────────────────────────────────────────────
+PERSONAS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'personas')
+
+PERSONAJES = {
+    'manolo': {
+        'nombre': 'Manolo',
+        'prompt': 'manolo.txt',
+        'voz': 'cartesia',
+        'voz_edge': None,                   # reserva: TTS_VOICE (Roi)
+        'saludo': '¿Dígame? Ay, espere un momento que no encuentro las gafas... ¿Quién es?',
+        'despedida': '¿Hola? ¿Sigues ahí? Bueno, que Dios te bendiga hijo. Adiós.',
+    },
+    'paquita': {
+        'nombre': 'Paquita',
+        'prompt': 'paquita.txt',
+        'voz': 'elevenlabs',
+        # Reserva femenina: Roi no le pega. Configurable, por si Edge cambia de voces
+        'voz_edge': os.getenv('PAQUITA_VOZ_RESERVA') or 'es-ES-ElviraNeural',
+        'saludo': '¿Sí? ¿Dígame? Espere, hijo, que estaba tendiendo la ropa... ¿Quién es?',
+        'despedida': '¿Hola? ¿Sigue usted ahí? Ea, pues se habrá cortado. Adiós, mi alma.',
+    },
+}
+
+
+def _leer_prompts():
+    """Manolo es obligatorio: sin él no hay Modo 3. Un personaje sin fichero se desactiva."""
+    prompts = {}
+    for clave, personaje in PERSONAJES.items():
+        ruta = os.path.join(PERSONAS_DIR, personaje['prompt'])
+        try:
+            with open(ruta, encoding='utf-8') as f:
+                prompts[clave] = f.read().strip()
+        except FileNotFoundError:
+            if clave == 'manolo':
+                raise FileNotFoundError(f'Falta {ruta}: es el personaje por defecto')
+            ari_log(f'Falta {ruta}: {personaje["nombre"]} desactivado')
+    return prompts
+
+
+PROMPTS = _leer_prompts()
+PROMPT_MANOLO = PROMPTS['manolo']
+
+
+def _leer_personaje(valor):
+    valor = (valor or 'aleatorio').strip().lower()
+    if valor != 'aleatorio' and valor not in PERSONAJES:
+        ari_log(f'PERSONAJE={valor!r} no válido (aleatorio|{"|".join(PERSONAJES)}), uso aleatorio')
+        return 'aleatorio'
+    return valor
+
+
+PERSONAJE = _leer_personaje(os.getenv('PERSONAJE'))
+
+
+def voz_edge(personaje):
+    """Voz de Edge del personaje: su reserva si cae la premium, o la única con TTS_PROVIDER=edge."""
+    return PERSONAJES.get(personaje, {}).get('voz_edge') or TTS_VOICE
+
+
+def personajes_activos():
+    """Los que pueden atender una llamada con la configuración actual."""
+    if PERSONAJE == 'aleatorio':
+        return [c for c in PERSONAJES if c in PROMPTS]
+    return [PERSONAJE] if PERSONAJE in PROMPTS else ['manolo']
+
+
+def elegir_personaje():
+    return random.choice(personajes_activos())
+
+
+def voces_en_uso():
+    """Voces premium que pueden sonar: el healthcheck solo comprueba esas."""
+    if TTS_PROVIDER == 'edge':
+        return set()
+    return {PERSONAJES[c]['voz'] for c in personajes_activos()} & set(VOCES_PREMIUM)
+
+
+# edge = todo con TTS_VOICE; cualquier otro valor válido = la voz premium de cada personaje
 if TTS_PROVIDER not in ('cartesia', 'edge'):
     ari_log(f'TTS_PROVIDER={TTS_PROVIDER!r} no válido, uso edge')
     TTS_PROVIDER = 'edge'
@@ -309,6 +359,7 @@ class CallState:
         self.errores_stt_consecutivos = 0
         self.plan_b = False              # True = ya se está reproduciendo el mensaje fijo
         self.saltos = set()              # escalones de TTS ya bajados en esta llamada
+        self.personaje = 'manolo'        # lo elige on_stasis_start en el Modo 3
 
         self.tts_task = None
         self.transport = None            # DatagramTransport para enviar RTP de vuelta
@@ -465,9 +516,9 @@ def limitar_longitud(texto, maximo=None):
     return trozo.rstrip(' ,;:') + '…'
 
 
-async def generate_manolo_reply(chat_history, text):
-    """Respuesta de Manolo. Lanza LLMError si Groq falla o devuelve vacío."""
-    messages = [{'role': 'system', 'content': PROMPT_MANOLO}]
+async def generate_manolo_reply(chat_history, text, personaje='manolo'):
+    """Respuesta del personaje. Lanza LLMError si Groq falla o devuelve vacío."""
+    messages = [{'role': 'system', 'content': PROMPTS.get(personaje, PROMPT_MANOLO)}]
     for i, mensaje in enumerate(chat_history):
         role = 'user' if i % 2 == 0 else 'assistant'
         messages.append({'role': role, 'content': mensaje})
@@ -494,15 +545,15 @@ async def generate_manolo_reply(chat_history, text):
     return limitada
 
 
-async def get_manolo_response(chat_history, text):
+async def get_manolo_response(chat_history, text, personaje='manolo'):
     try:
-        respuesta = await generate_manolo_reply(chat_history, text)
+        respuesta = await generate_manolo_reply(chat_history, text, personaje)
     except LLMError as e:
         ari_log(f'FALLBACK: Groq falló ({e}) → frase de emergencia')
         return FRASE_EMERGENCIA
     chat_history.append(text)
     chat_history.append(respuesta)
-    ari_log(f'Manolo (Groq): {respuesta}')
+    ari_log(f'{PERSONAJES[personaje]["nombre"]} (Groq): {respuesta}')
     return respuesta
 
 
@@ -588,36 +639,125 @@ def proxima_renovacion(hoy, dia):
     return _dia_en_mes(anio, mes, dia)
 
 
-def cartesia_agotado_hasta(hoy=None):
-    """Fecha hasta la que Cartesia se salta por falta de créditos, o None."""
+def _agotado_hasta(ruta, hoy=None):
+    """Fecha hasta la que un proveedor se salta por falta de créditos, o None."""
     hoy = hoy or date.today()
     try:
-        with open(CARTESIA_STATE_PATH) as f:
+        with open(ruta) as f:
             hasta = date.fromisoformat(json.load(f)['agotado_hasta'])
     except (FileNotFoundError, KeyError, ValueError, TypeError, json.JSONDecodeError):
         return None
     return hasta if hoy < hasta else None
 
 
-def marcar_cartesia_agotado(hoy=None):
-    """Sin créditos: Edge (TTS_VOICE) directamente hasta que Cartesia renueve."""
+def _marcar_agotado(ruta, dia_renovacion, hoy=None):
+    """Sin créditos: Edge (TTS_VOICE) directamente hasta que el proveedor renueve."""
     hoy = hoy or date.today()
-    hasta = proxima_renovacion(hoy, CARTESIA_DIA_RENOVACION)
-    tmp_path = CARTESIA_STATE_PATH + '.tmp'
+    hasta = proxima_renovacion(hoy, dia_renovacion)
+    tmp_path = ruta + '.tmp'
     try:
         with open(tmp_path, 'w') as f:
             json.dump({'agotado_hasta': hasta.isoformat(), 'desde': hoy.isoformat()}, f)
-        os.replace(tmp_path, CARTESIA_STATE_PATH)
+        os.replace(tmp_path, ruta)
     except Exception as e:
-        ari_log(f'cartesia_state write error: {e}')
+        ari_log(f'{os.path.basename(ruta)} write error: {e}')
     return hasta
 
 
-async def _synthesize_edge(texto, tmp_mp3):
+def cartesia_agotado_hasta(hoy=None):
+    return _agotado_hasta(CARTESIA_STATE_PATH, hoy)
+
+
+def marcar_cartesia_agotado(hoy=None):
+    return _marcar_agotado(CARTESIA_STATE_PATH, CARTESIA_DIA_RENOVACION, hoy)
+
+
+def elevenlabs_agotado_hasta(hoy=None):
+    return _agotado_hasta(ELEVENLABS_STATE_PATH, hoy)
+
+
+def marcar_elevenlabs_agotado(hoy=None):
+    return _marcar_agotado(ELEVENLABS_STATE_PATH, ELEVENLABS_DIA_RENOVACION, hoy)
+
+
+def elevenlabs_headers():
+    return {'xi-api-key': ELEVENLABS_API_KEY or ''}
+
+
+async def _synthesize_elevenlabs(texto):
+    if not (ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID):
+        raise TTSError('ElevenLabs: faltan ELEVENLABS_API_KEY o ELEVENLABS_VOICE_ID')
+    try:
+        async with httpx.AsyncClient(timeout=ELEVENLABS_TIMEOUT) as client:
+            r = await client.post(
+                f'{ELEVENLABS_URL}/v1/text-to-speech/{ELEVENLABS_VOICE_ID}',
+                # µ-law 8 kHz: lo que va al RTP, sin pasar por ffmpeg
+                params={'output_format': 'ulaw_8000'},
+                headers=elevenlabs_headers(),
+                json={'text': texto, 'model_id': ELEVENLABS_MODEL, 'language_code': 'es'},
+            )
+    except Exception as e:
+        raise TTSError(f'ElevenLabs: {type(e).__name__}: {e}') from e
+    if r.status_code != 200:
+        cuerpo = ' '.join((r.text or '').split())[:300]
+        error = f'ElevenLabs {r.status_code}: {cuerpo}'
+        if es_sin_creditos(r.status_code, cuerpo):
+            raise ElevenLabsSinCreditos(error)
+        raise TTSError(error)
+    if not r.content:
+        raise TTSError('ElevenLabs: audio vacío')
+    return r.content
+
+
+async def synthesize_elevenlabs(texto):
+    """Texto -> mulaw 8 kHz con ElevenLabs. ElevenLabsSinCreditos si no quedan caracteres."""
+    try:
+        return await asyncio.wait_for(_synthesize_elevenlabs(texto), timeout=ELEVENLABS_TIMEOUT)
+    except asyncio.TimeoutError as e:
+        raise TTSError(f'ElevenLabs: timeout de {ELEVENLABS_TIMEOUT}s') from e
+
+
+async def _elevenlabs_get(ruta):
+    if not ELEVENLABS_API_KEY:
+        raise TTSError('ElevenLabs: falta ELEVENLABS_API_KEY')
+    async with httpx.AsyncClient(timeout=TTS_TIMEOUT) as client:
+        r = await client.get(f'{ELEVENLABS_URL}{ruta}', headers=elevenlabs_headers())
+    if r.status_code != 200:
+        raise TTSError(f'ElevenLabs {r.status_code}: {" ".join((r.text or "").split())[:300]}')
+    return r.json()
+
+
+async def elevenlabs_verificar_voz():
+    """Clave y voz con una lectura (GET /v1/voices/{id}), sin sintetizar."""
+    if not ELEVENLABS_VOICE_ID:
+        raise TTSError('ElevenLabs: falta ELEVENLABS_VOICE_ID')
+    return await _elevenlabs_get(f'/v1/voices/{ELEVENLABS_VOICE_ID}')
+
+
+async def elevenlabs_suscripcion():
+    """Caracteres usados y límite del periodo (GET /v1/user/subscription)."""
+    return await _elevenlabs_get('/v1/user/subscription')
+
+
+# Voces premium por clave del personaje: (nombre en log y plan_b, síntesis, agotado, marcar).
+# Por nombre y no por referencia: así se resuelven en cada llamada (y los tests pueden
+# sustituirlas).
+VOCES_PREMIUM = {
+    'cartesia': ('Cartesia', 'synthesize_cartesia', 'cartesia_agotado_hasta', 'marcar_cartesia_agotado'),
+    'elevenlabs': ('ElevenLabs', 'synthesize_elevenlabs', 'elevenlabs_agotado_hasta', 'marcar_elevenlabs_agotado'),
+}
+
+
+def _voz_premium(voz):
+    nombre, *funciones = VOCES_PREMIUM[voz]
+    return (nombre, *(globals()[f] for f in funciones))
+
+
+async def _synthesize_edge(texto, tmp_mp3, voz):
     try:
         communicate = edge_tts.Communicate(
             text=texto,
-            voice=TTS_VOICE,
+            voice=voz,
             rate=TTS_RATE,
             pitch=TTS_PITCH
         )
@@ -642,11 +782,13 @@ async def _synthesize_edge(texto, tmp_mp3):
     return mulaw_bytes
 
 
-async def synthesize_edge(texto):
-    """Texto -> mulaw 8 kHz con Edge (TTS_VOICE). Lanza TTSError si Edge o ffmpeg fallan o tardan."""
+async def synthesize_edge(texto, voz=None):
+    """Texto -> mulaw 8 kHz con Edge (`voz`, por defecto TTS_VOICE). Lanza TTSError si Edge
+    o ffmpeg fallan o tardan."""
     tmp_mp3 = f'/tmp/manolo_ari_{int(time.time()*1000)}.mp3'
     try:
-        return await asyncio.wait_for(_synthesize_edge(texto, tmp_mp3), timeout=TTS_TIMEOUT)
+        return await asyncio.wait_for(_synthesize_edge(texto, tmp_mp3, voz or TTS_VOICE),
+                                      timeout=TTS_TIMEOUT)
     except asyncio.TimeoutError as e:
         raise TTSError(f'timeout de {TTS_TIMEOUT}s') from e
     finally:
@@ -654,26 +796,28 @@ async def synthesize_edge(texto):
             os.remove(tmp_mp3)
 
 
-async def synthesize_mulaw(texto, al_saltar=None, probar_cartesia=True):
-    """Texto -> mulaw 8 kHz por la escalera Cartesia -> Edge.
+async def synthesize_mulaw(texto, al_saltar=None, probar_premium=True, voz='cartesia',
+                           voz_reserva=None):
+    """Texto -> mulaw 8 kHz por la escalera voz premium (Cartesia o ElevenLabs) -> Edge.
 
-    `al_saltar(pieza, error)` se llama cada vez que se baja un escalón. Con
-    `probar_cartesia=False` va directo a Edge (Cartesia ya falló en esta llamada).
-    Si falla también Edge, TTSError: el que llama decide (en una llamada, mensaje fijo).
+    `voz` es la del personaje. `al_saltar(pieza, error)` se llama cada vez que se baja
+    un escalón. Con `probar_premium=False` va directo a Edge (la premium ya falló en
+    esta llamada). Si falla también Edge, TTSError: el que llama decide (mensaje fijo).
     """
-    if TTS_PROVIDER == 'cartesia' and probar_cartesia:
-        hasta = cartesia_agotado_hasta()
+    if TTS_PROVIDER != 'edge' and probar_premium and voz in VOCES_PREMIUM:
+        nombre, sintetizar, agotado_hasta, marcar_agotado = _voz_premium(voz)
+        hasta = agotado_hasta()
         if hasta:
-            _saltar(al_saltar, 'Cartesia', f'sin créditos hasta {hasta.isoformat()}')
+            _saltar(al_saltar, nombre, f'sin créditos hasta {hasta.isoformat()}')
         else:
             try:
-                return await _cronometrar('Cartesia', synthesize_cartesia(texto))
-            except CartesiaSinCreditos as e:
-                hasta = marcar_cartesia_agotado()
-                _saltar(al_saltar, 'Cartesia', f'{e} — sin créditos, Edge hasta {hasta.isoformat()}')
+                return await _cronometrar(nombre, sintetizar(texto))
+            except SinCreditos as e:
+                hasta = marcar_agotado()
+                _saltar(al_saltar, nombre, f'{e} — sin créditos, Edge hasta {hasta.isoformat()}')
             except TTSError as e:
-                _saltar(al_saltar, 'Cartesia', e)
-    return await _cronometrar('Edge', synthesize_edge(texto))
+                _saltar(al_saltar, nombre, e)
+    return await _cronometrar('Edge', synthesize_edge(texto, voz_reserva))
 
 
 async def _cronometrar(proveedor, sintesis):
@@ -698,7 +842,7 @@ def registrar_salto(state, pieza, error):
     if pieza in state.saltos:
         return
     state.saltos.add(pieza)
-    ari_log(f'FALLBACK: {pieza} falló ({error}) → Edge ({TTS_VOICE})')
+    ari_log(f'FALLBACK: {pieza} falló ({error}) → Edge ({voz_edge(state.personaje)})')
     marcar_plan_b(state.channel_id, pieza)
 
 
@@ -707,12 +851,16 @@ async def play_response(state, texto):
     state.barge_in_frames = 0
     try:
         try:
-            # Si Cartesia ya falló en esta llamada, el resto va directo a Edge:
-            # reintentarlo costaría hasta CARTESIA_TIMEOUT de silencio en cada respuesta
+            # Si la voz premium ya falló en esta llamada, el resto va directo a Edge:
+            # reintentarlo costaría hasta 3 s de silencio en cada respuesta
+            voz = PERSONAJES[state.personaje]['voz']
+            premium = VOCES_PREMIUM.get(voz, (None,))[0]
             mulaw_bytes = await synthesize_mulaw(
                 texto,
                 al_saltar=lambda pieza, error: registrar_salto(state, pieza, error),
-                probar_cartesia='Cartesia' not in state.saltos)
+                probar_premium=premium not in state.saltos,
+                voz=voz,
+                voz_reserva=voz_edge(state.personaje))
         except TTSError as e:
             activar_plan_b(state, 'TTS', e)
             return
@@ -767,7 +915,7 @@ async def handle_turn_complete(state):
         return
 
     state.silencio_consecutivo = 0
-    respuesta = await get_manolo_response(state.chat_history, texto)
+    respuesta = await get_manolo_response(state.chat_history, texto, state.personaje)
     if state.plan_b:
         return
 
@@ -777,7 +925,7 @@ async def handle_turn_complete(state):
 
 
 async def despedida_y_cierre(state):
-    despedida = '¿Hola? ¿Sigues ahí? Bueno, que Dios te bendiga hijo. Adiós.'
+    despedida = PERSONAJES[state.personaje]['despedida']
     if state.tts_task and not state.tts_task.done():
         state.tts_task.cancel()
     state.tts_task = asyncio.create_task(play_response(state, despedida))
@@ -937,6 +1085,10 @@ async def on_stasis_start(event):
     # Se lee una sola vez y antes del registro: el modo que queda en el log es
     # el mismo que decide el camino de esta llamada.
     modo = get_current_mode()
+    personaje = elegir_personaje() if modo == 'AI' else None
+    if personaje:
+        call_state.personaje = personaje
+        ari_log(f'Personaje: {PERSONAJES[personaje]["nombre"]}')
 
     log = load_call_log()
     log.append({
@@ -950,6 +1102,7 @@ async def on_stasis_start(event):
         'estado': 'activa',
         'modo': modo,
         'plan_b': None,           # pieza que falló si la llamada cayó al mensaje fijo
+        'personaje': personaje,   # None en el Modo 2
     })
     save_call_log(log)
 
@@ -972,7 +1125,7 @@ async def on_stasis_start(event):
     ari_log(f'externalMedia creado: {em_id} -> {EXTERNAL_MEDIA_HOST}:{EXTERNAL_MEDIA_PORT}')
     # Su propio StasisStart (rama de arriba) lo añadirá al bridge cuando llegue
 
-    saludo = '¿Dígame? Ay, espere un momento que no encuentro las gafas... ¿Quién es?'
+    saludo = PERSONAJES[call_state.personaje]['saludo']
     call_state.tts_task = asyncio.create_task(play_response(call_state, saludo))
 
 

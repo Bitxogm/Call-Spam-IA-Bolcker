@@ -38,14 +38,22 @@ export const formatearLocal = (d: Date): string => {
  * Qué modo atendió la llamada. Los registros escritos antes del 24/10/2026
  * no traen `modo`, y para esos se mantiene la etiqueta genérica.
  */
+/** Voces premium: si solo cayó una de estas, el personaje siguió hablando con Edge. */
+const VOCES_DE_RESERVA = ['Cartesia', 'ElevenLabs'];
+
+/** 'paquita' → 'Paquita'. Los registros anteriores al 25/10/2026 no traen personaje: Manolo. */
+const nombrePersonaje = (personaje?: string | null): string =>
+  personaje ? personaje.charAt(0).toUpperCase() + personaje.slice(1) : 'Manolo';
+
 export const etiquetaServidor = (r: ServerCallRecord): string => {
   if (r.modo === 'FIXED') return 'Manolo (Modo 2)';
   if (r.modo === 'AI') {
-    // plan_b acumula los saltos: "Cartesia", "Cartesia → TTS", "Deepgram"...
+    const nombre = nombrePersonaje(r.personaje);
+    // plan_b acumula los saltos: "Cartesia", "ElevenLabs → TTS", "Deepgram"...
     const saltos = r.plan_b ? r.plan_b.split(' → ') : [];
-    if (saltos.some(p => p !== 'Cartesia')) return 'Manolo (Modo 3 → mensaje fijo)';
-    if (saltos.length > 0) return 'Manolo (Modo 3 · voz de reserva)';
-    return 'Manolo (Modo 3)';
+    if (saltos.some(p => !VOCES_DE_RESERVA.includes(p))) return `${nombre} (Modo 3 → mensaje fijo)`;
+    if (saltos.length > 0) return `${nombre} (Modo 3 · voz de reserva)`;
+    return `${nombre} (Modo 3)`;
   }
   return 'Manolo (Modo 2/3)';
 };

@@ -220,11 +220,11 @@ class Escalera(ConEstadoTemporal):
         self.assertRegex(latencias[0], r'^TTS Cartesia: falló tras \d+ ms$')
         self.assertRegex(latencias[1], r'^TTS Edge: \d+ ms')
 
-    async def test_sin_probar_cartesia_va_directo_a_edge(self):
+    async def test_sin_probar_la_premium_va_directo_a_edge(self):
         cartesia = AsyncMock()
         with patch.object(m, 'TTS_PROVIDER', 'cartesia'), \
              patch.object(m, 'synthesize_cartesia', cartesia):
-            audio = await m.synthesize_mulaw('Hola', probar_cartesia=False)
+            audio = await m.synthesize_mulaw('Hola', probar_premium=False)
         self.assertEqual(audio, b'edge')
         cartesia.assert_not_called()
 
