@@ -13,7 +13,7 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import CallHistoryService from '../services/CallHistoryService';
 import backendSyncService from '../services/BackendSyncService';
-import { fusionarHistorial, HistoryRow } from '../utils/historial';
+import { fusionarHistorialSeguro, formatearLocal, HistoryRow } from '../utils/historial';
 import { blacklistService } from '../services/BlacklistService';
 import { databaseService } from '../services/DataBaseService';
 
@@ -21,6 +21,9 @@ const CallHistoryScreen: React.FC = () => {
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [totalCalls, setTotalCalls] = useState(0);
+  // Errores de la última carga, en pantalla: se ven sin conectar el móvil por cable
+  const [avisos, setAvisos] = useState<string[]>([]);
+  const [resumenCarga, setResumenCarga] = useState<string | null>(null);
 
   // useFocusEffect en lugar de useEffect + addListener('focus'): dispara una
   // sola vez por foco, incluido el montaje. Con las dos cosas por separado la
@@ -33,14 +36,42 @@ const CallHistoryScreen: React.FC = () => {
   );
 
   const loadHistory = async () => {
-    const [localData, serverData, total] = await Promise.all([
-      CallHistoryService.getHistory(),
-      backendSyncService.getCallLog(),
-      CallHistoryService.getTotalSpamCalls(),
-    ]);
+    const nuevos: string[] = [];
+    // Cada fuente por separado: si una falla, las otras se muestran igual
+    async function seguro<T>(fuente: string, promesa: Promise<T>, defecto: T): Promise<T> {
+      try {
+        return await promesa;
+      } catch (error) {
+        nuevos.push(`${fuente}: ${error instanceof Error ? error.message : String(error)}`);
+        return defecto;
+      }
+    }
 
-    setHistory(fusionarHistorial(localData, serverData));
-    setTotalCalls(total + serverData.length);
+    try {
+      const [localData, serverData, total] = await Promise.all([
+        seguro('Local', CallHistoryService.getHistory(), []),
+        seguro('Servidor', backendSyncService.getCallLog(), []),
+        seguro('Total', CallHistoryService.getTotalSpamCalls(), 0),
+      ]);
+      if (backendSyncService.ultimoErrorCallLog) {
+        nuevos.push(`Servidor: ${backendSyncService.ultimoErrorCallLog}`);
+      }
+
+      const { filas, errores } = fusionarHistorialSeguro(localData, serverData);
+      nuevos.push(...errores);
+
+      const nServidor = Array.isArray(serverData) ? serverData.length : 0;
+      const nLocal = Array.isArray(localData) ? localData.length : 0;
+      setHistory(filas);
+      setTotalCalls((Number(total) || 0) + nServidor);
+      setResumenCarga(`Cargado a las ${formatearLocal(new Date()).slice(11)}: ` +
+                      `${nLocal} locales, ${nServidor} del servidor`);
+    } catch (error) {
+      nuevos.push(`Historial: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    nuevos.forEach(aviso => console.warn('⚠️ Historial:', aviso));
+    setAvisos(nuevos);
   };
 
   const handleRefresh = async () => {
@@ -197,6 +228,18 @@ const CallHistoryScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
 
+      {avisos.length > 0 && (
+        <View style={styles.avisos}>
+          <Text style={styles.avisosTitulo}>
+            ⚠️ {avisos.length === 1 ? 'Un registro o fuente falló' : `${avisos.length} errores al cargar`} (se muestra el resto)
+          </Text>
+          {avisos.slice(0, 5).map((aviso, i) => (
+            <Text key={i} style={styles.avisoTexto} selectable>{aviso}</Text>
+          ))}
+          {avisos.length > 5 && <Text style={styles.avisoTexto}>… y {avisos.length - 5} más</Text>}
+        </View>
+      )}
+
       <ScrollView
         style={styles.historyContainer}
         refreshControl={
@@ -209,6 +252,7 @@ const CallHistoryScreen: React.FC = () => {
             <Text style={styles.emptySubtext}>
               Las llamadas bloqueadas aparecerán aquí
             </Text>
+            {resumenCarga && <Text style={styles.resumenCarga}>{resumenCarga}</Text>}
           </View>
         ) : (
           history.map((record, index) => (
@@ -324,6 +368,32 @@ const styles = StyleSheet.create({
   emptySubtext: {
     fontSize: 14,
     color: '#999',
+  },
+  resumenCarga: {
+    fontSize: 12,
+    color: '#bbb',
+    marginTop: 12,
+  },
+  avisos: {
+    backgroundColor: '#fff3cd',
+    borderLeftWidth: 4,
+    borderLeftColor: '#ff9800',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginHorizontal: 10,
+    marginTop: 8,
+    borderRadius: 6,
+  },
+  avisosTitulo: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#856404',
+    marginBottom: 2,
+  },
+  avisoTexto: {
+    fontSize: 11,
+    color: '#856404',
+    fontFamily: 'monospace',
   },
   callEntry: {
     backgroundColor: '#fff',

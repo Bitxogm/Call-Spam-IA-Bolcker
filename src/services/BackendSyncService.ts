@@ -83,7 +83,11 @@ class BackendSyncService {
    * Descarga el historial de llamadas atendidas por Manolo (Modos 2/3).
    * Devuelve [] si el VPS no responde: el historial local debe seguir viéndose.
    */
+  /** Último fallo de getCallLog (null si fue bien): lo muestra el Historial. */
+  ultimoErrorCallLog: string | null = null;
+
   getCallLog = async (): Promise<ServerCallRecord[]> => {
+    this.ultimoErrorCallLog = null;
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -98,12 +102,21 @@ class BackendSyncService {
       if (!response.ok) {
         avisarSi401(response.status, '/call_log');
         console.error('❌ /call_log respondió', response.status);
+        this.ultimoErrorCallLog = `HTTP ${response.status}`;
         return [];
       }
 
-      return await response.json();
+      const datos = await response.json();
+      if (!Array.isArray(datos)) {
+        this.ultimoErrorCallLog = 'la respuesta de /call_log no es una lista';
+        return [];
+      }
+      return datos;
     } catch (error: any) {
       console.error('❌ Error obteniendo call_log:', error?.name ?? error);
+      this.ultimoErrorCallLog = error?.name === 'AbortError'
+        ? 'sin respuesta en 5 s'
+        : String(error?.message ?? error);
       return [];
     }
   };

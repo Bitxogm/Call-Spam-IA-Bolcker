@@ -23,7 +23,10 @@ export type HistoryRow = SpamCallRecord & {
  * antes de parsear — si no, JS los interpretaría como hora local.
  */
 export const parseServidor = (iso: string): Date => {
-  const conZona = /(Z|[+-]\d{2}:?\d{2})$/.test(iso) ? iso : `${iso}Z`;
+  // Python escribe microsegundos (.233625). V8 los acepta, pero el estándar solo
+  // garantiza milisegundos: se recortan a 3 cifras para que Hermes no dé Invalid Date.
+  const ms = iso.replace(/(\.\d{3})\d+/, '$1');
+  const conZona = /(Z|[+-]\d{2}:?\d{2})$/.test(ms) ? ms : `${ms}Z`;
   return new Date(conZona);
 };
 
@@ -58,33 +61,67 @@ export const etiquetaServidor = (r: ServerCallRecord): string => {
   return 'Manolo (Modo 2/3)';
 };
 
+const filaLocal = (r: SpamCallRecord): HistoryRow => {
+  const epoch = new Date(r.timestamp.replace(' ', 'T')).getTime();
+  if (Number.isNaN(epoch)) throw new Error(`fecha no válida: ${r.timestamp}`);
+  return { ...r, origen: 'local' as const, epoch };
+};
+
+const filaServidor = (r: ServerCallRecord): HistoryRow => {
+  const d = parseServidor(r.timestamp_inicio);
+  if (Number.isNaN(d.getTime())) throw new Error(`fecha no válida: ${r.timestamp_inicio}`);
+  return {
+    number: r.numero,
+    timestamp: formatearLocal(d),
+    reason: etiquetaServidor(r),
+    action: r.estado === 'activa' ? 'En curso' : 'Atendida por Manolo',
+    origen: 'servidor' as const,
+    duracion: r.duracion_segundos,
+    epoch: d.getTime(),
+  };
+};
+
+const mensajeDe = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
+/** Filas que se pudieron montar y el error de cada registro que no. */
+export type Fusion = { filas: HistoryRow[]; errores: string[] };
+
 /**
  * Une el historial local (Modo 1, ya en hora del dispositivo) con el del
  * servidor (Modos 2/3, UTC) y ordena por instante, no por cadena: las dos
  * fuentes venían en zonas distintas y comparar el texto mezclaba el orden.
+ *
+ * Cada registro va por separado: uno raro se salta y se apunta en `errores`,
+ * nunca vacía el historial entero (pasó el 25/10/2026).
  */
+export const fusionarHistorialSeguro = (localData: unknown, serverData: unknown): Fusion => {
+  const filas: HistoryRow[] = [];
+  const errores: string[] = [];
+
+  const recorrer = <T,>(datos: unknown, fuente: string, montar: (r: T) => HistoryRow, id: (r: T) => unknown) => {
+    if (!Array.isArray(datos)) {
+      errores.push(`${fuente}: no es una lista (${datos === null ? 'null' : typeof datos})`);
+      return;
+    }
+    datos.forEach((r, i) => {
+      try {
+        filas.push(montar(r as T));
+      } catch (e) {
+        const etiqueta = (r && id(r as T)) || `#${i + 1}`;
+        errores.push(`${fuente}, registro ${etiqueta}: ${mensajeDe(e)}`);
+      }
+    });
+  };
+
+  recorrer<SpamCallRecord>(localData, 'Local', filaLocal, r => r.timestamp);
+  recorrer<ServerCallRecord>(serverData, 'Servidor', filaServidor, r => r.id);
+
+  filas.sort((a, b) => b.epoch - a.epoch);
+  return { filas, errores };
+};
+
+/** Igual que fusionarHistorialSeguro, solo las filas. */
 export const fusionarHistorial = (
   localData: SpamCallRecord[],
   serverData: ServerCallRecord[]
-): HistoryRow[] => {
-  const locales: HistoryRow[] = localData.map(r => ({
-    ...r,
-    origen: 'local' as const,
-    epoch: new Date(r.timestamp.replace(' ', 'T')).getTime(),
-  }));
-
-  const servidor: HistoryRow[] = serverData.map(r => {
-    const d = parseServidor(r.timestamp_inicio);
-    return {
-      number: r.numero,
-      timestamp: formatearLocal(d),
-      reason: etiquetaServidor(r),
-      action: r.estado === 'activa' ? 'En curso' : 'Atendida por Manolo',
-      origen: 'servidor' as const,
-      duracion: r.duracion_segundos,
-      epoch: d.getTime(),
-    };
-  });
-
-  return [...locales, ...servidor].sort((a, b) => b.epoch - a.epoch);
-};
+): HistoryRow[] => fusionarHistorialSeguro(localData, serverData).filas;

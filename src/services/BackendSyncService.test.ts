@@ -47,6 +47,26 @@ describe('getCallLog', () => {
     await expect(backendSyncService.getCallLog()).resolves.toEqual([]);
   });
 
+  it('guarda el último error para que el Historial lo muestre', async () => {
+    fetchMock.mockResolvedValue(respuesta(401));
+    await backendSyncService.getCallLog();
+    expect(backendSyncService.ultimoErrorCallLog).toBe('HTTP 401');
+
+    fetchMock.mockRejectedValue(Object.assign(new Error('timeout'), { name: 'AbortError' }));
+    await backendSyncService.getCallLog();
+    expect(backendSyncService.ultimoErrorCallLog).toBe('sin respuesta en 5 s');
+
+    fetchMock.mockResolvedValue(respuesta(200, []));
+    await backendSyncService.getCallLog();
+    expect(backendSyncService.ultimoErrorCallLog).toBeNull();   // se limpia al ir bien
+  });
+
+  it('si la respuesta no es una lista devuelve [] y lo dice', async () => {
+    fetchMock.mockResolvedValue(respuesta(200, { error: 'algo' }));
+    await expect(backendSyncService.getCallLog()).resolves.toEqual([]);
+    expect(backendSyncService.ultimoErrorCallLog).toContain('no es una lista');
+  });
+
   it('manda la cabecera X-API-Key', async () => {
     fetchMock.mockResolvedValue(respuesta(200, []));
     await backendSyncService.getCallLog();
