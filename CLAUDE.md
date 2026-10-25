@@ -12,7 +12,7 @@ Bloqueador de llamadas spam para Android con tres modos. El único audio que oye
 | ------------------------------ | --------------------------- | -------------------------------- | -------------------------------- |
 | USSD                           | desactiva (`##67#`)         | activa (`*67*919933065#`)        | activa (`*67*919933065#`)        |
 | Teléfono suena                 | sí, la app contesta y cuelga | no                              | no                               |
-| Spammer escucha                | nada                        | WAV fijo (`fixed_spam_message`)  | Manolo (Groq `qwen/qwen3.8-27b`) |
+| Spammer escucha                | nada                        | WAV fijo (`fixed_spam_message`)  | Manolo o Paquita (Groq `qwen/qwen3.8-27b`) |
 | Requiere Accessibility Service | ✅ **imprescindible**        | ❌                               | ❌                               |
 | Requiere VPS y Zadarma         | ❌                          | ✅                               | ✅                               |
 | Sincroniza con la app          | ❌ no lo necesita            | ✅ vía HTTPS (sección 3)         | ✅ vía HTTPS                     |
@@ -41,7 +41,8 @@ Asterisk [from-zadarma]
               ├── RTP/mulaw por UDP, VAD por energía (barge-in: 800 ms de gracia + 3 frames)
               ├── STT: Deepgram Nova-2 (batch)
               ├── LLM: Groq `qwen/qwen3.8-27b`, con historial de conversación real
-              └── TTS: Cartesia (µ-law 8 kHz directo) → reserva Edge (`TTS_VOICE`, vía ffmpeg) → RTP
+              ├── Personaje al azar por llamada (`personas/*.txt`): Manolo o Paquita
+              └── TTS: voz premium del personaje (µ-law 8 kHz directo) → reserva Edge (vía ffmpeg) → RTP
 ```
 
 - **Plan B del Modo 3** (si cae TTS, Groq o Deepgram) y **healthcheck** cada 6 h con aviso por email: `.claude/rules/vps-backend.md`.
@@ -58,7 +59,8 @@ Asterisk [from-zadarma]
 | **VPS — SIP** | `CLAUDE.local.md` | 5060/udp abierto solo a las 6 subnets de Zadarma |
 | **VPS — API** | `CLAUDE.local.md` | Proxy Host de NPM, regla UFW del bridge, `CONTROL_API_BIND` |
 | **Deepgram** | `api.deepgram.com` | Único STT, verificado sobre el audio real del ExternalMedia (RTP/mulaw 8 kHz). $200 de crédito gratuito. Sin proveedor alternativo: 2 errores seguidos → plan B |
-| **Cartesia** | `api.cartesia.ai` | Voz principal del Modo 3 si `TTS_PROVIDER=cartesia` (~800 ms por respuesta, medido el 24/10/2026). De pago por créditos; sin créditos, Edge hasta `CARTESIA_DIA_RENOVACION`. No documenta endpoint de saldo ni el código de "sin créditos" |
+| **ElevenLabs** | `api.elevenlabs.io` | Voz de Paquita (`eleven_flash_v2_5`, voz diseñada: las de la biblioteca no se pueden usar por API en el plan gratis). Sí da lo que queda: `/v1/user/subscription` |
+| **Cartesia** | `api.cartesia.ai` | Voz de Manolo si `TTS_PROVIDER=cartesia` (~800 ms por respuesta, medido el 24/10/2026). De pago por créditos; sin créditos, Edge hasta `CARTESIA_DIA_RENOVACION`. No documenta endpoint de saldo ni el código de "sin créditos" |
 | **Edge TTS** | `speech.platform.bing.com` | Voz de reserva de Cartesia (o la única con `TTS_PROVIDER=edge`), sin clave. Se rompe cuando Microsoft cambia el protocolo: `pip install -U edge-tts` en el venv. Si cae también, mensaje fijo |
 | **Groq** | `api.groq.com` | LLM de Manolo. Si falla, frase de emergencia. Sin proveedor alternativo |
 
@@ -82,13 +84,16 @@ Asterisk [from-zadarma]
 | `ARI_USER` (defecto `manolo`), `ARI_PASSWORD` | `manolo_ari.py` | no atiende ninguna llamada de los Modos 2 y 3 |
 | `GROQ_API_KEY`, `DEEPGRAM_API_KEY` | `manolo_ari.py` | Modo 3 en plan B (frase de emergencia / mensaje fijo) |
 | `CONTROL_API_TOKEN`, `CONTROL_API_BIND` | `control_api.py` | todo 401 / Flask en loopback |
-| `TTS_PROVIDER` | `cartesia` o `edge` | `edge` |
+| `TTS_PROVIDER` | `cartesia` = voz premium de cada personaje; `edge` = todos con Edge (vuelta atrás) | `edge` |
+| `PERSONAJE` | `aleatorio`, `manolo` o `paquita` | `aleatorio` |
+| `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID` | voz de Paquita; la clave con permisos TTS, Voices (lectura) y User (lectura) | Paquita salta a su reserva en cada llamada |
+| `PAQUITA_VOZ_RESERVA` | voz de Edge de Paquita si cae ElevenLabs | `es-ES-ElviraNeural` |
 | `CARTESIA_API_KEY`, `CARTESIA_VOICE_ID` | voz principal con `TTS_PROVIDER=cartesia` | cada llamada salta a Edge (`FALLBACK: Cartesia`) |
 | `CARTESIA_SPEED` | velocidad, 0.6-1.5 | `1.0` (fuera de rango, también) |
-| `CARTESIA_DIA_RENOVACION` | día en que Cartesia renueva los créditos; sin créditos, Edge hasta ese día | `1` |
+| `CARTESIA_DIA_RENOVACION`, `ELEVENLABS_DIA_RENOVACION` | día en que cada uno renueva; sin créditos, la reserva de Edge hasta ese día | `1` |
 | `CARTESIA_ADMIN_API_KEY`, `CARTESIA_CREDITOS_MES` | aviso de saldo por debajo del 20 % en el healthcheck (opcional) | sin aviso de saldo; el de "agotado" sigue |
-| `TTS_VOICE`, `TTS_RATE`, `TTS_PITCH` | voz de Edge: la de reserva con Cartesia, o la única | `es-ES-AlvaroNeural`, `-8%`, `-4Hz` |
-| `MAX_CHARS_RESPUESTA` | límite duro por respuesta de Manolo; corta en el último `.?!` | `180` |
+| `TTS_VOICE`, `TTS_RATE`, `TTS_PITCH` | voz de Edge de Manolo (reserva de Cartesia); rate y pitch valen para los dos | `es-ES-AlvaroNeural`, `-8%`, `-4Hz` |
+| `MAX_CHARS_RESPUESTA` | límite duro por respuesta de cualquier personaje; corta en el último `.?!` | `180` |
 | `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO` | remitente y destino del healthcheck | no hay email (no guarda el estado y reintenta) |
 | `ALERT_EMAIL_PASSWORD` | contraseña de aplicación de Google, sin espacios (`docs/runbooks/healthcheck-email.md`) | ídem |
 
@@ -108,7 +113,6 @@ npm install
 # Instalar por adb (sin adb: pasar el APK al teléfono y abrirlo)
 adb install android/app/build/outputs/apk/debug/app-debug.apk
 
-# Tipos: tras CADA cambio TS
 npx tsc --noEmit
 
 # Tests de la app (Vitest) y del backend (unittest; simula las dependencias del VPS)
@@ -119,8 +123,7 @@ python3 -m unittest discover -s vps_backend/tests -v
 adb logcat | grep -E "SpamBlocker|CallAccessibility|AnswerHangup|CallForwarding|CallStateReceiver|CallScreening"
 adb logcat *:E
 
-# adb inalámbrico
-adb pair <ip>:<puerto-de-emparejamiento>    # el código lo muestra el teléfono
+adb pair <ip>:<puerto-de-emparejamiento>    # adb inalámbrico; el código lo muestra el teléfono
 adb connect <ip>:<puerto-de-depuración>      # distinto del de emparejamiento
 ```
 
@@ -162,7 +165,7 @@ Estado del desvío en el operador: marcar `*#67#` en el teclado del teléfono.
 
 - [ ] **Residuos IVR on-device:** `IVRAudioPlayer.java` (referenciado en `CallAccessibilityService`) e `IVRMessageHelper.java` (en `CallStateReceiver`). Ya no reproducen nada porque el MP3 no se genera, pero compilan. Borrarlos exige limpiar esas 3 referencias primero.
 - [ ] **6 permisos residuales en `AndroidManifest.xml`:** `BIND_INCALL_SERVICE`, `BIND_TELECOM_CONNECTION_SERVICE`, `CONTROL_INCALL_EXPERIENCE`, `MODIFY_AUDIO_SETTINGS`, `MODIFY_PHONE_STATE`, `MODIFY_AUDIO_ROUTING`. Los services que los usaban (`SpamCallService`, `DialerActivity`, `InCallActivity`) ya no están en el manifest: los permisos asustan al usuario sin aportar nada.
-- [ ] **Cobertura de tests mínima.** Vitest cubre `src/utils/historial.ts`, `BackendSyncService` y el permiso `CALL_PHONE` de `CallForwardingService` (28 casos). `unittest` cubre el plan B de `manolo_ari.py`, el healthcheck y la voz (38 casos). Sin cobertura: la capa de llamadas (Java), el resto de `manolo_ari.py` y `control_api.py`. JUnit/Robolectric sobre Expo es caro y no habría cazado ninguno de los fallos reales (lección 2, el deadlock ARI, el Modo 2 con Manolo), que salen en dispositivo: la regla 5 sigue siendo el gate.
+- [ ] **Cobertura de tests mínima.** Vitest (54 casos): historial, `BackendSyncService`, permisos. `unittest` (141): plan B, voces, personajes, healthcheck. JUnit (16): prefijo 400 y notificación. Sin cobertura: el resto de la capa de llamadas (Java), parte de `manolo_ari.py` y `control_api.py`. JUnit/Robolectric sobre Expo es caro y no habría cazado ninguno de los fallos reales (lección 2, el deadlock ARI, el Modo 2 con Manolo), que salen en dispositivo: la regla 5 sigue siendo el gate.
 - [ ] **Latencia por turno a medio instrumentar.** El TTS ya deja `TTS Cartesia: N ms` / `TTS Edge: N ms` en el log; STT, LLM y el total del turno siguen sin medirse.
 - [ ] **`scripts/check-secrets.sh` no es fiable como gate.** Marca como "posible secreto" el texto de este fichero que describe el problema, referencias a `process.env.EXPO_PUBLIC_*` y nombres de variable. Y falla con `/dev/tty: No such device or address` en entornos no interactivos, cayendo a modo advertencia sin bloquear.
 
@@ -182,17 +185,15 @@ En orden de prioridad; el detalle está en la sección 7.
 6. **Limpiar residuos IVR** y después los 6 permisos del manifest.
 7. **Arreglar o retirar `scripts/check-secrets.sh`.**
 8. **Orden del flujo de verificación: que los contactos ganen a los premium.** En `CallScreeningServiceImpl.shouldShowNotification()` el orden real es blacklist → oculto/privado → prefijos premium y call center → contactos → prefijo 400 → Modo Radical, así que un contacto con un 900 se bloquea. La pantalla "Flujo de Verificación" (`WhitelistScreen`) dibuja otro orden. Mover los premium detrás de contactos y corregir la pantalla; toca el núcleo de decisión de spam, así que prueba en dispositivo.
+9. **Valorar sacar `manolo.bitxodev.com` de Cloudflare (DNS only).** Durante los partidos de LaLiga los operadores bloquean IPs de Cloudflare: el móvil no llega a la API (el Historial avisa "Servidor: sin respuesta en 5 s", 25/10/2026) y **tampoco llegan los cambios de modo**, que fallan sin avisar. Con DNS only se publica la IP del VPS y se pierde el rate limit de Cloudflare (10 req/min): habría que moverlo a NPM o a UFW antes.
 
 ### Próxima ronda — Manolo
 
-- [ ] **Sistema de personajes.** Elegir el personaje al empezar cada llamada: Manolo con Roi (Edge), Roberto con Cartesia y Paquita con ElevenLabs (plan gratis, **API key nueva**: la antigua acabó en el historial de git; va en el `.env` del VPS, nunca en la app). Los prompts de Roberto ("El Indeciso Eterno") y Paquita están en el historial: `git show 1a6dd0b^:src/services/GeminiServices.ts` (claves `indeciso` y la de Paquita).
+- [ ] **Roberto, tercer personaje.** "El Indeciso Eterno": su prompt está en `git show 1a6dd0b^:src/services/GeminiServices.ts` (clave `indeciso`). Añadirlo es un `personas/roberto.txt` y una entrada en `PERSONAJES`.
 - [ ] **Saludo pregrabado en caché.** El saludo es siempre el mismo: sintetizarlo una vez y guardarlo quita la latencia del primer turno y no gasta créditos de Cartesia en cada llamada.
 - [ ] **TTS en streaming.** Hoy se espera al audio completo antes de mandar el primer RTP. Con streaming (Cartesia por WebSocket) Manolo empezaría a hablar antes.
-
 - [ ] **El plan B de Deepgram saltó en la primera frase, no en la segunda.** Hipótesis por verificar en el log: una pausa de más de `SILENCE_MS_TO_CLOSE_TURN` (600 ms) dentro de la frase la parte en dos turnos, y cada uno cuenta un error. Mirar si `STT Deepgram falló (1/2)` y `(2/2)` llegan con milisegundos de diferencia.
 - [ ] **`MAX_TURNOS = 8` corta conversaciones que van bien.** Subirlo o limitar por tiempo (unos 5 minutos de llamada).
-- [ ] **Respuestas de 1 o 2 frases.** El prompt pide "2-3 frases" y `max_tokens=100` corta alguna a medias. Bajar a 1-2 en el prompt y no dejar frases cortadas (más margen de tokens o recortar en el último punto).
-- [ ] **No repetir expresiones dentro de la llamada.** "Fibra de los chinos" salió 3 veces: el ejemplo del prompt se usa como muletilla. Prohibir repetir expresiones ya dichas en el historial.
-- [ ] **Coherencia del personaje.** Está sordo del oído derecho: que lo mantenga toda la llamada.
+- [ ] **Coherencia de Manolo.** Está sordo del oído derecho: que lo mantenga toda la llamada.
 
 Ideas valoradas y descartadas por riesgo: `docs/ideas-descartadas.md`. Completados: `HISTORIAL.md`.

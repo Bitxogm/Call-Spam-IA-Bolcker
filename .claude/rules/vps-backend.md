@@ -41,7 +41,7 @@ Asterisk resuelve `sound:` contra su **Data directory**, que en este VPS es `/us
 
 | Falla | Qué oye el spammer |
 | --- | --- |
-| Cartesia (error, > 3 s o sin créditos), con `TTS_PROVIDER=cartesia` | Manolo sigue con Edge (`TTS_VOICE`). Un solo intento por llamada: el resto va directo a Edge |
+| Voz premium del personaje (Cartesia o ElevenLabs: error, > 3 s o sin créditos), con `TTS_PROVIDER=cartesia` | El personaje sigue con su voz de Edge (Manolo: `TTS_VOICE`; Paquita: `PAQUITA_VOZ_RESERVA`). Un solo intento por llamada: el resto va directo a Edge |
 | Edge (TTS, ffmpeg o > 10 s) | `fixed_spam_message` y cuelga (`run_fixed`) |
 | Groq (error o respuesta vacía) | la frase de emergencia; si el TTS también falla, el mensaje fijo |
 | Deepgram, 2 errores reales seguidos | `fixed_spam_message` y cuelga. Una transcripción vacía es silencio, no error |
