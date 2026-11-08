@@ -52,6 +52,15 @@ public class CallStateReceiver extends BroadcastReceiver {
         // Obtener estado de la llamada ANTES de verificar isEnabled
         String state = intent.getStringExtra(TelephonyManager.EXTRA_STATE);
 
+        // Contestada (OFFHOOK) o terminada (IDLE): fuera los botones de "Pasar a Manolo".
+        // Antes del return por A+H desactivado, y sin tocar nada de la lógica del modo 1
+        if (TelephonyManager.EXTRA_STATE_OFFHOOK.equals(state) || TelephonyManager.EXTRA_STATE_IDLE.equals(state)) {
+            if (SpamNotificationManager.cancelIncomingCallChoice(context)) {
+                logsHelper.logInfo("🔘 Botones de Pasar a Manolo retirados: llamada "
+                    + (TelephonyManager.EXTRA_STATE_OFFHOOK.equals(state) ? "contestada" : "terminada"));
+            }
+        }
+
         // LOG CRÍTICO - SIEMPRE logear el estado recibido (incluso si disabled)
         logsHelper.logInfo("📞 BROADCAST RECIBIDO - Estado: " + (state != null ? state : "NULL") + ", A+H: " + (isEnabled ? "ON" : "OFF"));
         logsHelper.logDebug("onReceive: action=" + action + ", A+H enabled=" + isEnabled);

@@ -51,6 +51,10 @@ public class CallScreeningServiceImpl extends CallScreeningService {
 
         Log.d(TAG, "Número: " + callerNumber);
         Log.d(TAG, "Dirección: " + (isIncoming ? "ENTRANTE" : "SALIENTE"));
+        if (isIncoming) {
+            // En Logs de Debug: si esta línea no sale, Android no pasó la llamada por aquí
+            logsHelper.logInfo("📞 Screening: llamada entrante de " + callerNumber);
+        }
 
         // TOAST VISIBLE para debugging
         showToast("📞 Llamada detectada: " + callerNumber);
@@ -210,6 +214,21 @@ public class CallScreeningServiceImpl extends CallScreeningService {
             Log.d(TAG, "✅ Número conocido/confiable - Permitiendo");
             showToast("✅ Número normal: " + callerNumber);
             logsHelper.logInfo("Llamada permitida: " + callerNumber);
+            // Modos 2 y 3: botones para pasarla a Manolo a mano mientras suena. La
+            // decisión queda en Logs de Debug, para verla sin cable
+            String resultado;
+            try {
+                String motivo = IncomingCallNotice.motivoNoMostrar(
+                    answerHangupHelper.isEnabled(), answerHangupHelper.getMode());
+                resultado = motivo != null
+                    ? "no mostrada porque: " + motivo
+                    : SpamNotificationManager.showIncomingCallChoice(this, callerNumber);
+            } catch (Exception e) {
+                // Un fallo del aviso no puede impedir que la llamada suene
+                Log.e(TAG, "❌ Error mostrando los botones de pasar a Manolo: " + e.getMessage());
+                resultado = "no mostrada porque: error " + e.getClass().getSimpleName() + ": " + e.getMessage();
+            }
+            logsHelper.logInfo(IncomingCallNotice.lineaDecision(callerNumber, resultado));
             respondToCall(callDetails, new CallResponse.Builder().build());
         }
     }
