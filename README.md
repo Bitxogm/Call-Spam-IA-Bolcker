@@ -12,7 +12,7 @@ Bloqueador de llamadas spam para Android con tres modos de operación, incluyend
 | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
 | **Modo 1 — Answer+Hangup**    | La app detecta spam, contesta y cuelga en menos de 1 segundo. El spammer no escucha nada. El teléfono sí suena brevemente.                                     | ✅ Funcional |
 | **Modo 2 — Mensaje fijo**     | Desvío GSM al VPS vía USSD. El teléfono no suena. El spammer escucha un mensaje de voz personalizado reproducido por Asterisk.                                 | ✅ Funcional |
-| **Modo 3 — Agente IA Manolo** | Igual que Modo 2, pero en vez de un mensaje fijo contesta Manolo usando LLM Groq + TTS Edge en el VPS, manteniendo al spammer ocupado el mayor tiempo posible. | ✅ Funcional |
+| **Modo 3 — Contestador IA**   | Igual que Modo 2, pero contesta un personaje al azar (Manolo, Paquita o Patxi) con LLM Groq y voz propia, manteniendo al spammer ocupado el mayor tiempo posible. | ✅ Funcional |
 
 ---
 
@@ -26,7 +26,7 @@ MODO 1
 
 MODO 2
   Llamada entrante
-    └── Operador GSM aplica desvío USSD (*21*34919933065#)
+    └── Operador GSM aplica desvío USSD (*67*919933065#, si está ocupado)
           └── Zadarma (+34 919 93 30 65)
                 └── SIP INVITE → VPS Asterisk (TU_VPS_IP:5060)
                       └── extensions.conf [from-zadarma] → Stasis(manolo-ari)
@@ -40,9 +40,9 @@ MODO 3 (migrado a ARI en septiembre 2026)
                 bucle por turno:
                   ├── Recibe RTP/mulaw del spammer, VAD por energía
                   │     (barge-in: 800ms de gracia + 3 frames antes de cortar)
-                  ├── STT: Deepgram Nova-2 (batch) — Whisper por socket si falla
+                  ├── STT: Deepgram Nova-2 (batch)
                   ├── LLM: Groq qwen/qwen3.8-27b, con historial real de la conversación
-                  └── TTS: Edge TTS (es-ES-AlvaroNeural) → mulaw 8kHz → RTP de vuelta
+                  └── TTS: voz del personaje (Cartesia o ElevenLabs) → reserva Edge → mulaw 8kHz → RTP
 ```
 
 La app controla el modo activo (FIXED/AI) vía `BackendSyncService.ts` → `POST http://TU_VPS_IP:5000/set_mode`. `manolo_ari.py` lee ese mismo `current_mode.json`.
@@ -52,6 +52,23 @@ La app controla el modo activo (FIXED/AI) vía `BackendSyncService.ts` → `POST
 - **Producción Modo 3 (VPS/Asterisk):** `manolo_ari.py` vía ARI + ExternalMedia — Deepgram + Groq + Edge TTS. `manolo_agi.py` (AGI) queda en disco como backup, ya no está en el dialplan.
 - **Pantalla de pruebas IA (app móvil):** sigue en migración y todavía usa `GeminiServices.ts` + `ElevenLabService.ts` en varias rutas.
 - **Conclusión:** el stack real de llamadas en producción y el stack del laboratorio de UI no son idénticos hoy.
+
+### Personajes del Modo 3
+
+| Personaje | Voz principal | Reserva (Edge) |
+| --- | --- | --- |
+| Manolo | Cartesia | `TTS_VOICE` (por defecto `es-ES-AlvaroNeural`) |
+| Paquita | ElevenLabs | `PAQUITA_VOZ_RESERVA` (por defecto `es-ES-ElviraNeural`) |
+| Patxi | ElevenLabs | `PATXI_VOZ_RESERVA` (por defecto `es-ES-AlvaroNeural`) |
+
+Cada llamada sale con un personaje al azar (`PERSONAJE=aleatorio`) o con uno fijo. Si cae la voz principal, el personaje sigue con su voz de reserva; si cae también, mensaje fijo. Ningún personaje admite ser una IA ni acepta o da datos.
+
+### En el teléfono
+
+- **Avisos en los modos 2 y 3:** una notificación por cada llamada que acaba en el servidor; al pulsarla se abre el Historial, que dice qué personaje la atendió ("Atendida por Patxi").
+- **Botón "Pasar a Manolo":** mientras suena una llamada que la app no ha filtrado, la notificación ofrece "Pasar a Manolo" (la rechaza y el desvío la manda al servidor) y "Pasar y bloquear" (además la añade a la lista negra).
+- **Lista negra única:** los números bloqueados desde una llamada y los de "Gestionar números" son la misma lista.
+- **Sello de compilación:** abajo del Dashboard sale la fecha y hora del APK y si las pantallas vienen del propio APK ("JS del APK").
 
 ---
 
@@ -66,8 +83,8 @@ La app controla el modo activo (FIXED/AI) vía `BackendSyncService.ts` → `POST
 | Motor Modo 3 (producción)      | Python — `manolo_ari.py` (ARI + ExternalMedia, streaming UDP/RTP)           |
 | AGI legacy (backup, sin usar)  | Python — `manolo_agi.py`                                                    |
 | IA conversacional (producción) | Groq `qwen/qwen3.8-27b`, con historial de conversación real                 |
-| TTS en VPS (producción)        | Edge TTS voz `es-ES-AlvaroNeural` → mulaw 8kHz                              |
-| STT en VPS (producción)        | Deepgram Nova-2 (batch) — Whisper por socket Unix como fallback             |
+| TTS en VPS (producción)        | Cartesia (Manolo), ElevenLabs (Paquita, Patxi); Edge TTS de reserva         |
+| STT en VPS (producción)        | Deepgram Nova-2 (batch)                                                     |
 | API de control                 | Flask — `control_api.py` (puerto 5000)                                      |
 | Infraestructura                | VPS Hetzner Ubuntu 24.04                                                    |
 

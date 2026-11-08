@@ -46,3 +46,6 @@ CLAUDE.local.md
 
 # keystore de debug: se regenera por máquina (ver README)
 android/app/debug.keystore
+
+# notas de despliegue: llevan la IP del VPS, nunca al repo
+DEPLOY-*.md
