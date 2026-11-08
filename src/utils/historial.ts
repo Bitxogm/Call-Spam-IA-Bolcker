@@ -74,7 +74,7 @@ const filaServidor = (r: ServerCallRecord): HistoryRow => {
     number: r.numero,
     timestamp: formatearLocal(d),
     reason: etiquetaServidor(r),
-    action: r.estado === 'activa' ? 'En curso' : 'Atendida por Manolo',
+    action: r.estado === 'activa' ? 'En curso' : `Atendida por ${nombrePersonaje(r.modo === 'AI' ? r.personaje : null)}`,
     origen: 'servidor' as const,
     duracion: r.duracion_segundos,
     epoch: d.getTime(),

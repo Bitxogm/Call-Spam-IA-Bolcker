@@ -101,6 +101,7 @@ describe('etiquetaServidor', () => {
   });
 
   it('el personaje que atendió', () => {
+    expect(etiquetaServidor(servidorRec({ modo: 'AI', plan_b: null, personaje: 'patxi' }))).toBe('Patxi (Modo 3)');
     expect(etiquetaServidor(servidorRec({ modo: 'AI', plan_b: null, personaje: 'paquita' }))).toBe('Paquita (Modo 3)');
     expect(etiquetaServidor(servidorRec({ modo: 'AI', plan_b: null, personaje: 'manolo' }))).toBe('Manolo (Modo 3)');
   });
@@ -146,6 +147,15 @@ describe('fusionarHistorial', () => {
       origen: 'servidor',
       duracion: 42,
     });
+  });
+
+  it('dice quién atendió: Patxi, Paquita… y Manolo en las antiguas y en el Modo 2', () => {
+    const accion = (over: Partial<ServerCallRecord>) => fusionarHistorial([], [servidorRec(over)])[0].action;
+    expect(accion({ modo: 'AI', personaje: 'patxi' })).toBe('Atendida por Patxi');
+    expect(accion({ modo: 'AI', personaje: 'paquita' })).toBe('Atendida por Paquita');
+    expect(accion({ modo: 'AI' })).toBe('Atendida por Manolo');
+    expect(accion({ modo: 'FIXED', personaje: null })).toBe('Atendida por Manolo');
+    expect(accion({})).toBe('Atendida por Manolo');
   });
 
   it('una llamada en curso se etiqueta "En curso"', () => {
