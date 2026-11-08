@@ -4,6 +4,7 @@ import { StyleSheet, Text, View, TouchableOpacity, Alert, NativeModules, ScrollV
 import { databaseService } from '../services/DataBaseService';
 import { contactsService } from '../services/ContactService';
 import nativeContactsService from '../services/ContactsService';
+import { getBuildInfo, textoSello, mostrarHerramientasDebug, BuildInfo } from '../services/BuildInfoService';
 
 // Importar módulo nativo de Android
 const { CallInterceptorModule } = NativeModules;
@@ -20,6 +21,11 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
   const [contactsPermission, setContactsPermission] = useState(false);
   const [radicalMode, setRadicalMode] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [buildInfo, setBuildInfo] = useState<BuildInfo | null>(null);
+
+  useEffect(() => {
+    getBuildInfo().then(setBuildInfo);
+  }, []);
 
   // Cargar datos desde la base de datos al iniciar
   useEffect(() => {
@@ -237,15 +243,17 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
         </TouchableOpacity>
 
         {/* Herramientas de desarrollo: fuera de builds de release */}
+        {mostrarHerramientasDebug(buildInfo, __DEV__) && (
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: '#007bff' }]}
+            onPress={() => navigation.navigate('Logs')}
+          >
+            <Text style={styles.buttonText}>📋 Logs de Debug</Text>
+          </TouchableOpacity>
+        )}
+
         {__DEV__ && (
           <>
-            <TouchableOpacity
-              style={[styles.button, { backgroundColor: '#007bff' }]}
-              onPress={() => navigation.navigate('Logs')}
-            >
-              <Text style={styles.buttonText}>📋 Logs de Debug</Text>
-            </TouchableOpacity>
-
             <TouchableOpacity style={styles.buttonTest} onPress={simulateBlockCall}>
               <Text style={styles.buttonText}>🧪 SIMULAR BLOQUEO</Text>
             </TouchableOpacity>
@@ -262,6 +270,8 @@ export default function DashboardScreen({ navigation }: DashboardScreenProps) {
         )}
 
       </View>
+
+      <Text style={styles.buildStamp}>{textoSello(buildInfo, __DEV__)}</Text>
     </ScrollView>
   );
 }
@@ -380,5 +390,10 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontWeight: '600',
   },
-
+  buildStamp: {
+    marginTop: 24,
+    fontSize: 11,
+    color: '#888888',
+    textAlign: 'center',
+  },
 });

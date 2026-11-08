@@ -94,6 +94,8 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0.0"
+        // Sello visible en el Dashboard: se recalcula en cada compilación
+        buildConfigField "String", "BUILD_TIME", "\"${new java.text.SimpleDateFormat('dd/MM/yyyy HH:mm:ss').format(new Date())}\""
     }
     signingConfigs {
         debug {
