@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 
 // Importar servicios
+import { sincronizarListaNegra, desbloquearNumero } from '../services/ListaNegraSync';
 import { databaseService, SpamNumber } from '../services/DataBaseService';
 import { blacklistService } from '../services/BlacklistService';
 import answerHangupService from '../services/AnswerHangupService';
@@ -41,6 +42,13 @@ export default function SpamNumbersScreen({ navigation }: SpamNumbersScreenProps
   // Función para cargar números desde la base de datos
   const loadSpamNumbers = async () => {
     try {
+      // Antes de pintar: que aparezca lo bloqueado desde Java ("Pasar y bloquear"…)
+      // y que bloquee de verdad lo que se ve. Si falla, se pinta igual
+      try {
+        await sincronizarListaNegra();
+      } catch (error) {
+        console.warn('⚠️ No se pudo sincronizar la lista negra:', error);
+      }
       console.log('📋 Cargando números desde la base de datos...');
       const numbers = await databaseService.getSpamNumbers();
       setSpamNumbers(numbers);
@@ -115,13 +123,10 @@ export default function SpamNumbersScreen({ navigation }: SpamNumbersScreenProps
           style: "destructive",
           onPress: async () => {
             try {
-              // ✅ DUAL STORAGE: Eliminar de ambos lados
-              const [prefsSuccess, dbSuccess] = await Promise.all([
-                blacklistService.removeNumber(number),
-                databaseService.deleteSpamNumber(id)
-              ]);
+              // Fuera del filtro nativo y de todas sus filas, en cualquier formato
+              const ok = await desbloquearNumero(number);
 
-              if (prefsSuccess && dbSuccess) {
+              if (ok) {
                 // Recargar la lista desde la base de datos
                 await loadSpamNumbers();
                 Alert.alert("✅ Eliminado", "Número eliminado de la lista negra");
