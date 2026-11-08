@@ -1,5 +1,5 @@
 // LogsScreen.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,19 +9,35 @@ import {
   RefreshControl,
   Alert,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import LogsService, { LogEntry } from '../services/LogsService';
 
 const LogsScreen: React.FC = () => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [errorLectura, setErrorLectura] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadLogs();
-  }, []);
+  // Al ganar el foco y no solo al montarse: si la pantalla ya estaba abierta en la pila,
+  // volver a ella tras una llamada no recargaba y parecía vacía
+  useFocusEffect(
+    useCallback(() => {
+      loadLogs();
+    }, [])
+  );
 
   const loadLogs = async () => {
-    const logsData = await LogsService.getLogs();
+    const { logs: logsData, error } = await LogsService.getLogsDetallado();
     setLogs(logsData);
+    setErrorLectura(error);
+  };
+
+  /** Escribe una línea por el mismo camino nativo y recarga: prueba el registro sin llamar. */
+  const probarRegistro = async () => {
+    const ok = await LogsService.logInfo(`📝 Prueba de registro desde la app (${new Date().toLocaleTimeString()})`);
+    await loadLogs();
+    if (!ok) {
+      Alert.alert('❌ No se pudo escribir', 'El módulo de logs no respondió al escribir.');
+    }
   };
 
   const handleRefresh = async () => {
@@ -94,6 +110,9 @@ const LogsScreen: React.FC = () => {
         <TouchableOpacity style={styles.refreshButton} onPress={handleRefresh}>
           <Text style={styles.buttonText}>🔄 Actualizar</Text>
         </TouchableOpacity>
+        <TouchableOpacity style={styles.testButton} onPress={probarRegistro}>
+          <Text style={styles.buttonText}>📝 Probar registro</Text>
+        </TouchableOpacity>
         <TouchableOpacity
           style={styles.clearButton}
           onPress={handleClearLogs}
@@ -102,6 +121,12 @@ const LogsScreen: React.FC = () => {
           <Text style={styles.buttonText}>🗑️ Borrar Todo</Text>
         </TouchableOpacity>
       </View>
+
+      {errorLectura && (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText} selectable>⚠️ No se pudieron leer los logs: {errorLectura}</Text>
+        </View>
+      )}
 
       <ScrollView
         style={styles.logsContainer}
@@ -175,6 +200,27 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 8,
     alignItems: 'center',
+  },
+  testButton: {
+    flex: 1,
+    backgroundColor: '#6f42c1',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  errorBox: {
+    backgroundColor: '#fff3cd',
+    borderLeftWidth: 4,
+    borderLeftColor: '#ff9800',
+    padding: 10,
+    margin: 10,
+    marginBottom: 0,
+    borderRadius: 6,
+  },
+  errorText: {
+    fontSize: 12,
+    color: '#856404',
+    fontFamily: 'monospace',
   },
   clearButton: {
     flex: 1,

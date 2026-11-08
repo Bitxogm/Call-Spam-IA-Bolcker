@@ -78,6 +78,25 @@ class LogsService {
   /**
    * Obtiene todos los logs como array de objetos
    */
+  /**
+   * Como getLogs, pero devuelve el error en vez de esconderlo tras una lista vacía:
+   * "No hay logs" y "no se pueden leer" no pueden verse igual en pantalla.
+   */
+  getLogsDetallado = async (): Promise<{ logs: LogEntry[]; error: string | null }> => {
+    try {
+      if (!LogsModule) {
+        return { logs: [], error: 'el módulo nativo LogsModule no está disponible' };
+      }
+      const logs = await LogsModule.getLogs();
+      if (!Array.isArray(logs)) {
+        return { logs: [], error: 'LogsModule.getLogs no devolvió una lista' };
+      }
+      return { logs, error: null };
+    } catch (error) {
+      return { logs: [], error: error instanceof Error ? error.message : String(error) };
+    }
+  };
+
   getLogs = async (): Promise<LogEntry[]> => {
     try {
       const logs = await LogsModule.getLogs();

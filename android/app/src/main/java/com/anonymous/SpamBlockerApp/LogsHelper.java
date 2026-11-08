@@ -72,17 +72,13 @@ public class LogsHelper {
             logEntry.put("level", level);
             logEntry.put("message", message);
 
-            // Añadir al principio (más reciente primero)
-            logs.put(0, logEntry);
-
-            // Limitar a MAX_LOGS
-            if (logs.length() > MAX_LOGS) {
-                JSONArray trimmedLogs = new JSONArray();
-                for (int i = 0; i < MAX_LOGS; i++) {
-                    trimmedLogs.put(logs.get(i));
-                }
-                logs = trimmedLogs;
+            // Añadir al principio (más reciente primero). Antes era logs.put(0, …), que en
+            // org.json SUSTITUYE el elemento 0: el registro nunca guardaba más de una línea
+            List<Object> lista = new ArrayList<>();
+            for (int i = 0; i < logs.length(); i++) {
+                lista.add(logs.get(i));
             }
+            logs = new JSONArray(anteponer(lista, logEntry, MAX_LOGS));
 
             // Guardar
             prefs.edit().putString(KEY_LOGS, logs.toString()).apply();
@@ -105,6 +101,17 @@ public class LogsHelper {
         } catch (JSONException e) {
             Log.e(TAG, "Error añadiendo log: " + e.getMessage());
         }
+    }
+
+    /** La nueva primero y como mucho `max`. Java puro: se prueba con JUnit (LogsHelperTest). */
+    static <T> List<T> anteponer(List<T> anteriores, T nueva, int max) {
+        List<T> lista = new ArrayList<>();
+        lista.add(nueva);
+        for (T t : anteriores) {
+            if (lista.size() >= max) break;
+            lista.add(t);
+        }
+        return lista;
     }
 
     /**
