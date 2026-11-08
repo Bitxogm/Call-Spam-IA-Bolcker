@@ -84,7 +84,7 @@ class Peticion(Base):
     async def test_timeout_corto(self):
         self.assertEqual(m.ELEVENLABS_TIMEOUT, 3)
 
-        async def colgada(_texto):
+        async def colgada(_texto, _voz_id=None):
             await asyncio.sleep(3600)
 
         with patch.object(m, 'ELEVENLABS_TIMEOUT', 0.05), \
@@ -193,6 +193,26 @@ class EnUnaLlamadaDePaquita(Base):
                          ['es-ES-ElviraNeural', 'gl-ES-RoiNeural'])
         self.assertTrue(any('→ Edge (es-ES-ElviraNeural)' in l for l in self.logs))
 
+    async def test_patxi_usa_su_voz_de_elevenlabs_y_alvaro_de_reserva(self):
+        elevenlabs = AsyncMock(side_effect=m.TTSError('ElevenLabs 500'))
+        edge = AsyncMock(return_value=b'\xff' * 160)
+        patxi = m.CallState('canal-3')
+        patxi.personaje = 'patxi'
+        patxi.transport = MagicMock()
+        with patch.object(m, 'synthesize_elevenlabs', elevenlabs), \
+             patch.object(m, 'synthesize_edge', edge), \
+             patch.object(m.asyncio, 'sleep', AsyncMock()):
+            await m.play_response(patxi, 'Aupa')
+        self.assertEqual(elevenlabs.await_args.args, ('Aupa', 'iZ1lgtWkKg1IYch6KxwW'))
+        self.assertEqual(edge.await_args.args[1], 'es-ES-AlvaroNeural')
+
+    async def test_paquita_sigue_con_elevenlabs_voice_id(self):
+        elevenlabs = AsyncMock(return_value=b'\xff' * 160)
+        with patch.object(m, 'synthesize_elevenlabs', elevenlabs), \
+             patch.object(m.asyncio, 'sleep', AsyncMock()):
+            await m.play_response(self.state, 'Hola')
+        self.assertEqual(elevenlabs.await_args.args, ('Hola',))   # sin voz_id: ELEVENLABS_VOICE_ID
+
 
 class HealthcheckElevenLabs(Base):
     def setUp(self):
@@ -223,7 +243,8 @@ class HealthcheckElevenLabs(Base):
         sintetizar = AsyncMock()
         estado = {}
         with patch.object(m.httpx, 'AsyncClient', return_value=contexto), \
-             patch.object(m, 'synthesize_elevenlabs', sintetizar):
+             patch.object(m, 'synthesize_elevenlabs', sintetizar), \
+             patch.object(m, 'PERSONAJE', 'paquita'):
             resultado = await hc.run_checks({
                 'ElevenLabs': hc.check_elevenlabs_cuenta(estado),
                 'ElevenLabs: saldo bajo': hc.check_elevenlabs_saldo(estado),
@@ -234,6 +255,29 @@ class HealthcheckElevenLabs(Base):
         self.assertEqual(rutas, ['https://api.elevenlabs.io/v1/voices/voz-paquita',
                                  'https://api.elevenlabs.io/v1/user/subscription'])
         return resultado
+
+    async def test_con_aleatorio_comprueba_las_voces_de_paquita_y_patxi(self):
+        contexto, get = cliente_http(
+            respuesta(datos={}), respuesta(datos={}),
+            respuesta(datos={'character_count': 10, 'character_limit': 10000}),
+            metodo='get')
+        with patch.object(m.httpx, 'AsyncClient', return_value=contexto), \
+             patch.object(m, 'PERSONAJE', 'aleatorio'):
+            resultado = await hc.run_checks({'ElevenLabs': hc.check_elevenlabs_cuenta({})})
+        self.assertEqual(resultado, {'ElevenLabs': None})
+        self.assertEqual([c.args[0] for c in get.await_args_list], [
+            'https://api.elevenlabs.io/v1/voices/voz-paquita',
+            'https://api.elevenlabs.io/v1/voices/iZ1lgtWkKg1IYch6KxwW',
+            'https://api.elevenlabs.io/v1/user/subscription',
+        ])
+
+    async def test_si_falla_la_voz_de_patxi_lo_dice(self):
+        contexto, _ = cliente_http(respuesta(datos={}), respuesta(404, text='voice_not_found'), metodo='get')
+        with patch.object(m.httpx, 'AsyncClient', return_value=contexto), \
+             patch.object(m, 'PERSONAJE', 'aleatorio'):
+            resultado = await hc.run_checks({'ElevenLabs': hc.check_elevenlabs_cuenta({})})
+        self.assertIn('voz de Patxi', resultado['ElevenLabs'])
+        self.assertIn('404', resultado['ElevenLabs'])
 
     async def test_saldo_suficiente(self):
         self.assertEqual(set((await self.comprobar(5000)).values()), {None})

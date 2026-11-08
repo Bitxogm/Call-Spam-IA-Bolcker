@@ -15,14 +15,15 @@ from _stubs import manolo_ari as m
 
 
 class Prompts(unittest.TestCase):
-    def test_los_dos_prompts_estan_cargados(self):
-        self.assertEqual(set(m.PROMPTS), {'manolo', 'paquita'})
+    def test_los_tres_prompts_estan_cargados(self):
+        self.assertEqual(set(m.PROMPTS), {'manolo', 'paquita', 'patxi'})
+        self.assertTrue(m.PROMPTS['patxi'].startswith('Eres Patxi Etxeberria'))
         self.assertTrue(m.PROMPTS['manolo'].startswith('Eres Manolo Ferreiro'))
         self.assertTrue(m.PROMPTS['paquita'].startswith('Eres Paquita Morales'))
         self.assertEqual(m.PROMPT_MANOLO, m.PROMPTS['manolo'])
 
     def test_paquita_tiene_las_reglas_de_manolo(self):
-        for clave in ('manolo', 'paquita'):
+        for clave in ('manolo', 'paquita', 'patxi'):
             prompt = m.PROMPTS[clave]
             self.assertIn('1-2 frases como mucho', prompt, clave)
             self.assertIn('REGLA ESTRICTA', prompt, clave)
@@ -30,7 +31,7 @@ class Prompts(unittest.TestCase):
             self.assertIn('Máximo 1 pregunta por turno', prompt, clave)
 
     def test_ninguno_acepta_ni_da_datos(self):
-        for clave in ('manolo', 'paquita'):
+        for clave in ('manolo', 'paquita', 'patxi'):
             prompt = m.PROMPTS[clave]
             self.assertIn('NUNCA ACEPTES NI DES DATOS', prompt, clave)
             self.assertIn('"sí", "acepto", "de acuerdo" ni "vale"', prompt, clave)
@@ -62,10 +63,26 @@ class Eleccion(unittest.TestCase):
             self.assertEqual(m._leer_personaje(' Paquita '), 'paquita')
             self.assertEqual(m._leer_personaje('roberto'), 'aleatorio')   # aún no existe
 
-    def test_aleatorio_elige_entre_los_dos(self):
+    def test_aleatorio_elige_entre_los_tres(self):
         with patch.object(m, 'PERSONAJE', 'aleatorio'):
-            elegidos = {m.elegir_personaje() for _ in range(200)}
-        self.assertEqual(elegidos, {'manolo', 'paquita'})
+            elegidos = {m.elegir_personaje() for _ in range(300)}
+        self.assertEqual(elegidos, {'manolo', 'paquita', 'patxi'})
+
+    def test_patxi_fijo(self):
+        with patch.object(m, 'ari_log'):
+            self.assertEqual(m._leer_personaje('patxi'), 'patxi')
+        with patch.object(m, 'PERSONAJE', 'patxi'):
+            self.assertEqual({m.elegir_personaje() for _ in range(20)}, {'patxi'})
+
+    def test_voces_de_elevenlabs_en_uso(self):
+        with patch.object(m, 'TTS_PROVIDER', 'cartesia'), patch.object(m, 'ELEVENLABS_VOICE_ID', 'voz-paquita'):
+            with patch.object(m, 'PERSONAJE', 'aleatorio'):
+                self.assertEqual(m.voces_elevenlabs_en_uso(),
+                                 [('Paquita', 'voz-paquita'), ('Patxi', 'iZ1lgtWkKg1IYch6KxwW')])
+            with patch.object(m, 'PERSONAJE', 'manolo'):
+                self.assertEqual(m.voces_elevenlabs_en_uso(), [])
+        with patch.object(m, 'TTS_PROVIDER', 'edge'):
+            self.assertEqual(m.voces_elevenlabs_en_uso(), [])
 
     def test_fijo(self):
         with patch.object(m, 'PERSONAJE', 'paquita'):
@@ -101,6 +118,18 @@ class VozDeReserva(unittest.TestCase):
              patch('dotenv.load_dotenv'):
             spec.loader.exec_module(mod)
         self.assertEqual(mod.voz_edge('paquita'), 'es-ES-XimenaNeural')
+
+    def test_patxi_por_defecto_y_configurable(self):
+        self.assertEqual(m.voz_edge('patxi'), 'es-ES-AlvaroNeural')
+        self.assertEqual(m.PERSONAJES['patxi']['voz_id'], 'iZ1lgtWkKg1IYch6KxwW')
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('manolo_ari_patxi', m.__file__)
+        mod = importlib.util.module_from_spec(spec)
+        with patch.dict(os.environ, {'PATXI_VOICE_ID': 'otra-voz', 'PATXI_VOZ_RESERVA': 'es-ES-JorgeNeural'}), \
+             patch('dotenv.load_dotenv'):
+            spec.loader.exec_module(mod)
+        self.assertEqual(mod.PERSONAJES['patxi']['voz_id'], 'otra-voz')
+        self.assertEqual(mod.voz_edge('patxi'), 'es-ES-JorgeNeural')
 
 
 class EnLaLlamada(unittest.IsolatedAsyncioTestCase):
@@ -141,6 +170,11 @@ class EnLaLlamada(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(registro['personaje'], 'paquita')
         self.assertEqual(m.call_state.personaje, 'paquita')
         self.assertEqual(self.dichos, [m.PERSONAJES['paquita']['saludo']])
+
+    async def test_patxi_queda_en_el_log_y_saluda_el(self):
+        registro = await self.entrar('AI', 'patxi')
+        self.assertEqual(registro['personaje'], 'patxi')
+        self.assertEqual(self.dichos, [m.PERSONAJES['patxi']['saludo']])
 
     async def test_manolo_saluda_como_siempre(self):
         registro = await self.entrar('AI', 'manolo')

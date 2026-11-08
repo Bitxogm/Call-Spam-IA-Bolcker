@@ -132,7 +132,12 @@ def check_service(nombre):
 def check_elevenlabs_cuenta(estado):
     """Clave, voz y caracteres del periodo, todo con lecturas: no sintetiza nada."""
     async def check():
-        await manolo_ari.elevenlabs_verificar_voz()
+        # La voz de cada personaje de ElevenLabs en uso (Paquita, Patxi): lecturas, no síntesis
+        for nombre, voz_id in manolo_ari.voces_elevenlabs_en_uso():
+            try:
+                await manolo_ari.elevenlabs_verificar_voz(voz_id)
+            except Exception as e:
+                raise RuntimeError(f'voz de {nombre}: {e}') from e
         sub = await manolo_ari.elevenlabs_suscripcion()
         limite = sub.get('character_limit') or 0
         usados = sub.get('character_count') or 0
@@ -164,8 +169,9 @@ def check_elevenlabs_creditos(estado):
 def construir_checks():
     checks = {
         'TTS': check_tts,
-        **({'TTS Paquita': check_tts_voz(manolo_ari.voz_edge('paquita'))}
-           if 'paquita' in manolo_ari.personajes_activos() else {}),
+        # La reserva de Edge de cada personaje con voz propia: si el nombre está mal, falla aquí
+        **{f'TTS {manolo_ari.PERSONAJES[c]["nombre"]}': check_tts_voz(manolo_ari.voz_edge(c))
+           for c in manolo_ari.personajes_activos() if c != 'manolo'},
         'Groq': check_groq,
         'Deepgram': check_deepgram,
     }

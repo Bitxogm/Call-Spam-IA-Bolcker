@@ -194,6 +194,16 @@ PERSONAJES = {
         'saludo': '¿Sí? ¿Dígame? Espere, hijo, que estaba tendiendo la ropa... ¿Quién es?',
         'despedida': '¿Hola? ¿Sigue usted ahí? Ea, pues se habrá cortado. Adiós, mi alma.',
     },
+    'patxi': {
+        'nombre': 'Patxi',
+        'prompt': 'patxi.txt',
+        'voz': 'elevenlabs',
+        # Paquita usa ELEVENLABS_VOICE_ID; Patxi, su propia voz de la misma cuenta
+        'voz_id': os.getenv('PATXI_VOICE_ID') or 'iZ1lgtWkKg1IYch6KxwW',
+        'voz_edge': os.getenv('PATXI_VOZ_RESERVA') or 'es-ES-AlvaroNeural',
+        'saludo': '¿Sí? ¿Quién es? Espera, que estoy con la perra... ¿Quién llama?',
+        'despedida': '¿Oiga? ¿Hay alguien? Pues nada, se habrá cortado. Agur.',
+    },
 }
 
 
@@ -241,6 +251,14 @@ def personajes_activos():
 
 def elegir_personaje():
     return random.choice(personajes_activos())
+
+
+def voces_elevenlabs_en_uso():
+    """(nombre, ID de voz) de cada personaje activo con ElevenLabs, para el healthcheck."""
+    if TTS_PROVIDER == 'edge':
+        return []
+    return [(PERSONAJES[c]['nombre'], PERSONAJES[c].get('voz_id') or ELEVENLABS_VOICE_ID)
+            for c in personajes_activos() if PERSONAJES[c]['voz'] == 'elevenlabs']
 
 
 def voces_en_uso():
@@ -684,13 +702,14 @@ def elevenlabs_headers():
     return {'xi-api-key': ELEVENLABS_API_KEY or ''}
 
 
-async def _synthesize_elevenlabs(texto):
-    if not (ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID):
-        raise TTSError('ElevenLabs: faltan ELEVENLABS_API_KEY o ELEVENLABS_VOICE_ID')
+async def _synthesize_elevenlabs(texto, voz_id=None):
+    voz_id = voz_id or ELEVENLABS_VOICE_ID
+    if not (ELEVENLABS_API_KEY and voz_id):
+        raise TTSError('ElevenLabs: faltan ELEVENLABS_API_KEY o el ID de voz')
     try:
         async with httpx.AsyncClient(timeout=ELEVENLABS_TIMEOUT) as client:
             r = await client.post(
-                f'{ELEVENLABS_URL}/v1/text-to-speech/{ELEVENLABS_VOICE_ID}',
+                f'{ELEVENLABS_URL}/v1/text-to-speech/{voz_id}',
                 # µ-law 8 kHz: lo que va al RTP, sin pasar por ffmpeg
                 params={'output_format': 'ulaw_8000'},
                 headers=elevenlabs_headers(),
@@ -709,10 +728,10 @@ async def _synthesize_elevenlabs(texto):
     return r.content
 
 
-async def synthesize_elevenlabs(texto):
+async def synthesize_elevenlabs(texto, voz_id=None):
     """Texto -> mulaw 8 kHz con ElevenLabs. ElevenLabsSinCreditos si no quedan caracteres."""
     try:
-        return await asyncio.wait_for(_synthesize_elevenlabs(texto), timeout=ELEVENLABS_TIMEOUT)
+        return await asyncio.wait_for(_synthesize_elevenlabs(texto, voz_id), timeout=ELEVENLABS_TIMEOUT)
     except asyncio.TimeoutError as e:
         raise TTSError(f'ElevenLabs: timeout de {ELEVENLABS_TIMEOUT}s') from e
 
@@ -727,11 +746,12 @@ async def _elevenlabs_get(ruta):
     return r.json()
 
 
-async def elevenlabs_verificar_voz():
+async def elevenlabs_verificar_voz(voz_id=None):
     """Clave y voz con una lectura (GET /v1/voices/{id}), sin sintetizar."""
-    if not ELEVENLABS_VOICE_ID:
-        raise TTSError('ElevenLabs: falta ELEVENLABS_VOICE_ID')
-    return await _elevenlabs_get(f'/v1/voices/{ELEVENLABS_VOICE_ID}')
+    voz_id = voz_id or ELEVENLABS_VOICE_ID
+    if not voz_id:
+        raise TTSError('ElevenLabs: falta el ID de voz')
+    return await _elevenlabs_get(f'/v1/voices/{voz_id}')
 
 
 async def elevenlabs_suscripcion():
@@ -797,7 +817,7 @@ async def synthesize_edge(texto, voz=None):
 
 
 async def synthesize_mulaw(texto, al_saltar=None, probar_premium=True, voz='cartesia',
-                           voz_reserva=None):
+                           voz_reserva=None, voz_id=None):
     """Texto -> mulaw 8 kHz por la escalera voz premium (Cartesia o ElevenLabs) -> Edge.
 
     `voz` es la del personaje. `al_saltar(pieza, error)` se llama cada vez que se baja
@@ -811,7 +831,8 @@ async def synthesize_mulaw(texto, al_saltar=None, probar_premium=True, voz='cart
             _saltar(al_saltar, nombre, f'sin créditos hasta {hasta.isoformat()}')
         else:
             try:
-                return await _cronometrar(nombre, sintetizar(texto))
+                # voz_id: la voz del personaje dentro del proveedor (Paquita y Patxi en ElevenLabs)
+                return await _cronometrar(nombre, sintetizar(texto, voz_id) if voz_id else sintetizar(texto))
             except SinCreditos as e:
                 hasta = marcar_agotado()
                 _saltar(al_saltar, nombre, f'{e} — sin créditos, Edge hasta {hasta.isoformat()}')
@@ -860,7 +881,8 @@ async def play_response(state, texto):
                 al_saltar=lambda pieza, error: registrar_salto(state, pieza, error),
                 probar_premium=premium not in state.saltos,
                 voz=voz,
-                voz_reserva=voz_edge(state.personaje))
+                voz_reserva=voz_edge(state.personaje),
+                voz_id=PERSONAJES[state.personaje].get('voz_id'))
         except TTSError as e:
             activar_plan_b(state, 'TTS', e)
             return

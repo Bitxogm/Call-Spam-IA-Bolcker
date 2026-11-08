@@ -98,9 +98,13 @@ class Comprobaciones(unittest.IsolatedAsyncioTestCase):
                 'servicio manolo_ari', 'servicio asterisk-control-api',
             })
 
-    def test_con_paquita_tambien_se_prueba_su_voz_de_reserva(self):
+    def test_con_paquita_y_patxi_se_prueban_sus_voces_de_reserva(self):
         with patch.object(m, 'TTS_PROVIDER', 'edge'), patch.object(m, 'PERSONAJE', 'aleatorio'):
-            self.assertIn('TTS Paquita', hc.construir_checks())
+            checks = hc.construir_checks()
+        self.assertIn('TTS Paquita', checks)
+        self.assertIn('TTS Patxi', checks)
+        with patch.object(m, 'TTS_PROVIDER', 'edge'), patch.object(m, 'PERSONAJE', 'patxi'):
+            self.assertNotIn('TTS Paquita', hc.construir_checks())
 
     async def test_tts_paquita_usa_su_voz(self):
         edge = AsyncMock()
